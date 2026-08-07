@@ -1,14 +1,9 @@
 /target
 /out
 /dist
-/.roc-fuzz-corpus
 /.roc-fuzz
-/typed_target
-/crashing_target
-/spike/typed_target
-/spike/crashing_target
-/fuzz/artifacts
-/fuzz/corpus
+/typedTarget
+/failureArtifact
 /.test-cache
 __pycache__/
 *.pyc

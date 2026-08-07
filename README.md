@@ -1,32 +1,42 @@
 # roc-fuzz
 
-This branch contains a spike for a self-contained, typed Roc fuzzing workflow:
+`roc-fuzz` is a typed, coverage-guided software-quality platform for Roc.
+It currently supports Linux x86-64 with musl.
 
-If this is your first time using a fuzzer, start with the
-[beginner guide](GUIDE.md). It explains which code is a good fit, how to write
-a useful property, what the progress output means, and how to investigate a
-saved failure.
+A target builds directly into a self-contained executable:
 
 ```sh
 roc build --fuzz my_target_app.roc
 ./my_target_app --help
 ./my_target_app run
-./my_target_app show .roc-fuzz/corpus/<saved-input>
-./my_target_app replay .roc-fuzz/crash-<hash>
-./my_target_app minimize crash.input minimized.input
 ```
 
-The platform supports only Linux x86-64 with musl. The resulting executable is
-statically linked and contains the typed target, the upstream libFuzzer engine,
-and the small Roc ABI/command adapter.
+The executable contains the Roc target, the upstream libFuzzer engine, and the
+small Roc ABI/command adapter. A normal run needs no Cargo project, external
+harness, or second linking step. It is bounded to 60 seconds by default and
+keeps its corpus under `.roc-fuzz/`.
 
-This spike requires the Roc compiler coverage implementation in
+This platform requires the compiler coverage implementation from
 [roc-lang/roc#10657](https://github.com/roc-lang/roc/pull/10657).
+
+## Origins and acknowledgments
+
+The foundational and exploratory work for roc-fuzz was created by [Brendan
+Hansknecht](https://github.com/bhansconnect). Brendan established the original Roc fuzzing
+integration, arbitrary input machinery, quality-target suite, and the early
+[trophy case](trophy-case/README.md) demonstrating the bugs this approach could
+find.
+
+The platform in this repository extends Brendan's experiment into a more
+idiomatic modern Roc workflow: typed generators, statically dispatched
+`generator_for` methods, record builders, and a self-contained executable
+built directly with `roc build --fuzz`. This work would not exist without the
+foundation he developed.
 
 ## Define a typed target
 
-An application provides `target : Target` instead of a byte-oriented `main`.
-The input type owns a statically dispatched `generator_for` method:
+The application exposes `target : Target`. Its input type can provide a
+statically dispatched `generator_for` method:
 
 ```roc
 app [target] { fuzz: platform "path/to/roc-fuzz/platform/main.roc" }
@@ -55,17 +65,78 @@ target = Fuzz.target({
 })
 ```
 
-`run` is bounded to 60 seconds by default. Friendly options include `--time`,
-`--runs`, `--max-input-size`, `--memory-limit`, `--timeout`, `--dictionary`,
-and `--seed`; use `--time=0` for an intentionally unbounded campaign. Native
-libFuzzer flags remain available through `raw`. When an explicit Roc failure
-is saved, the runner prints ready-to-run `show`, `replay`, and `minimize`
-commands.
+The `.Fuzz` record builder combines any number of field generators through
+`Fuzz.map2`. `Fuzz.target` resolves `Input.generator_for` at compile time,
+following the same static-dispatch pattern as `Json.parser_for`. For local
+structural inputs, `Fuzz.target_with` accepts an explicit generator.
 
-Rejection-rate reporting is not implemented in this spike yet. The typed
-`Fuzz.reject` outcome makes that a straightforward follow-up driver metric.
+Existing byte-oriented quality targets can migrate with `Fuzz.from_bytes`
+without changing their property immediately. New targets should prefer typed
+generators because they make the tested input domain visible in the API.
 
-Continue with the [beginner guide](GUIDE.md) for the normal workflow or
-[advanced fuzzing](ADVANCED.md) for tuning and runtime details. Repository
-bootstrap, architecture, and validation are documented in
+## Examples
+
+The end-user gallery demonstrates several common target shapes:
+
+- [`stringSplitRoundTrip.roc`](examples/stringSplitRoundTrip.roc) uses static
+  generator dispatch and a record builder for a round-trip property.
+- [`jsonRoundTrip.roc`](examples/jsonRoundTrip.roc) uses an explicit generator
+  for a single value.
+- [`parserRobustness.roc`](examples/parserRobustness.roc) treats both successful
+  and failed parses as ordinary outcomes while looking for crashes and hangs.
+- [`listConcatLength.roc`](examples/listConcatLength.roc) checks an invariant on
+  generated collections.
+- [`stack/main.roc`](examples/stack/main.roc) targets code in a separate Roc
+  module and shows the required `main.roc` layout for a multi-file example.
+
+The focused builtin regression targets are retained under
+[`examples/builtins/`](examples/builtins/). They intentionally use the lower-level
+`Arbitrary` API and are useful for compiler and builtin validation, but are not
+the recommended starting point for application authors.
+
+## Runner commands
+
+```text
+TARGET run [CORPUS] [OPTION...]
+TARGET show INPUT
+TARGET replay INPUT
+TARGET minimize INPUT OUTPUT
+TARGET reduce-corpus INPUT OUTPUT
+TARGET raw [LIBFUZZER_ARG...]
+```
+
+Friendly run options include `--time`, `--runs`, `--max-input-size`,
+`--memory-limit`, `--timeout`, `--dictionary`, and `--seed`.
+Use `--time=0` for an intentionally unbounded campaign. Low-level libFuzzer
+flags remain available through `raw`.
+
+When an explicit Roc failure is saved, the runner prints ready-to-run `show`,
+`replay`, and `minimize` commands.
+
+Rejection-rate reporting remains a follow-up. `Fuzz.reject` already records the
+distinction in the typed target boundary so the runner can expose that metric.
+
+## Develop and package
+
+Build the checked-in x64-musl platform inputs with:
+
+```sh
+python3 scripts/build_platform.py
+```
+
+The script verifies the checksum-pinned libFuzzer source, builds it and the Zig
+host adapter, and copies Zig's static musl and C++ runtime archives into
+`platform/targets/x64musl`. A release bundle includes those generated inputs.
+
+Run the repository validation matrix with:
+
+```sh
+python3 scripts/test.py --operation validate
+python3 scripts/test.py --operation build
+python3 scripts/test.py --operation fuzz --max-total-time 2
+```
+
+Start with the [beginner guide](GUIDE.md) for target design and the normal
+workflow. [Advanced fuzzing](ADVANCED.md) covers campaign tuning, corpora, and
+runtime details. Repository bootstrap and release work are in
 [CONTRIBUTING.md](CONTRIBUTING.md).

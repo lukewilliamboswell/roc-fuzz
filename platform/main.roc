@@ -1,3 +1,6 @@
+## A typed, coverage-guided fuzzing platform with a self-contained libFuzzer
+## runner. Start with the `Fuzz` module; `Arbitrary` and `Target` are advanced
+## interfaces retained for custom generators and legacy targets.
 platform "roc-fuzz"
 	requires {
 		target : Target

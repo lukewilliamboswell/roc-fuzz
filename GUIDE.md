@@ -9,8 +9,8 @@ that rule.
 You use that executable to run the search and inspect any failures it finds.
 
 This page covers the normal workflow. See [Advanced fuzzing](ADVANCED.md) when
-you need to tune libFuzzer, manage a long-lived corpus, fuzz native code, or
-understand the in-process execution model.
+you need to tune libFuzzer, manage a long-lived corpus, or understand the
+in-process execution model.
 
 ## The target API
 
@@ -36,15 +36,14 @@ The test returns one of these outcomes:
 
 roc-fuzz is best suited to small, fast library operations that accept in-memory
 values: parsers, encoders and decoders, string and collection operations,
-compression, and pure protocol transformations are good examples. A
-target that needs a file, subprocess, live service, or long-running task
-usually needs a different testing setup. The [advanced fit guide](ADVANCED.md#understand-the-in-process-model)
-explains why.
+compression, and protocol transformations are good examples. It is less useful
+when one input is slow, can consume unbounded memory, may not terminate, or is
+expected to crash on invalid data. The [advanced fit guide](ADVANCED.md#understand-the-in-process-model)
+explains these limits.
 
-Ordinary Roc code is pure and deterministic, so the same generated value has
-the same result within a build. That makes Roc functions especially natural
-fuzz targets. Native code and replay across CPU architectures need a little
-more care, as explained in the advanced guide.
+Given the same raw fuzzer input, an unchanged pure Roc generator produces the
+same typed value and the unchanged test produces the same result. Keep the
+matching executable when exact historical reproduction matters.
 
 ## Write a small target
 
@@ -227,5 +226,5 @@ Run `TARGET --help` to see the commands for a built target.
 | `TARGET minimize INPUT OUTPUT` | Make a reproducing failure smaller. |
 | `TARGET reduce-corpus INPUT OUTPUT` | Copy a coverage-preserving subset into a new corpus. |
 
-The [`raw` command and native libFuzzer options](ADVANCED.md#use-the-native-interface)
+The [`raw` command and low-level libFuzzer options](ADVANCED.md#use-the-libfuzzer-interface)
 are intended for advanced use.

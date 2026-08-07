@@ -14,37 +14,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  pinned-baseline:
+  self-contained-runner:
     runs-on: ubuntu-22.04
+    env:
+      ROC: ${{ github.workspace }}/roc-compiler/zig-out/bin/roc
+
     steps:
-      - name: Checkout
+      - name: Checkout roc-fuzz
         uses: actions/checkout@v4
+
+      - name: Checkout Roc coverage compiler
+        uses: actions/checkout@v4
+        with:
+          repository: roc-lang/roc
+          ref: refs/pull/10657/head
+          path: roc-compiler
 
       - name: Install Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 
-      - name: Read pinned Roc version
-        run: python scripts/export_roc_version.py
-
-      - name: Install pinned Roc nightly
-        uses: roc-lang/setup-roc@cbe782d6f165b89c87d99f50a59ac4f5f73b4427
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
         with:
-          version: nightly-new-compiler
-          nightly-tag: ${{ env.ROC_NIGHTLY_TAG }}
+          version: "0.16.0"
+
+      - name: Build Roc
+        run: zig build roc
+        working-directory: roc-compiler
 
       - name: Show tool versions
         run: |
-          roc version
-          cargo version
+          "$ROC" version
+          zig version
           python --version
 
-      - name: Validate the complete target spec
+      - name: Validate target sources
         run: python scripts/test.py --operation validate --verbose
 
-      - name: Build every Roc archive
+      - name: Build every self-contained target
         run: python scripts/test.py --operation build --verbose
 
-      - name: Verify publishable Rust host crate
-        run: cargo package
+      - name: Smoke-test libFuzzer and failure artifacts
+        run: python scripts/test.py --operation fuzz --max-total-time 1 --verbose

@@ -9,36 +9,26 @@ shown, replayed, and minimized an input.
 
 The embedded libFuzzer calls a target thousands of times in the same process.
 It does not start a clean executable for every generated input. This is what
-makes it fast. Ordinary Roc code already provides purity and determinism, so
-most Roc targets naturally satisfy the hardest in-process requirements.
+makes it fast. Roc's purity means target calls cannot leak application state or
+background work into later calls, and determinism makes saved inputs reliable
+with the same target and generator.
 
 A reliable target still needs all of the following properties:
 
-- The code under test can be called directly with an in-memory Roc value.
 - Invalid or unusual inputs return ordinary values such as `Err`, rather than
   triggering an intentional assertion or process exit.
 - One input normally finishes in less than 10 milliseconds.
-- Running the same input with the same build and CPU architecture has the same
-  result.
-- Any native or platform state reached by the target is reset before the target
-  returns.
-- Native work started by one input, including threads, does not outlive the
-  input.
 - Inputs and allocations have sensible upper bounds.
+- Every input terminates.
 
-Use a process-based integration test or another fuzzing setup when the code
-requires a file path, subprocess, live network service, persistent thread, or
-large amount of global state. The same applies when one test takes a
-significant fraction of a second or when invalid input is *expected* to
-terminate the process. If termination would be a bug, it remains a useful
-fuzzing failure.
+The runner is a poor fit when one test takes a significant fraction of a
+second, can grow without a practical memory bound, or is expected to terminate
+the process for invalid input. If a crash, timeout, or memory blow-up would be
+a bug, it remains a useful fuzzing failure.
 
-Purity prevents a normal Roc target from reading clocks, external randomness,
-network responses, or mutable global state. These concerns return only at a
-native or platform boundary. Floating-point results can also differ across CPU
-architectures, so reproduce a floating-point failure with the same build and
-architecture before comparing it elsewhere. Avoid logging from any native hot
-path because it can reduce executions per second dramatically.
+A saved raw input produces the same typed value and result when the target and
+generator are unchanged. Keep the executable alongside important failure
+artifacts when exact historical reproduction matters.
 
 ## Understand generator dispatch
 
@@ -94,12 +84,17 @@ The most useful limits are:
 | `--timeout=N` | Treat one input taking longer than `N` seconds as a failure. | A few seconds for a normally fast target. |
 | `--memory-limit=N` | Stop when the process exceeds this many MB. | Set from the expected working set. |
 | `--dictionary=FILE` | Add important byte tokens to mutations. | Useful for text or binary formats. |
-| `--seed=N` | Select libFuzzer's random seed. | Pair with a bounded run when reproducing campaign behavior. |
+| `--seed=N` | Select libFuzzer's random seed. | Useful for repeating a campaign with the same runner build and configuration. |
 | `--print-final-stats` | Print final execution and resource counters. | Useful in CI and smoke tests. |
 
 `--max-input-size` limits the generator's raw input, not necessarily every
 typed list or string it produces. Put bounds in the generator as well when a
 typed value could become expensive.
+
+Do not confuse the campaign seed with a saved input. Different libFuzzer builds,
+coverage layouts, or configurations may generate different mutation sequences
+from `--seed`. Reproduce a failure with its saved artifact and `replay`, not
+with the campaign seed alone.
 
 libFuzzer reports compact status fields:
 
@@ -156,43 +151,24 @@ stable when practical and use `show` to check saved inputs after a change.
 Always replay a saved failure in a fresh process. If it does not reproduce,
 investigate:
 
-- a generator change that altered the typed value;
-- a different executable or CPU architecture, especially for floating-point
-  behavior;
-- state left by native or platform code;
-- a native thread that outlived its input; or
-- latent native memory corruption caused by an earlier input.
+- a generator or target change that altered the typed value or property;
+- a different or truncated raw input file;
+- an executable built from different target code; or
+- a compiler or runtime defect.
 
 Treat the failure as actionable once its conditions are understood and,
 ideally, it reproduces from a clean process.
 
-## Know what the failure detector can see
+## Know what counts as a failure
 
-SanitizerCoverage, despite its name, supplies the coverage feedback that guides
-libFuzzer. It is not AddressSanitizer, UndefinedBehaviorSanitizer, or
-MemorySanitizer and does not by itself diagnose memory corruption.
+Coverage feedback tells libFuzzer which inputs explore new behavior; it does
+not tell the runner whether a result is correct. The property in the target is
+the correctness oracle.
 
-The current `roc build --fuzz` spike detects explicit Roc `crash` and failed
-`expect` calls, fatal process signals observed by libFuzzer, per-input
-timeouts, and process memory-limit failures. It does not automatically add the
-native memory-safety sanitizers recommended for conventional C and C++
-libFuzzer targets. If a target reaches native or FFI code, separately test a
-sanitizer-enabled build of that code where the toolchain supports it. An
-undetected native memory error can corrupt the long-lived fuzzer process and
-only crash on a later input.
-
-The fully static musl executable omits libFuzzer's
-`FuzzerInterceptors.cpp`, whose dynamic-loader-based libc wrappers are not
-compatible with a statically linked process. The standard scheduler, mutators,
-corpus management, crash handling, minimizer, and merge engine remain intact.
-Roc's compare and switch instrumentation still supplies value feedback, but
-libc calls such as `memcmp` do not receive the additional feedback those
-interceptors normally provide. This affects search efficiency for some native
-code; it does not change the typed target API.
-
-The runner executes the target in-process, with the same environment as the
-executable. Use ordinary development or CI isolation when a target reads files,
-environment variables, or external services.
+roc-fuzz saves explicit Roc `crash` and failed `expect` calls, per-input
+timeouts, and process memory-limit failures. A wrong answer that does not break
+the target's property is invisible to the fuzzer, which is why choosing a
+strong property matters more than simply calling the function under test.
 
 ## Prepare a long campaign
 
@@ -202,14 +178,13 @@ Before committing substantial CPU time, check that:
 - invalid input returns normally unless invalid input crashing is the bug;
 - the generator creates useful values without excessive rejection;
 - input sizes and allocations are bounded;
-- any native or platform code is deterministic and independent between calls;
-- no native thread or other work survives the call;
+- every generated input terminates or is caught by the timeout;
 - a one-minute run gains coverage without immediate hangs or memory growth;
 - a deliberate temporary `crash` is saved, shown, replayed, and minimized as
   expected; and
 - the corpus and fixed failures have a clear place in the repository and CI.
 
-## Use the native interface
+## Use the libFuzzer interface
 
 `TARGET raw [LIBFUZZER_ARG...]` passes arguments directly to the embedded
 libFuzzer CLI. Run this for its complete option list:
@@ -219,25 +194,12 @@ TARGET raw -help=1
 ```
 
 Prefer `run`, `show`, `replay`, `minimize`, and `reduce-corpus` for the normal
-workflow. Native flags such as `-max_total_time` and `-max_len` belong behind
+workflow. Low-level flags such as `-max_total_time` and `-max_len` belong behind
 `raw`; `run` accepts the stable friendly options listed above. `raw` is an
 escape hatch for libFuzzer features the friendly command layer does not yet
 expose directly.
 
 ## Further reading
 
-- [Roc's static-dispatch language reference](https://github.com/roc-lang/roc/blob/main/docs/langref/static-dispatch.md)
-  explains associated methods, compile-time resolution, and package-defined
-  method requirements.
-- [Roc's `Json.parse` implementation](https://github.com/roc-lang/roc/blob/main/src/build/roc/Builtin.roc)
-  shows the `parser_for` constraint and compile-time method selection that
-  inspired `generator_for`.
-- [roc-random's record-builder example](https://github.com/kili-ilo/roc-random/blob/main/examples/record-builder.roc)
-  shows the same `map2`-based syntax used to assemble generated records.
 - [LLVM libFuzzer documentation](https://llvm.org/docs/LibFuzzer.html) covers
   the in-process execution model, options, corpus behavior, output, and FAQ.
-- [Google's introduction to fuzzing](https://github.com/google/fuzzing/blob/master/docs/intro-to-fuzzing.md)
-  explains target selection and sanitizer-based failure detection.
-- [OSS-Fuzz ideal integration](https://google.github.io/oss-fuzz/advanced-topics/ideal-integration/)
-  gives maintenance guidance for targets, corpora, dictionaries, regression
-  testing, coverage, and performance.

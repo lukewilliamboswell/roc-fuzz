@@ -1,83 +1,105 @@
-# Contributing to the self-contained runner spike
+# Contributing to roc-fuzz
 
-The spike has four layers:
+The platform has four layers:
 
-- `platform/Fuzz.roc` defines typed generators and statically dispatched target construction.
-- `platform/Target.roc` is the type-erased closure boundary used by the platform.
-- `platform/main.roc` exports `name`, `run`, and `show` and links only an x64-musl executable.
-- `platform/host/main.zig` adapts generated Roc ABI calls to libFuzzer and translates the friendly CLI into native libFuzzer modes.
+- `platform/Fuzz.roc` defines typed generators, record-builder composition,
+  and statically dispatched target construction.
+- `platform/Target.roc` erases the app's input type behind closures.
+- `platform/main.roc` exposes the byte-oriented native boundary and declares
+  only the x64-musl target.
+- `src/main.zig` adapts generated Roc ABI calls to libFuzzer and
+  translates the friendly runner commands.
 
-`platform/host/roc_platform_abi.zig` is generated from Roc's `ZigGlue.roc`.
+`src/roc_platform_abi.zig` is generated from Roc's `ZigGlue.roc`.
 Do not hand-edit it.
 
 ## Toolchain
 
-Use the sibling worktree for
-[roc-lang/roc#10657](https://github.com/roc-lang/roc/pull/10657). The default
-paths below match this checkout:
+Development currently requires:
+
+- a Roc compiler containing
+  [roc-lang/roc#10657](https://github.com/roc-lang/roc/pull/10657);
+- Zig 0.16.0;
+- Python 3.10 or newer; and
+- GNU `ar`.
+
+Build the platform inputs with:
+
+```sh
+python3 scripts/build_platform.py
+```
+
+The build has one target: `x86_64-linux-musl`. It compiles the thin Zig host,
+the checksum-pinned `libfuzzer-sys` 0.4.5 source, and Zig's static musl and C++
+runtime inputs. Generated archives under `platform/targets/x64musl` are
+ignored by Git and included in release bundles.
+
+The fully static build excludes `FuzzerInterceptors.cpp`. Its wrappers locate
+libc functions through `dlsym`, which is not usable in the static musl
+executable. The standard libFuzzer scheduler, mutators, corpus engine, crash
+handling, minimizer, and merge engine remain unchanged. Roc's compare and
+switch instrumentation still supplies value feedback.
+
+## Regenerate ABI glue
+
+Regenerate glue only when the Roc natural ABI changes:
 
 ```sh
 export ROC_SOURCE="$PWD/../roc-worktrees/roc-fuzz-sancov"
 export ROC="$ROC_SOURCE/zig-out/bin/roc"
-python3 scripts/build_spike.py
+python3 scripts/build_platform.py --regenerate-glue
 ```
 
-`build_spike.py` intentionally has one target: `x86_64-linux-musl`. It
-regenerates glue with the PR compiler, compiles `libhost.a`, compiles the
-`libfuzzer-sys` 0.4.5 source pinned by `fuzz/Cargo.lock`, and copies Zig's
-static musl and C++ runtime inputs. These binary target inputs are ignored by
-Git in this spike; a release job would place them in the published platform
-bundle.
-
-`FuzzerInterceptors.cpp` is deliberately excluded. Its wrappers use `dlsym` to
-find the underlying libc symbols and fail in a fully static musl process. Do
-not re-enable it without a static-link-compatible implementation and a
-mutation smoke test; the failure presents as a null call from an intercepted
-libc function. Roc's compiler-provided compare and switch tracing remains
-enabled without it.
+Review the generated Zig diff and rebuild every example after regeneration.
 
 ## Validation
 
-Run the typed checks and exact default-target build:
+Use the compiler under development through `ROC`:
 
 ```sh
-"$ROC" check spike/typed_target.roc
-"$ROC" check spike/crashing_target.roc
-"$ROC" build --fuzz spike/typed_target.roc
-file typed_target
-ldd typed_target
-./typed_target --help
-./typed_target run --runs=100
+export ROC=/path/to/roc
+python3 scripts/test.py --operation validate --verbose
+python3 scripts/test.py --operation build --verbose
+python3 scripts/test.py --operation seed
+python3 scripts/test.py --operation fuzz --max-total-time 2
 ```
 
-`file` should report a statically linked x86-64 ELF, and `ldd` should report
-that it is not dynamic. The run summary should report one or more coverage
-counter regions and save novel inputs under `.roc-fuzz/`.
+Validation checks the exact example inventory, Roc formatting and types.
+Building creates every self-contained executable and verifies that it is a
+static x86-64 ELF. Seed validation renders and replays each deterministic input.
+The fuzz operation runs short campaigns and verifies that an intentional Roc
+failure is saved byte-for-byte with follow-up commands.
 
-Exercise rendering and minimization with:
+Every example runs the `check`, `test`, `build`, `seed`, and `fuzz` stages by
+default. A temporary exception must use a `skip` entry in `test_spec.json` with
+both a concrete reason and a full GitHub issue URL. The driver rejects
+unexplained skips; skipping a prerequisite also requires skipping its dependent
+stages.
+
+The former byte-oriented builtin targets live under `examples/builtins/` and
+use `Fuzz.from_bytes`. This keeps their existing properties in the regression
+matrix. Top-level examples are an end-user gallery and should prefer
+`Fuzz.target`, typed generators, and the `.Fuzz` record builder. A multi-file
+example must live in its own directory with `main.roc` as its app root; the test
+driver enforces this so editor tooling can discover the project naturally.
+
+## Release bundle
+
+Build the target inputs and create a Roc platform bundle with:
 
 ```sh
-./typed_target show .roc-version
-"$ROC" build --fuzz spike/crashing_target.roc
-./crashing_target replay .roc-version
-./crashing_target minimize .roc-version /tmp/roc-fuzz-minimized.input
-./crashing_target replay /tmp/roc-fuzz-minimized.input
-./typed_target reduce-corpus .roc-fuzz/corpus /tmp/roc-fuzz-reduced
+python3 scripts/bundle.py --output-dir dist
 ```
 
-The last replay should reproduce the Roc crash with a smaller file.
+`bundle.py` verifies the pinned Roc version, runs `build_platform.py`, and
+then calls `roc bundle`. Test the resulting bundle from an external target
+before publishing it.
 
 ## Design constraints
 
-Static dispatch happens only while `Fuzz.target` is specialized for the app's
-input type. `Target` then erases that type behind closures, which prevents the
-native host ABI from depending on every app's record or tag-union layout.
+Static dispatch happens while `Fuzz.target` is specialized for the app's
+input type. `Target` then erases that type, preventing the native ABI from
+depending on every app record or tag-union layout.
 
-The x64-musl restriction is expressed directly in `platform/main.roc`; there is
-no glibc fallback. Keep host calls behind generated glue so changes to Roc's
-natural ABI are caught by regeneration and compilation.
-
-The root Rust host and cargo-fuzz scripts remain as the pre-spike implementation
-for comparison. They are not linked into the self-contained executable. Their
-`cargo test` path still requires the old separately built `ROC_FUZZ_ARCHIVE`;
-use the validation commands above for this spike.
+The platform is intentionally x64-musl only. Keep native calls behind generated
+glue so compiler ABI changes are caught by regeneration and compilation.

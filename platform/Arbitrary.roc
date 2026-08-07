@@ -1,16 +1,33 @@
-## Deterministically turns a fuzzer byte stream into values with varied Roc
-## allocation shapes. Entropy is consumed from the end when selecting sizes so
-## coverage-guided fuzzers can mutate value bytes without also moving boundaries.
+## Advanced deterministic decoding of raw fuzzer bytes.
+##
+## Most application targets should use the typed generators in `Fuzz` instead.
+## This module is exposed for custom generators and for maintaining legacy
+## byte-oriented quality targets.
+##
+## Entropy is consumed from the end when selecting sizes so coverage-guided
+## mutations can change value bytes without also moving their boundaries.
 Arbitrary := [Unstructured(List(U8))].{
+
+	## Wrap raw fuzzer bytes in a fresh decoder state.
 	new : List(U8) -> Arbitrary
 	new = |data| Unstructured(data)
 
+	## Return every byte that has not yet been consumed.
+	remaining : Arbitrary -> List(U8)
+	remaining = |Unstructured(data)| data
+
+	## Return the number of unconsumed bytes.
 	len : Arbitrary -> U64
 	len = |Unstructured(data)| List.len(data)
 
+	## Report whether all input bytes have been consumed.
 	is_empty : Arbitrary -> Bool
 	is_empty = |unstructured| unstructured.len() == 0
 
+	## Consume exactly `requested_len` bytes from the front of the input.
+	##
+	## `NotEnoughData(available)` reports how many bytes remained when the request
+	## could not be satisfied.
 	bytes : Arbitrary, U64 -> Try({ value : List(U8), state : Arbitrary }, [NotEnoughData(U64), ..])
 	bytes = |Unstructured(data), requested_len| {
 		if List.len(data) >= requested_len {
@@ -21,6 +38,11 @@ Arbitrary := [Unstructured(List(U8))].{
 		}
 	}
 
+	## Decode a `U64` in the inclusive range from `start` through `end`.
+	##
+	## Range-selection bytes are consumed from the end of the input. Exhausted
+	## input deterministically selects the start of the range. This function
+	## crashes if `start` is greater than `end`.
 	u64_in_inclusive_range : Arbitrary, U64, U64 -> { value : U64, state : Arbitrary }
 	u64_in_inclusive_range = |Unstructured(data), start, end| {
 		if start > end {
@@ -56,6 +78,9 @@ Arbitrary := [Unstructured(List(U8))].{
 		{ value: start.plus_wrap(offset), state: Unstructured($input) }
 	}
 
+	## Choose `True` approximately `numerator / denominator` of the time.
+	##
+	## `denominator` must be greater than zero and `numerator` must not exceed it.
 	ratio : Arbitrary, U64, U64 -> { value : Bool, state : Arbitrary }
 	ratio = |unstructured, numerator, denominator| {
 		if numerator > denominator {
@@ -66,6 +91,9 @@ Arbitrary := [Unstructured(List(U8))].{
 		{ value: value > denominator - numerator, state }
 	}
 
+	## Choose a byte length that fits in the remaining input.
+	##
+	## This is the internal length decoder used by list and string generation.
 	arbitrary_byte_size : Arbitrary -> { value : U64, state : Arbitrary }
 	arbitrary_byte_size = |Unstructured(data)| {
 		data_len = List.len(data)
@@ -89,6 +117,9 @@ Arbitrary := [Unstructured(List(U8))].{
 		{ value, state: Unstructured(before) }
 	}
 
+	## Return the next power of two above `n`, capped at `2^63`.
+	##
+	## This helper models allocation capacities and does not consume fuzzer input.
 	next_power_of_two : U64 -> U64
 	next_power_of_two = |n| {
 		var $power = 1
@@ -98,6 +129,10 @@ Arbitrary := [Unstructured(List(U8))].{
 		$power
 	}
 
+	## Decode a byte list while varying its length, capacity, and slice shape.
+	##
+	## The varied allocation shapes help exercise Roc's copy-on-write collection
+	## implementations, not just operations on list contents.
 	arbitrary_list_u8 : Arbitrary -> { value : List(U8), state : Arbitrary }
 	arbitrary_list_u8 = |unstructured| {
 		{ value: seamless_slice, state: after_slice_choice } = unstructured.ratio(1, 2)
@@ -122,6 +157,10 @@ Arbitrary := [Unstructured(List(U8))].{
 		{ value, state }
 	}
 
+	## Decode a valid UTF-8 string while varying its length and capacity.
+	##
+	## If the chosen bytes contain invalid UTF-8, the valid prefix becomes the
+	## generated string and the remaining state starts at the invalid byte.
 	arbitrary_str : Arbitrary -> { value : Str, state : Arbitrary }
 	arbitrary_str = |unstructured| {
 		{ value: size, state: after_size } = unstructured.arbitrary_byte_size()

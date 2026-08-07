@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -46,6 +47,11 @@ def main() -> None:
 
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "build_platform.py")],
+        cwd=ROOT,
+        check=True,
+    )
     result = subprocess.run(
         [
             args.roc,

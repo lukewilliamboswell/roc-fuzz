@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
+"""Build and run one self-contained roc-fuzz target."""
+
 from __future__ import annotations
 
 import argparse
 import os
-import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -12,84 +14,59 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Fuzz an app that uses the released roc-fuzz bundle")
-    parser.add_argument("app", type=Path, help="Roc app with main : List(U8) -> U8")
-    parser.add_argument(
-        "--corpus",
-        type=Path,
-        help="persistent corpus directory (default: .roc-fuzz-corpus/<app name>)",
-    )
-    parser.add_argument("--max-total-time", type=int, help="stop after this many seconds")
-    parser.add_argument("--runs", type=int, help="stop after this many executions")
-    parser.add_argument("--libfuzzer-seed", type=int, help="deterministic libFuzzer random seed")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("app", type=Path, help="Roc app exposing target : Target")
+    parser.add_argument("--corpus", type=Path)
+    parser.add_argument("--time", type=int)
+    parser.add_argument("--runs", type=int)
+    parser.add_argument("--max-input-size", type=int)
+    parser.add_argument("--memory-limit", type=int)
+    parser.add_argument("--timeout", type=int)
+    parser.add_argument("--seed", type=int)
+    parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
 
     app = args.app.resolve()
     if not app.is_file() or app.suffix != ".roc":
         raise SystemExit(f"Roc app does not exist: {app}")
-    if args.max_total_time is not None and args.max_total_time < 1:
-        raise SystemExit("--max-total-time must be at least one second")
+    if args.time is not None and args.time < 0:
+        raise SystemExit("--time must be non-negative")
     if args.runs is not None and args.runs < 1:
         raise SystemExit("--runs must be at least one")
-    if args.max_total_time is not None and args.runs is not None:
-        raise SystemExit("choose --max-total-time or --runs, not both")
-    if shutil.which("cargo-fuzz") is None and "fuzz" not in subprocess.check_output(
-        ["cargo", "--list"], text=True
-    ):
-        raise SystemExit("cargo-fuzz is not installed; run `cargo install cargo-fuzz`")
 
-    corpus = (
-        args.corpus.resolve()
-        if args.corpus is not None
-        else Path.cwd() / ".roc-fuzz-corpus" / app.stem
+    subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "build_platform.py")],
+        cwd=ROOT,
+        check=True,
     )
-    corpus.mkdir(parents=True, exist_ok=True)
 
-    archive_dir = ROOT / "target" / "roc-fuzz" / app.stem
-    archive_dir.mkdir(parents=True, exist_ok=True)
-    archive = archive_dir / "libroc_fuzz.a"
+    output_dir = ROOT / ".test-cache" / "run"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    executable = output_dir / app.stem
     roc = os.environ.get("ROC", "roc")
-    build = subprocess.run(
-        [
-            roc,
-            "build",
-            str(app),
-            "--fuzz",
-            "--target=x64musl",
-            "--opt=speed",
-            f"--output={archive}",
-        ],
+    subprocess.run(
+        [roc, "build", "--fuzz", str(app), f"--output={executable}"],
         cwd=Path.cwd(),
+        check=True,
     )
-    if build.returncode != 0:
-        raise SystemExit(build.returncode)
 
-    environment = os.environ.copy()
-    environment["ROC_FUZZ_ARCHIVE"] = str(archive.resolve())
-    environment.pop("ROC_FUZZ_APP", None)
-    environment.pop("ROC_FUZZ_TARGET", None)
-    environment.pop("ROC_FUZZ_INSTRUMENT", None)
-
-    command = [
-        "cargo",
-        "fuzz",
-        "run",
-        f"--fuzz-dir={ROOT / 'fuzz'}",
-        "--sanitizer=none",
-        "roc-fuzz",
-        str(corpus),
-    ]
-    libfuzzer_args: list[str] = []
-    if args.max_total_time is not None:
-        libfuzzer_args.append(f"-max_total_time={args.max_total_time}")
-    if args.runs is not None:
-        libfuzzer_args.append(f"-runs={args.runs}")
-    if args.libfuzzer_seed is not None:
-        libfuzzer_args.append(f"-seed={args.libfuzzer_seed}")
-    if libfuzzer_args:
-        command.extend(["--", *libfuzzer_args])
-
-    raise SystemExit(subprocess.call(command, cwd=Path.cwd(), env=environment))
+    command = [str(executable), "run"]
+    if args.corpus is not None:
+        command.append(str(args.corpus.resolve()))
+    for name, value in (
+        ("time", args.time),
+        ("runs", args.runs),
+        ("max-input-size", args.max_input_size),
+        ("memory-limit", args.memory_limit),
+        ("timeout", args.timeout),
+        ("seed", args.seed),
+    ):
+        if value is not None:
+            command.append(f"--{name}={value}")
+    if args.verbose:
+        command.append("--print-final-stats")
+        print("+", " ".join(command), flush=True)
+    raise SystemExit(subprocess.call(command, cwd=Path.cwd()))
 
 
 if __name__ == "__main__":
