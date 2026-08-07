@@ -106,7 +106,13 @@
       "name": "strToF64",
       "path": "examples/builtins/strToF64.roc",
       "seed_hex": "2d312e37393736393331333438363233313537653330380807",
-      "libfuzzer_seed": 1018
+      "libfuzzer_seed": 1018,
+      "skip": {
+        "fuzz": {
+          "reason": "F64.from_str hangs for 30+ minutes on adversarial underscore-heavy decimal literals",
+          "issue": "https://github.com/roc-lang/roc/issues/10660"
+        }
+      }
     },
     {
       "name": "strToI128",
