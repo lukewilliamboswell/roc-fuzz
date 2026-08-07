@@ -55,7 +55,7 @@ def main() -> None:
             "build",
             str(app),
             "--fuzz",
-            "--target=x64glibc",
+            "--target=x64musl",
             "--opt=speed",
             f"--output={archive}",
         ],

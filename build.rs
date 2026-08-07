@@ -67,7 +67,7 @@ fn main() {
     build
         .arg("build")
         .arg(&source)
-        .arg("--target=x64glibc")
+        .arg("--target=x64musl")
         .arg("--opt=speed")
         .arg(format!("--output={}", archive.display()));
     if instrument {
