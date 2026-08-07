@@ -1,63 +1,93 @@
-# Roc-fuzz-internal
+# roc-fuzz
 
-Warning: This repro is being deprecated, but is mostly meant for fuzzing compiler implementations for memory leaks.
+`roc-fuzz` is a coverage-guided software-quality platform for Roc. You write a small Roc function whose input is arbitrary bytes and whose assertions describe the behavior that must always hold; `cargo-fuzz` then explores that function and saves any reproducible crash or failed invariant.
 
+The released workflow supports Linux x86-64 with glibc.
 
-The goal of this repo is to enable fuzzing of roc applications.
-The main target is fuzzing parts of the standard library.
-It should hopefully be able to catch some bugs especially memory safety ones in the zig builtins.
+## Use the released platform
 
-Note: On the sanitizers really only fully catch bugs on linux. If you are on mac, fuzzing is likely to be less productive.
+Install the Roc nightly named in [`.roc-version`](.roc-version) and `cargo-fuzz`:
 
-## Dependencies
-
-This requires [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) which can be installed with: `cargo install cargo-fuzz`
-
-If using any sanitizer other than the fuzzer, it also requires nightly rust to enable.
-
-## How to use
-
-This requires a special build of the compiler with the `sanitizers` feature flag.
-Start by [building roc from source](https://github.com/roc-lang/roc/blob/main/BUILDING_FROM_SOURCE.md):
 ```sh
-cargo build --features sanitizers --bin roc
+cargo install cargo-fuzz
+roc version
 ```
 
-Note: From this point forward, `roc` means the binary generate from the above command in `target/debug/roc`
+Each release publishes a content-addressed Roc platform bundle (`.tar.zst`). Reference that bundle from a quality target in your own project. Replace `<released-bundle-url>` with the URL copied from the release:
 
-Note: If you have `roc` in your path, you should be able to just use the `run.sh` or `run-many.sh` scripts to do everything below automatically.
-That said, the script does require installing [gum](https://github.com/charmbracelet/gum).
+```roc
+app [main] { pf: platform "<released-bundle-url>" }
 
+import pf.Arbitrary
 
-Next, we can use roc to build a fuzz target. They all live in the `roc_targets` directory.
-For building fuzz targets, we need to enable sanitizers. At a minimum, the `cargo-fuzz` sanitizer is required.
-On top of that `address`, `memory`, and `thread` sanitizers are available. I advise using `address` sanitizer in general.
-We can build `strFromUtf8.roc` with:
-```sh
-ROC_SANITIZERS="address,cargo-fuzz" roc build --no-link roc_targets/strFromUtf8.roc
-````
+main : List(U8) -> U8
+main = |data| {
+	input = Arbitrary.new(data).arbitrary_str().value
+	parsed : Try(U64, _)
+	parsed = Json.parse(input)
 
-This will generate an instrumented object file. For this platform we need a static library.
-That can be create with:
-```sh
-ar rcs roc_targets/libroc-fuzz.a roc_targets/libroc-fuzz.o
+	match parsed {
+		Ok(value) => {
+			round_tripped : Try(U64, _)
+			round_tripped = Json.parse(Json.to_str(value))
+			if round_tripped != Ok(value) {
+				crash "JSON U64 changed during a round trip"
+			}
+			0
+		}
+		Err(_) => 1
+	}
+}
 ```
 
-Now that we have the generated static library, we can compile and run the fuzz target (note that this requires the nightly toolchain):
+The required boundary is `main : List(U8) -> U8`. Importing `pf.Arbitrary` is optional, but it is useful for deterministically deriving strings, byte lists, sizes, ratios, and varied allocation shapes from the fuzzer input.
+
+Build the Roc app as an instrumented archive. The output name is intentional: the Rust host links it as `roc_fuzz`.
 
 ```sh
-cargo +nightly fuzz run roc-fuzz
+mkdir -p target/roc-fuzz
+roc build --fuzz --target=x64glibc --opt=speed \
+  quality/json_u64.roc \
+  --output=target/roc-fuzz/libroc_fuzz.a
 ```
 
-## Other Notes
+Create a normal cargo-fuzz target in your Rust project and add the published ABI host crate:
 
-If you switch from fuzzing one applications to another, remember to clear the `fuzz/corpus` and `fuzz/artifacts` directories.
+```sh
+cargo fuzz init
+cargo fuzz add json_u64
+cargo add --manifest-path fuzz/Cargo.toml roc-fuzz@0.1.0
+```
 
+Use this as `fuzz/fuzz_targets/json_u64.rs`:
 
-For more options run `cargo fuzz run --help`.
+```rust
+#![no_main]
 
+use libfuzzer_sys::fuzz_target;
 
-Fuzzing can be done with optimized builds. Just add `--optimize` to the `roc build` invocation and `-O` to the `cargo fuzz run` invocation.
+fuzz_target!(|data: &[u8]| {
+    roc_fuzz::call_roc(data);
+});
+```
 
+Then point the host crate at the archive and run cargo-fuzz independently:
 
-In the future, I hope to add a way to pretty print the crashes. That should help a human understand them better.
+```sh
+ROC_FUZZ_ARCHIVE="$PWD/target/roc-fuzz/libroc_fuzz.a" \
+cargo fuzz run --sanitizer=none json_u64
+```
+
+The absolute `ROC_FUZZ_ARCHIVE` path makes Cargo rerun the host build when the archive changes. `--sanitizer=none` disables additional Rust runtime checking while cargo-fuzz still instruments the Rust harness for coverage; `roc build --fuzz` separately instruments the Roc app and builtins. Pass ordinary libFuzzer options after `--`, for example `-- -max_total_time=60`, and pass a corpus directory before it if you want discoveries retained across runs.
+
+## What is `fuzz/`?
+
+[`fuzz/`](fuzz) is this repository’s conventional cargo-fuzz companion crate and a working example of the setup above. Cargo-fuzz keeps its `#![no_main]` executable separate from the reusable root library, so `fuzz/Cargo.toml` depends on both `libfuzzer-sys` and `roc-fuzz`, while [`fuzz/fuzz_targets/roc-fuzz.rs`](fuzz/fuzz_targets/roc-fuzz.rs) only forwards each input byte slice to `roc_fuzz::call_roc`.
+
+It is not part of the Roc `.tar.zst` bundle or the published Rust host crate. Consumers create the equivalent directory in their own project with `cargo fuzz init`. Its `corpus/` and `artifacts/` subdirectories are cargo-fuzz runtime state and are ignored by Git.
+
+## Included examples
+
+[`examples/`](examples) contains 31 quality targets for modern Roc builtins. They serve as executable examples and as the platform’s regression matrix. Their deterministic seeds and enabled stages live in [`scripts/test_spec.json`](scripts/test_spec.json); four targets for removed legacy APIs remain recorded there with their retirement reasons.
+
+Platform implementation, release bundling, compiler development, the spec driver, and the LLVM coverage change are documented in [CONTRIBUTING.md](CONTRIBUTING.md).

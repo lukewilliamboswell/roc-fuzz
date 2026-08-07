@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [trunk]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pinned-baseline:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Read pinned Roc version
+        run: python scripts/export_roc_version.py
+
+      - name: Install pinned Roc nightly
+        uses: roc-lang/setup-roc@cbe782d6f165b89c87d99f50a59ac4f5f73b4427
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ env.ROC_NIGHTLY_TAG }}
+
+      - name: Show tool versions
+        run: |
+          roc version
+          cargo version
+          python --version
+
+      - name: Validate the complete target spec
+        run: python scripts/test.py --operation validate --verbose
+
+      - name: Build every Roc archive
+        run: python scripts/test.py --operation build --verbose
+
+      - name: Verify publishable Rust host crate
+        run: cargo package

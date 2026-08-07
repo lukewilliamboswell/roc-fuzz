@@ -1,91 +1,70 @@
-#![allow(non_snake_case)]
+mod roc_platform_abi;
 
 use core::ffi::c_void;
-use roc_std::{RocList, RocStr};
+use core::ptr;
+use roc_platform_abi::{make_roc_host, roc_fuzz, DefaultAllocators, DefaultHandlers, RocListWith};
 
-extern "C" {
-    #[link_name = "roc__mainForHost_1_exposed_generic"]
-    fn roc_main(_: &mut u8, _: &mut RocList<u8>);
+/// Pass one libFuzzer input across the generated Roc platform ABI.
+pub fn call_roc(data: &[u8]) -> u8 {
+    let host = make_roc_host(ptr::null_mut());
+    let input = unsafe { RocListWith::<u8, false>::from_slice(data, &host) };
+
+    // The natural ABI transfers ownership of the list to Roc.
+    unsafe { roc_fuzz(input) }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn roc_alloc(size: usize, _alignment: u32) -> *mut c_void {
-    return libc::malloc(size);
+pub extern "C" fn roc_alloc(length: usize, alignment: usize) -> *mut c_void {
+    DefaultAllocators::roc_alloc(ptr::null_mut(), length, alignment)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn roc_realloc(
-    c_ptr: *mut c_void,
-    new_size: usize,
-    _old_size: usize,
-    _alignment: u32,
+pub extern "C" fn roc_dealloc(pointer: *mut c_void, alignment: usize) {
+    DefaultAllocators::roc_dealloc(ptr::null_mut(), pointer, alignment)
+}
+
+#[no_mangle]
+pub extern "C" fn roc_realloc(
+    pointer: *mut c_void,
+    new_length: usize,
+    alignment: usize,
 ) -> *mut c_void {
-    return libc::realloc(c_ptr, new_size);
+    DefaultAllocators::roc_realloc(ptr::null_mut(), pointer, new_length, alignment)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn roc_dealloc(c_ptr: *mut c_void, _alignment: u32) {
-    return libc::free(c_ptr);
+pub extern "C" fn roc_dbg(bytes: *const u8, len: usize) {
+    DefaultHandlers::roc_dbg(ptr::null_mut(), bytes, len)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn roc_panic(msg: &RocStr, tag_id: u32) {
-    match tag_id {
-        0 => {
-            panic!("Roc hit a panic: {}", msg.as_str());
-        }
-        1 => {
-            panic!("The program crashed: {}", msg.as_str());
-        }
-        _ => todo!(),
+pub extern "C" fn roc_expect_failed(bytes: *const u8, len: usize) {
+    abort_with_roc_message("EXPECT FAILED", bytes, len)
+}
+
+#[no_mangle]
+pub extern "C" fn roc_crashed(bytes: *const u8, len: usize) {
+    abort_with_roc_message("CRASHED", bytes, len)
+}
+
+fn abort_with_roc_message(kind: &str, bytes: *const u8, len: usize) -> ! {
+    let message = if len == 0 {
+        &[]
+    } else {
+        assert!(
+            !bytes.is_null(),
+            "Roc passed a null pointer for a nonempty message"
+        );
+        unsafe { core::slice::from_raw_parts(bytes, len) }
+    };
+    eprintln!("[ROC {kind}] {}", String::from_utf8_lossy(message));
+    std::process::abort()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn calls_generated_roc_entrypoint() {
+        assert_eq!(super::call_roc(b"Roc quality smoke test"), 0);
     }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn roc_memcpy(dst: *mut c_void, src: *mut c_void, n: usize) -> *mut c_void {
-    libc::memcpy(dst, src, n)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn roc_memset(dst: *mut c_void, c: i32, n: usize) -> *mut c_void {
-    libc::memset(dst, c, n)
-}
-
-#[cfg(unix)]
-#[no_mangle]
-pub unsafe extern "C" fn roc_getppid() -> libc::pid_t {
-    libc::getppid()
-}
-
-#[cfg(unix)]
-#[no_mangle]
-pub unsafe extern "C" fn roc_mmap(
-    addr: *mut libc::c_void,
-    len: libc::size_t,
-    prot: libc::c_int,
-    flags: libc::c_int,
-    fd: libc::c_int,
-    offset: libc::off_t,
-) -> *mut libc::c_void {
-    libc::mmap(addr, len, prot, flags, fd, offset)
-}
-
-#[cfg(unix)]
-#[no_mangle]
-pub unsafe extern "C" fn roc_shm_open(
-    name: *const libc::c_char,
-    oflag: libc::c_int,
-    mode: libc::mode_t,
-) -> libc::c_int {
-    libc::shm_open(name, oflag, mode as libc::c_uint)
-}
-
-#[no_mangle]
-pub fn call_roc(data: &[u8]) {
-    let mut data = RocList::from_slice(data);
-    let mut out = 0;
-    unsafe { roc_main(&mut out, &mut data) };
-
-    // Roc takes ownership of data and will free it.
-    std::mem::forget(data);
 }
