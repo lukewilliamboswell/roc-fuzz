@@ -14,6 +14,8 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
+from platform_inputs import write_platform_manifest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 LIBFUZZER_VERSION = "0.4.5"
@@ -238,7 +240,9 @@ def main() -> None:
             work,
         )
         copy_zig_runtime(args.zig, target_dir, work)
+    manifest = write_platform_manifest(ROOT)
     print(f"x64-musl platform host ready in {target_dir}")
+    print(f"Updated platform input checksums in {manifest}")
 
 
 if __name__ == "__main__":

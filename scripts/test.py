@@ -9,9 +9,10 @@ import json
 import os
 import re
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
+
+from platform_inputs import validate_platform_inputs
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -208,10 +209,6 @@ def test_targets(roc: str, targets: list[dict[str, object]], verbose: bool) -> N
         run([roc, "test", str(ROOT / str(target["path"]))], verbose=verbose)
 
 
-def build_platform(verbose: bool) -> None:
-    run([sys.executable, str(ROOT / "scripts" / "build_platform.py")], verbose=verbose)
-
-
 def build_target(roc: str, target: dict[str, object], verbose: bool) -> Path:
     output_dir = CACHE / "executables"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -239,7 +236,10 @@ def build_targets(
 ) -> dict[str, Path]:
     if not targets:
         return {}
-    build_platform(verbose)
+    try:
+        validate_platform_inputs(ROOT)
+    except RuntimeError as error:
+        raise TestFailure(str(error)) from error
     return {
         str(target["name"]): build_target(roc, target, verbose) for target in targets
     }

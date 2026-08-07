@@ -118,15 +118,21 @@ distinction in the typed target boundary so the runner can expose that metric.
 
 ## Develop and package
 
-Build the checked-in x64-musl platform inputs with:
+Prebuilt x64-musl platform inputs are versioned under
+`platform/targets/x64musl`. Users and release jobs consume them directly, so
+building a fuzz target does not require Zig, a C++ toolchain, musl, or a local
+libFuzzer installation.
+
+Maintainers regenerate those inputs only when updating the host or toolchain:
 
 ```sh
 python3 scripts/build_platform.py
 ```
 
-The script verifies the checksum-pinned libFuzzer source, builds it and the Zig
-host adapter, and copies Zig's static musl and C++ runtime archives into
-`platform/targets/x64musl`. A release bundle includes those generated inputs.
+The regeneration script verifies the checksum-pinned libFuzzer source, builds
+the Zig host adapter, copies Zig's static musl and C++ runtimes, and refreshes
+`SHA256SUMS`. Commit the regenerated archives and manifest together. Release
+bundles verify and include those versioned inputs without rebuilding them.
 
 Run the repository validation matrix with:
 
@@ -138,5 +144,6 @@ python3 scripts/test.py --operation fuzz --max-total-time 2
 
 Start with the [beginner guide](GUIDE.md) for target design and the normal
 workflow. [Advanced fuzzing](ADVANCED.md) covers campaign tuning, corpora, and
-runtime details. Repository bootstrap and release work are in
-[CONTRIBUTING.md](CONTRIBUTING.md).
+runtime details. The [generated API reference](https://lukewilliamboswell.github.io/roc-fuzz/)
+documents every public module and keeps advanced interfaces clearly labeled.
+Repository bootstrap and release work are in [CONTRIBUTING.md](CONTRIBUTING.md).

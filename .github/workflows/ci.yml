@@ -53,6 +53,13 @@ jobs:
       - name: Validate target sources
         run: python scripts/test.py --operation validate --verbose
 
+      - name: Generate and validate API documentation
+        env:
+          ROC_DOCS_URL_ROOT: /roc-fuzz/main
+        run: |
+          "$ROC" docs --output=.test-cache/docs platform/main.roc
+          python scripts/check_docs.py .test-cache/docs
+
       - name: Build every self-contained target
         run: python scripts/test.py --operation build --verbose
 

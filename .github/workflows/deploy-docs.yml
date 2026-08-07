@@ -1,0 +1,68 @@
+name: Deploy docs to Pages
+
+on:
+  push:
+    branches: [trunk]
+    paths:
+      - ".github/workflows/deploy-docs.yml"
+      - "docs/**"
+      - "platform/**"
+      - "scripts/check_docs.py"
+      - "scripts/restore_release_docs.sh"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy docs
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Read pinned Roc nightly
+        id: roc-version
+        run: echo "tag=$(sed -n '1p' .roc-version)" >> "$GITHUB_OUTPUT"
+
+      - name: Install pinned Roc nightly
+        uses: roc-lang/setup-roc@cbe782d6f165b89c87d99f50a59ac4f5f73b4427
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ steps.roc-version.outputs.tag }}
+
+      - name: Restore released docs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/restore_release_docs.sh temp_docs
+
+      - name: Generate main branch docs
+        env:
+          ROC_DOCS_URL_ROOT: /${{ github.event.repository.name }}/main
+        run: |
+          roc docs --output=temp_docs/main platform/main.roc
+          python3 scripts/check_docs.py temp_docs/main
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: temp_docs
+
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

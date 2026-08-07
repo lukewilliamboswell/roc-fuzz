@@ -11,3 +11,10 @@ __pycache__/
 *.bc
 *.o
 *.a
+
+# The platform is self-contained: these prebuilt x64-musl inputs are source
+# artifacts for consumers and releases, not disposable local build output.
+!/platform/targets/
+!/platform/targets/x64musl/
+!/platform/targets/x64musl/*.o
+!/platform/targets/x64musl/*.a
