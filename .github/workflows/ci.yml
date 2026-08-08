@@ -16,19 +16,27 @@ concurrency:
 jobs:
   self-contained-runner:
     runs-on: ubuntu-22.04
-    env:
-      ROC: ${{ github.workspace }}/roc-compiler/zig-out/bin/roc
 
     steps:
       - name: Checkout roc-fuzz
         uses: actions/checkout@v4
 
-      - name: Checkout Roc coverage compiler
-        uses: actions/checkout@v4
+      - name: Read pinned Roc nightly
+        id: roc-version
+        run: |
+          set -euo pipefail
+          tag="$(sed -n '1p' .roc-version)"
+          if [ -z "$tag" ] || [ "$(wc -l < .roc-version)" -ne 1 ]; then
+            echo ".roc-version must contain exactly one nightly tag" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Install pinned Roc nightly
+        uses: roc-lang/setup-roc@cbe782d6f165b89c87d99f50a59ac4f5f73b4427
         with:
-          repository: roc-lang/roc
-          ref: refs/pull/10657/head
-          path: roc-compiler
+          version: nightly-new-compiler
+          nightly-tag: ${{ steps.roc-version.outputs.tag }}
 
       - name: Install Python
         uses: actions/setup-python@v6
@@ -40,13 +48,9 @@ jobs:
         with:
           version: "0.16.0"
 
-      - name: Build Roc
-        run: zig build roc
-        working-directory: roc-compiler
-
       - name: Show tool versions
         run: |
-          "$ROC" version
+          roc version
           zig version
           python --version
 
@@ -57,7 +61,7 @@ jobs:
         env:
           ROC_DOCS_URL_ROOT: /roc-fuzz/main
         run: |
-          "$ROC" docs --output=.test-cache/docs platform/main.roc
+          roc docs --output=.test-cache/docs platform/main.roc
           python scripts/check_docs.py .test-cache/docs
 
       - name: Build every self-contained target

@@ -5,11 +5,24 @@ on:
     branches: [trunk]
     paths:
       - ".github/workflows/deploy-docs.yml"
+      - ".roc-version"
       - "docs/**"
       - "platform/**"
       - "scripts/check_docs.py"
       - "scripts/restore_release_docs.sh"
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      docs_artifact:
+        description: Docs archive artifact from the calling release workflow
+        required: false
+        default: ""
+        type: string
+      docs_version:
+        description: Version directory contained in the docs archive
+        required: false
+        default: ""
+        type: string
 
 permissions: {}
 
@@ -34,10 +47,12 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Read pinned Roc nightly
+        if: inputs.docs_artifact == ''
         id: roc-version
         run: echo "tag=$(sed -n '1p' .roc-version)" >> "$GITHUB_OUTPUT"
 
       - name: Install pinned Roc nightly
+        if: inputs.docs_artifact == ''
         uses: roc-lang/setup-roc@cbe782d6f165b89c87d99f50a59ac4f5f73b4427
         with:
           version: nightly-new-compiler
@@ -46,14 +61,45 @@ jobs:
       - name: Restore released docs
         env:
           GH_TOKEN: ${{ github.token }}
-        run: ./scripts/restore_release_docs.sh temp_docs
+        run: ./scripts/restore_release_docs.sh www
+
+      - name: Download versioned docs archive
+        if: inputs.docs_artifact != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.docs_artifact }}
+
+      - name: Snapshot existing docs
+        if: inputs.docs_artifact != ''
+        uses: roc-lang/release-package/actions/docs-snapshot@d2560ead9f724bfaabfbc8134b8895e120171064
+        with:
+          docs_root: www
+
+      - name: Install versioned docs archive
+        if: inputs.docs_artifact != ''
+        run: tar -xzf docs.tar.gz -C www
+
+      - name: Update docs index
+        if: inputs.docs_artifact != ''
+        uses: roc-lang/release-package/actions/docs-index@d2560ead9f724bfaabfbc8134b8895e120171064
+        with:
+          docs_root: www
+          docs_version: ${{ inputs.docs_version }}
 
       - name: Generate main branch docs
+        if: inputs.docs_artifact == ''
         env:
           ROC_DOCS_URL_ROOT: /${{ github.event.repository.name }}/main
         run: |
-          roc docs --output=temp_docs/main platform/main.roc
-          python3 scripts/check_docs.py temp_docs/main
+          roc docs --output=www/main platform/main.roc
+          python3 scripts/check_docs.py www/main
+
+      - name: Validate versioned docs
+        if: inputs.docs_artifact != ''
+        uses: roc-lang/release-package/actions/docs-validate@d2560ead9f724bfaabfbc8134b8895e120171064
+        with:
+          docs_root: www
+          docs_version: ${{ inputs.docs_version }}
 
       - name: Setup Pages
         uses: actions/configure-pages@v6
@@ -61,7 +107,7 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:
-          path: temp_docs
+          path: www
 
       - name: Deploy Pages
         id: deployment

@@ -62,52 +62,12 @@ jobs:
             exit 1
           fi
 
-  compiler:
-    name: Build Roc coverage compiler
+  build:
+    name: Build and validate release bundle
     needs: release-info
     runs-on: ubuntu-22.04
     permissions:
       contents: read
-
-    steps:
-      - name: Checkout Roc coverage compiler
-        uses: actions/checkout@v7
-        with:
-          repository: roc-lang/roc
-          ref: refs/pull/10657/head
-          path: roc-compiler
-
-      - name: Install Zig
-        uses: mlugg/setup-zig@8d6198c65fb0feaa111df26e6b467fea8345e46f
-        with:
-          version: "0.16.0"
-
-      - name: Build Roc
-        run: zig build roc
-        working-directory: roc-compiler
-
-      - name: Archive compiler
-        run: tar -czf roc-compiler.tar.gz -C roc-compiler/zig-out/bin roc
-
-      - name: Upload compiler
-        uses: actions/upload-artifact@v7
-        with:
-          name: roc-coverage-compiler
-          path: roc-compiler.tar.gz
-          if-no-files-found: error
-          retention-days: 7
-
-  build:
-    name: Build and validate release bundle
-    needs: [release-info, compiler]
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: read
-    env:
-      ROC: ${{ github.workspace }}/.release/compiler/roc
-      # The coverage compiler is the intentional development build tracked by
-      # roc-lang/roc#10657 until that work is available in a pinned nightly.
-      ROC_ALLOW_UNPINNED: "1"
     outputs:
       test_matrix: ${{ steps.bundles.outputs.test_matrix }}
 
@@ -122,14 +82,11 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Download compiler
-        uses: actions/download-artifact@v8
+      - name: Install pinned Roc nightly
+        uses: roc-lang/setup-roc@cbe782d6f165b89c87d99f50a59ac4f5f73b4427
         with:
-          name: roc-coverage-compiler
-          path: .release/compiler
-
-      - name: Extract compiler
-        run: tar -xzf .release/compiler/roc-compiler.tar.gz -C .release/compiler
+          version: nightly-new-compiler
+          nightly-tag: ${{ needs.release-info.outputs.roc_nightly }}
 
       - name: Validate source and unit tests
         run: python scripts/test.py --operation validate --verbose
@@ -187,7 +144,7 @@ jobs:
 
   test-bundles:
     name: Test packaged platform (${{ matrix.os }})
-    needs: [release-info, compiler, build]
+    needs: [release-info, build]
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -195,9 +152,6 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJson(needs.build.outputs.test_matrix) }}
-    env:
-      ROC: ${{ github.workspace }}/.release/compiler/roc
-
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -207,14 +161,11 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Download compiler
-        uses: actions/download-artifact@v8
+      - name: Install pinned Roc nightly
+        uses: roc-lang/setup-roc@cbe782d6f165b89c87d99f50a59ac4f5f73b4427
         with:
-          name: roc-coverage-compiler
-          path: .release/compiler
-
-      - name: Extract compiler
-        run: tar -xzf .release/compiler/roc-compiler.tar.gz -C .release/compiler
+          version: nightly-new-compiler
+          nightly-tag: ${{ needs.release-info.outputs.roc_nightly }}
 
       - name: Download release bundle
         uses: actions/download-artifact@v8
@@ -331,60 +282,11 @@ jobs:
     name: Publish versioned API docs
     needs: [release-info, publish-release]
     if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
     permissions:
       contents: read
       pages: write
       id-token: write
-    concurrency:
-      group: pages
-      cancel-in-progress: false
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Download docs archive
-        uses: actions/download-artifact@v8
-        with:
-          name: platform-docs
-
-      - name: Restore released docs
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: ./scripts/restore_release_docs.sh www
-
-      - name: Snapshot existing docs
-        uses: roc-lang/release-package/actions/docs-snapshot@d2560ead9f724bfaabfbc8134b8895e120171064
-        with:
-          docs_root: www
-
-      - name: Install current docs archive
-        run: tar -xzf docs.tar.gz -C www
-
-      - name: Update docs index
-        uses: roc-lang/release-package/actions/docs-index@d2560ead9f724bfaabfbc8134b8895e120171064
-        with:
-          docs_root: www
-          docs_version: ${{ needs.release-info.outputs.docs_version }}
-
-      - name: Validate Pages tree
-        uses: roc-lang/release-package/actions/docs-validate@d2560ead9f724bfaabfbc8134b8895e120171064
-        with:
-          docs_root: www
-          docs_version: ${{ needs.release-info.outputs.docs_version }}
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v6
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: www
-
-      - name: Deploy Pages
-        id: deployment
-        uses: actions/deploy-pages@v5
+    uses: ./.github/workflows/deploy-docs.yml
+    with:
+      docs_artifact: platform-docs
+      docs_version: ${{ needs.release-info.outputs.docs_version }}
