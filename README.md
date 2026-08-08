@@ -1,63 +1,149 @@
-# Roc-fuzz-internal
+# roc-fuzz
 
-Warning: This repro is being deprecated, but is mostly meant for fuzzing compiler implementations for memory leaks.
+`roc-fuzz` is a typed, coverage-guided software-quality platform for Roc.
+It currently supports Linux x86-64 with musl.
 
+A target builds directly into a self-contained executable:
 
-The goal of this repo is to enable fuzzing of roc applications.
-The main target is fuzzing parts of the standard library.
-It should hopefully be able to catch some bugs especially memory safety ones in the zig builtins.
-
-Note: On the sanitizers really only fully catch bugs on linux. If you are on mac, fuzzing is likely to be less productive.
-
-## Dependencies
-
-This requires [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) which can be installed with: `cargo install cargo-fuzz`
-
-If using any sanitizer other than the fuzzer, it also requires nightly rust to enable.
-
-## How to use
-
-This requires a special build of the compiler with the `sanitizers` feature flag.
-Start by [building roc from source](https://github.com/roc-lang/roc/blob/main/BUILDING_FROM_SOURCE.md):
 ```sh
-cargo build --features sanitizers --bin roc
+roc build --fuzz my_target_app.roc
+./my_target_app --help
+./my_target_app run
 ```
 
-Note: From this point forward, `roc` means the binary generate from the above command in `target/debug/roc`
+The executable contains the Roc target, the upstream libFuzzer engine, and the
+small Roc ABI/command adapter. A normal run needs no Cargo project, external
+harness, or second linking step. It is bounded to 60 seconds by default and
+keeps its corpus under `.roc-fuzz/`.
 
-Note: If you have `roc` in your path, you should be able to just use the `run.sh` or `run-many.sh` scripts to do everything below automatically.
-That said, the script does require installing [gum](https://github.com/charmbracelet/gum).
+This platform requires the compiler coverage implementation from
+[roc-lang/roc#10657](https://github.com/roc-lang/roc/pull/10657).
 
+## Origins and acknowledgments
 
-Next, we can use roc to build a fuzz target. They all live in the `roc_targets` directory.
-For building fuzz targets, we need to enable sanitizers. At a minimum, the `cargo-fuzz` sanitizer is required.
-On top of that `address`, `memory`, and `thread` sanitizers are available. I advise using `address` sanitizer in general.
-We can build `strFromUtf8.roc` with:
-```sh
-ROC_SANITIZERS="address,cargo-fuzz" roc build --no-link roc_targets/strFromUtf8.roc
-````
+The foundational and exploratory work for roc-fuzz was created by [Brendan
+Hansknecht](https://github.com/bhansconnect). Brendan established the original Roc fuzzing
+integration, arbitrary input machinery, quality-target suite, and the early
+[trophy case](trophy-case/README.md) demonstrating the bugs this approach could
+find.
 
-This will generate an instrumented object file. For this platform we need a static library.
-That can be create with:
-```sh
-ar rcs roc_targets/libroc-fuzz.a roc_targets/libroc-fuzz.o
+The platform in this repository extends Brendan's experiment into a more
+idiomatic modern Roc workflow: typed generators, statically dispatched
+`generator_for` methods, record builders, and a self-contained executable
+built directly with `roc build --fuzz`. This work would not exist without the
+foundation he developed.
+
+## Define a typed target
+
+The application exposes `target : Target`. Its input type can provide a
+statically dispatched `generator_for` method:
+
+```roc
+app [target] { fuzz: platform "path/to/roc-fuzz/platform/main.roc" }
+
+import fuzz.Fuzz
+
+Input := { bytes : List(U8), radix : U8 }.{
+	generator_for : Fuzz.FuzzEncoding -> Fuzz.Generator(Input)
+	generator_for = |_| {
+		{
+			bytes: Fuzz.bytes,
+			radix: Fuzz.u8_in(2, 36),
+		}.Fuzz
+	}
+}
+
+test : Input -> Fuzz.Outcome
+test = |input| {
+	if List.is_empty(input.bytes) Fuzz.reject else Fuzz.keep
+}
+
+target = Fuzz.target({
+	name: "typed-target",
+	test,
+	show: |input| Str.inspect(input),
+})
 ```
 
-Now that we have the generated static library, we can compile and run the fuzz target (note that this requires the nightly toolchain):
+The `.Fuzz` record builder combines any number of field generators through
+`Fuzz.map2`. `Fuzz.target` resolves `Input.generator_for` at compile time,
+following the same static-dispatch pattern as `Json.parser_for`. For local
+structural inputs, `Fuzz.target_with` accepts an explicit generator.
 
-```sh
-cargo +nightly fuzz run roc-fuzz
+Existing byte-oriented quality targets can migrate with `Fuzz.from_bytes`
+without changing their property immediately. New targets should prefer typed
+generators because they make the tested input domain visible in the API.
+
+## Examples
+
+The end-user gallery demonstrates several common target shapes:
+
+- [`stringSplitRoundTrip.roc`](examples/stringSplitRoundTrip.roc) uses static
+  generator dispatch and a record builder for a round-trip property.
+- [`jsonRoundTrip.roc`](examples/jsonRoundTrip.roc) uses an explicit generator
+  for a single value.
+- [`parserRobustness.roc`](examples/parserRobustness.roc) treats both successful
+  and failed parses as ordinary outcomes while looking for crashes and hangs.
+- [`listConcatLength.roc`](examples/listConcatLength.roc) checks an invariant on
+  generated collections.
+- [`stack/main.roc`](examples/stack/main.roc) targets code in a separate Roc
+  module and shows the required `main.roc` layout for a multi-file example.
+
+The focused builtin regression targets are retained under
+[`examples/builtins/`](examples/builtins/). They intentionally use the lower-level
+`Arbitrary` API and are useful for compiler and builtin validation, but are not
+the recommended starting point for application authors.
+
+## Runner commands
+
+```text
+TARGET run [CORPUS] [OPTION...]
+TARGET show INPUT
+TARGET replay INPUT
+TARGET minimize INPUT OUTPUT
+TARGET reduce-corpus INPUT OUTPUT
+TARGET raw [LIBFUZZER_ARG...]
 ```
 
-## Other Notes
+Friendly run options include `--time`, `--runs`, `--max-input-size`,
+`--memory-limit`, `--timeout`, `--dictionary`, and `--seed`.
+Use `--time=0` for an intentionally unbounded campaign. Low-level libFuzzer
+flags remain available through `raw`.
 
-If you switch from fuzzing one applications to another, remember to clear the `fuzz/corpus` and `fuzz/artifacts` directories.
+When an explicit Roc failure is saved, the runner prints ready-to-run `show`,
+`replay`, and `minimize` commands.
 
+Rejection-rate reporting remains a follow-up. `Fuzz.reject` already records the
+distinction in the typed target boundary so the runner can expose that metric.
 
-For more options run `cargo fuzz run --help`.
+## Develop and package
 
+Prebuilt x64-musl platform inputs are versioned under
+`platform/targets/x64musl`. Users and release jobs consume them directly, so
+building a fuzz target does not require Zig, a C++ toolchain, musl, or a local
+libFuzzer installation.
 
-Fuzzing can be done with optimized builds. Just add `--optimize` to the `roc build` invocation and `-O` to the `cargo fuzz run` invocation.
+Maintainers regenerate those inputs only when updating the host or toolchain:
 
+```sh
+python3 scripts/build_platform.py
+```
 
-In the future, I hope to add a way to pretty print the crashes. That should help a human understand them better.
+The regeneration script verifies the checksum-pinned libFuzzer source, builds
+the Zig host adapter, copies Zig's static musl and C++ runtimes, and refreshes
+`SHA256SUMS`. Commit the regenerated archives and manifest together. Release
+bundles verify and include those versioned inputs without rebuilding them.
+
+Run the repository validation matrix with:
+
+```sh
+python3 scripts/test.py --operation validate
+python3 scripts/test.py --operation build
+python3 scripts/test.py --operation fuzz --max-total-time 2
+```
+
+Start with the [beginner guide](GUIDE.md) for target design and the normal
+workflow. [Advanced fuzzing](ADVANCED.md) covers campaign tuning, corpora, and
+runtime details. The [generated API reference](https://lukewilliamboswell.github.io/roc-fuzz/)
+documents every public module and keeps advanced interfaces clearly labeled.
+Repository bootstrap and release work are in [CONTRIBUTING.md](CONTRIBUTING.md).

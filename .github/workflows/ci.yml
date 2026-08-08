@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [trunk]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  self-contained-runner:
+    runs-on: ubuntu-22.04
+    env:
+      ROC: ${{ github.workspace }}/roc-compiler/zig-out/bin/roc
+
+    steps:
+      - name: Checkout roc-fuzz
+        uses: actions/checkout@v4
+
+      - name: Checkout Roc coverage compiler
+        uses: actions/checkout@v4
+        with:
+          repository: roc-lang/roc
+          ref: refs/pull/10657/head
+          path: roc-compiler
+
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: "0.16.0"
+
+      - name: Build Roc
+        run: zig build roc
+        working-directory: roc-compiler
+
+      - name: Show tool versions
+        run: |
+          "$ROC" version
+          zig version
+          python --version
+
+      - name: Validate target sources
+        run: python scripts/test.py --operation validate --verbose
+
+      - name: Generate and validate API documentation
+        env:
+          ROC_DOCS_URL_ROOT: /roc-fuzz/main
+        run: |
+          "$ROC" docs --output=.test-cache/docs platform/main.roc
+          python scripts/check_docs.py .test-cache/docs
+
+      - name: Build every self-contained target
+        run: python scripts/test.py --operation build --verbose
+
+      - name: Smoke-test libFuzzer and failure artifacts
+        run: python scripts/test.py --operation fuzz --max-total-time 1 --verbose

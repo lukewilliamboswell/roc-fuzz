@@ -1,0 +1,251 @@
+{
+  "targets": [
+    {
+      "name": "jsonToDec",
+      "path": "examples/builtins/jsonToDec.roc",
+      "seed_hex": "7b226e223a312e357d0901",
+      "libfuzzer_seed": 1001
+    },
+    {
+      "name": "jsonToStr",
+      "path": "examples/builtins/jsonToStr.roc",
+      "seed_hex": "22526f63f09f90a6220901",
+      "libfuzzer_seed": 1002
+    },
+    {
+      "name": "jsonToU64",
+      "path": "examples/builtins/jsonToU64.roc",
+      "seed_hex": "31383434363734343037333730393535313631350901",
+      "libfuzzer_seed": 1003
+    },
+    {
+      "name": "listConcat",
+      "path": "examples/builtins/listConcat.roc",
+      "seed_hex": "000102030405060708090a0b0c0d0e0f",
+      "libfuzzer_seed": 1004
+    },
+    {
+      "name": "listLen",
+      "path": "examples/builtins/listLen.roc",
+      "seed_hex": "00010203040506070809",
+      "libfuzzer_seed": 1005
+    },
+    {
+      "name": "listRange",
+      "path": "examples/builtins/listRange.roc",
+      "seed_hex": "052a00",
+      "libfuzzer_seed": 1006
+    },
+    {
+      "name": "noop",
+      "path": "examples/builtins/noop.roc",
+      "seed_hex": "00",
+      "libfuzzer_seed": 1007
+    },
+    {
+      "name": "setInsert",
+      "path": "examples/builtins/setInsert.roc",
+      "seed_hex": "010201030205080d152237",
+      "libfuzzer_seed": 1008
+    },
+    {
+      "name": "strConcat",
+      "path": "examples/builtins/strConcat.roc",
+      "seed_hex": "48656c6c6f2c20e4b896e7958c2108070605",
+      "libfuzzer_seed": 1009
+    },
+    {
+      "name": "strEndsWith",
+      "path": "examples/builtins/strEndsWith.roc",
+      "seed_hex": "726f632e726f630908070605",
+      "libfuzzer_seed": 1010
+    },
+    {
+      "name": "strFromUtf8",
+      "path": "examples/builtins/strFromUtf8.roc",
+      "seed_hex": "526f63f09f90a6ff08070605",
+      "libfuzzer_seed": 1011
+    },
+    {
+      "name": "strIsEmpty",
+      "path": "examples/builtins/strIsEmpty.roc",
+      "seed_hex": "000102030405",
+      "libfuzzer_seed": 1012
+    },
+    {
+      "name": "strRepeat",
+      "path": "examples/builtins/strRepeat.roc",
+      "seed_hex": "61626308070605040302",
+      "libfuzzer_seed": 1013
+    },
+    {
+      "name": "strSplit",
+      "path": "examples/builtins/strSplit.roc",
+      "seed_hex": "612c622c6309080706050403",
+      "libfuzzer_seed": 1014
+    },
+    {
+      "name": "strStartsWith",
+      "path": "examples/builtins/strStartsWith.roc",
+      "seed_hex": "726f632d66757a7a0908070605",
+      "libfuzzer_seed": 1015
+    },
+    {
+      "name": "strToDec",
+      "path": "examples/builtins/strToDec.roc",
+      "seed_hex": "2d3132332e3435300807",
+      "libfuzzer_seed": 1016
+    },
+    {
+      "name": "strToF32",
+      "path": "examples/builtins/strToF32.roc",
+      "seed_hex": "312e3235652d31300807",
+      "libfuzzer_seed": 1017
+    },
+    {
+      "name": "strToF64",
+      "path": "examples/builtins/strToF64.roc",
+      "seed_hex": "2d312e37393736393331333438363233313537653330380807",
+      "libfuzzer_seed": 1018,
+      "skip": {
+        "fuzz": {
+          "reason": "F64.from_str hangs for 30+ minutes on adversarial underscore-heavy decimal literals",
+          "issue": "https://github.com/roc-lang/roc/issues/10660"
+        }
+      }
+    },
+    {
+      "name": "strToI128",
+      "path": "examples/builtins/strToI128.roc",
+      "seed_hex": "2d3137303134313138333436303436393233313733313638373330333731353838343130353732380807",
+      "libfuzzer_seed": 1019
+    },
+    {
+      "name": "strToI16",
+      "path": "examples/builtins/strToI16.roc",
+      "seed_hex": "2d33323736380807",
+      "libfuzzer_seed": 1020
+    },
+    {
+      "name": "strToI32",
+      "path": "examples/builtins/strToI32.roc",
+      "seed_hex": "323134373438333634370807",
+      "libfuzzer_seed": 1021
+    },
+    {
+      "name": "strToI64",
+      "path": "examples/builtins/strToI64.roc",
+      "seed_hex": "2d393232333337323033363835343737353830380807",
+      "libfuzzer_seed": 1022
+    },
+    {
+      "name": "strToI8",
+      "path": "examples/builtins/strToI8.roc",
+      "seed_hex": "2d3132380807",
+      "libfuzzer_seed": 1023
+    },
+    {
+      "name": "strToU128",
+      "path": "examples/builtins/strToU128.roc",
+      "seed_hex": "3334303238323336363932303933383436333436333337343630373433313736383231313435350807",
+      "libfuzzer_seed": 1024
+    },
+    {
+      "name": "strToU16",
+      "path": "examples/builtins/strToU16.roc",
+      "seed_hex": "36353533350807",
+      "libfuzzer_seed": 1025
+    },
+    {
+      "name": "strToU32",
+      "path": "examples/builtins/strToU32.roc",
+      "seed_hex": "343239343936373239350807",
+      "libfuzzer_seed": 1026
+    },
+    {
+      "name": "strToU64",
+      "path": "examples/builtins/strToU64.roc",
+      "seed_hex": "31383434363734343037333730393535313631350807",
+      "libfuzzer_seed": 1027
+    },
+    {
+      "name": "strToU8",
+      "path": "examples/builtins/strToU8.roc",
+      "seed_hex": "3235350807",
+      "libfuzzer_seed": 1028
+    },
+    {
+      "name": "strTrim",
+      "path": "examples/builtins/strTrim.roc",
+      "seed_hex": "202009526f63c2a0090807",
+      "libfuzzer_seed": 1029
+    },
+    {
+      "name": "strTrimLeft",
+      "path": "examples/builtins/strTrimLeft.roc",
+      "seed_hex": "20090a526f63090807",
+      "libfuzzer_seed": 1030
+    },
+    {
+      "name": "strTrimRight",
+      "path": "examples/builtins/strTrimRight.roc",
+      "seed_hex": "526f63200d0a090807",
+      "libfuzzer_seed": 1031
+    },
+    {
+      "name": "jsonRoundTrip",
+      "path": "examples/jsonRoundTrip.roc",
+      "seed_hex": "0001020304050607",
+      "libfuzzer_seed": 1032
+    },
+    {
+      "name": "listConcatLength",
+      "path": "examples/listConcatLength.roc",
+      "seed_hex": "00010203040506070809",
+      "libfuzzer_seed": 1033
+    },
+    {
+      "name": "parserRobustness",
+      "path": "examples/parserRobustness.roc",
+      "seed_hex": "313233090807",
+      "libfuzzer_seed": 1034
+    },
+    {
+      "name": "stack",
+      "path": "examples/stack/main.roc",
+      "seed_hex": "00010203040506070809",
+      "libfuzzer_seed": 1035
+    },
+    {
+      "name": "stringSplitRoundTrip",
+      "path": "examples/stringSplitRoundTrip.roc",
+      "seed_hex": "526f63202c090807",
+      "libfuzzer_seed": 1036
+    },
+    {
+      "name": "failureArtifact",
+      "path": "examples/fixtures/failureArtifact.roc",
+      "seed_hex": "0001020304050607",
+      "libfuzzer_seed": 1037,
+      "expected_failure": true
+    }
+  ],
+  "retired": [
+    {
+      "name": "strCountGraphemes",
+      "reason": "The modern builtin Str API no longer exposes grapheme counting."
+    },
+    {
+      "name": "strGraphemes",
+      "reason": "The modern builtin Str API no longer exposes grapheme splitting."
+    },
+    {
+      "name": "strStartsWithScalar",
+      "reason": "The modern builtin Str API no longer exposes starts_with_scalar."
+    },
+    {
+      "name": "strToNat",
+      "reason": "Nat was removed; the fixed-width unsigned parser targets cover the supported API."
+    }
+  ]
+}
