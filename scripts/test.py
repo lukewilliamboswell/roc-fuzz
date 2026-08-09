@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import re
 import subprocess
 import tempfile
@@ -223,12 +224,53 @@ def build_target(roc: str, target: dict[str, object], verbose: bool) -> Path:
         ],
         verbose=verbose,
     )
-    if output.read_bytes()[:4] != b"\x7fELF":
-        raise TestFailure(f"{output} is not an ELF executable")
-    description = subprocess.check_output(["file", str(output)], text=True)
-    if "statically linked" not in description or "x86-64" not in description:
-        raise TestFailure(f"unexpected executable format: {description.strip()}")
+    validate_executable(output)
     return output
+
+
+def validate_executable(output: Path) -> None:
+    description = subprocess.check_output(["file", str(output)], text=True).strip()
+    system = platform.system()
+    if system == "Linux":
+        if output.read_bytes()[:4] != b"\x7fELF":
+            raise TestFailure(f"{output} is not an ELF executable")
+        if "statically linked" not in description or "x86-64" not in description:
+            raise TestFailure(f"unexpected executable format: {description}")
+        return
+    if system == "Darwin":
+        if output.read_bytes()[:4] != b"\xcf\xfa\xed\xfe":
+            raise TestFailure(f"{output} is not a 64-bit Mach-O executable")
+        if "Mach-O 64-bit executable arm64" not in description:
+            raise TestFailure(f"unexpected executable format: {description}")
+        validate_macos_deployment_target(output)
+        dependencies = subprocess.check_output(["otool", "-L", str(output)], text=True).splitlines()[1:]
+        non_system = [line.strip().split(" ", 1)[0] for line in dependencies if line.strip() and not line.lstrip().startswith(("/usr/lib/", "/System/Library/"))]
+        if non_system:
+            raise TestFailure(
+                f"{output} has non-system dynamic dependencies: {', '.join(non_system)}"
+            )
+        return
+    raise TestFailure(f"unsupported host platform for executable validation: {system}")
+
+
+def validate_macos_deployment_target(output: Path) -> None:
+    lines = subprocess.check_output(["otool", "-l", str(output)], text=True).splitlines()
+    for start, line in enumerate(lines):
+        if line.strip() != "cmd LC_BUILD_VERSION":
+            continue
+        for candidate in lines[start + 1 : start + 8]:
+            match = re.fullmatch(r"\s*minos (\d+)\.(\d+)(?:\.\d+)?\s*", candidate)
+            if match is None:
+                continue
+            minimum = (int(match.group(1)), int(match.group(2)))
+            if minimum != (11, 0):
+                raise TestFailure(
+                    f"unexpected macOS deployment target for {output}: "
+                    f"{match.group(1)}.{match.group(2)} (expected 11.0)"
+                )
+            return
+        raise TestFailure(f"LC_BUILD_VERSION has no parseable minimum target in {output}")
+    raise TestFailure(f"{output} is missing LC_BUILD_VERSION")
 
 
 def build_targets(

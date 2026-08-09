@@ -7,7 +7,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from platform_inputs import MANIFEST_NAME, validate_platform_inputs
+from platform_inputs import MANIFEST_NAME, TARGET_SPECS, target_directory, validate_platform_inputs
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -63,17 +63,13 @@ def main() -> None:
 
     roc_files = sorted(PLATFORM_DIR.glob("*.roc"))
     metadata_files = [
-        PLATFORM_DIR / "targets" / "x64musl" / MANIFEST_NAME,
-        PLATFORM_DIR / "targets" / "x64musl" / "README.md",
+        path
+        for spec in TARGET_SPECS
+        for path in (target_directory(ROOT, spec) / MANIFEST_NAME, target_directory(ROOT, spec) / "README.md")
     ]
     license_sources = [ROOT / "LICENSE", ROOT / "THIRD_PARTY_LICENSES.md"]
     bundle_sources = [*roc_files, *platform_inputs, *metadata_files]
     unpacked_size = sum(path.stat().st_size for path in [*bundle_sources, *license_sources])
-    if unpacked_size > MAX_PLATFORM_BYTES:
-        raise SystemExit(
-            "platform inputs exceed Roc's default 100 MiB dependency limit: "
-            f"{unpacked_size} bytes"
-        )
 
     copied_licenses: list[Path] = []
     try:
@@ -114,6 +110,11 @@ def main() -> None:
     bundles = sorted(output_dir.glob("*.tar.zst"), key=lambda path: path.stat().st_mtime_ns)
     if not bundles:
         raise SystemExit("Roc reported success but did not produce a .tar.zst bundle")
+    if bundles[-1].stat().st_size > MAX_PLATFORM_BYTES:
+        raise SystemExit(
+            "compressed platform bundle exceeds Roc's 100 MiB dependency limit: "
+            f"{bundles[-1].stat().st_size} bytes"
+        )
     print(f"Release bundle: {bundles[-1]}")
 
 

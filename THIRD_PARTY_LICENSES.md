@@ -1,7 +1,8 @@
 # Third-party software in roc-fuzz platform inputs
 
-The prebuilt files under `platform/targets/x64musl` contain or link the
-following third-party software. The platform bundle includes this notice.
+The prebuilt files under `platform/targets/x64musl` and
+`platform/targets/arm64mac` contain or link the following third-party software.
+The platform bundle includes this notice.
 
 | Component | Bundled inputs | License |
 | --- | --- | --- |
@@ -13,3 +14,6 @@ following third-party software. The platform bundle includes this notice.
 `libfuzzer.a` is built from the checksum-pinned `libfuzzer-sys` source archive.
 That crate's wrapper code is dual-licensed under MIT or Apache-2.0; the Roc
 platform does not include the Rust wrapper code in its native runtime.
+
+The Apple Silicon target dynamically links only Apple system libraries,
+including `libSystem`; no Apple SDK library is redistributed.

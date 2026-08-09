@@ -15,7 +15,11 @@ concurrency:
 
 jobs:
   self-contained-runner:
-    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-26]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout roc-fuzz
