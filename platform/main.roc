@@ -14,7 +14,7 @@ platform "roc-fuzz"
 	}
 	targets: {
 		inputs_dir: "targets/",
-		x64musl: { inputs: ["crt1.o", "libhost.a", app, "libfuzzer.a", "libc++.a", "libc++abi.a", "libunwind.a", "libc.a", "libzigc.a", "libcompiler_rt.a"] },
+		x64musl: { inputs: ["crt1.o", "libhost.a", app, "libfuzzer.a", "libc++.a", "libc++abi.a", "libunwind.a", "libc.a", "libzigc.a", "libcompiler_rt.a", "libc.a", "libzigc.a", "libcompiler_rt.a"] },
 		arm64mac: { inputs: ["libhost.a", app, "libfuzzer.a", "libc++abi.a", "libc++.a", "libcompiler_rt.a"] },
 	}
 
