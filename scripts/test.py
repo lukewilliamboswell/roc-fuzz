@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import re
 import subprocess
 import tempfile
@@ -223,12 +224,32 @@ def build_target(roc: str, target: dict[str, object], verbose: bool) -> Path:
         ],
         verbose=verbose,
     )
-    if output.read_bytes()[:4] != b"\x7fELF":
-        raise TestFailure(f"{output} is not an ELF executable")
-    description = subprocess.check_output(["file", str(output)], text=True)
-    if "statically linked" not in description or "x86-64" not in description:
-        raise TestFailure(f"unexpected executable format: {description.strip()}")
+    validate_executable(output)
     return output
+
+
+def validate_executable(output: Path) -> None:
+    description = subprocess.check_output(["file", str(output)], text=True).strip()
+    system = platform.system()
+    if system == "Linux":
+        if output.read_bytes()[:4] != b"\x7fELF":
+            raise TestFailure(f"{output} is not an ELF executable")
+        if "statically linked" not in description or "x86-64" not in description:
+            raise TestFailure(f"unexpected executable format: {description}")
+        return
+    if system == "Darwin":
+        if output.read_bytes()[:4] != b"\xcf\xfa\xed\xfe":
+            raise TestFailure(f"{output} is not a 64-bit Mach-O executable")
+        if "Mach-O 64-bit executable arm64" not in description:
+            raise TestFailure(f"unexpected executable format: {description}")
+        dependencies = subprocess.check_output(["otool", "-L", str(output)], text=True).splitlines()[1:]
+        non_system = [line.strip().split(" ", 1)[0] for line in dependencies if line.strip() and not line.lstrip().startswith(("/usr/lib/", "/System/Library/"))]
+        if non_system:
+            raise TestFailure(
+                f"{output} has non-system dynamic dependencies: {', '.join(non_system)}"
+            )
+        return
+    raise TestFailure(f"unsupported host platform for executable validation: {system}")
 
 
 def build_targets(

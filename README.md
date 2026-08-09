@@ -1,7 +1,7 @@
 # roc-fuzz
 
 `roc-fuzz` is a typed, coverage-guided software-quality platform for Roc.
-It currently supports Linux x86-64 with musl.
+It supports Linux x86-64 with musl and Apple Silicon macOS (macOS 11 or newer).
 
 A target builds directly into a self-contained executable:
 
@@ -118,10 +118,11 @@ distinction in the typed target boundary so the runner can expose that metric.
 
 ## Develop and package
 
-Prebuilt x64-musl platform inputs are versioned under
-`platform/targets/x64musl`. Users and release jobs consume them directly, so
+Prebuilt target inputs are versioned under `platform/targets/x64musl` and
+`platform/targets/arm64mac`. Users and release jobs consume them directly, so
 building a fuzz target does not require Zig, a C++ toolchain, musl, or a local
-libFuzzer installation.
+libFuzzer installation. Apple Silicon outputs use the system `libSystem` and
+otherwise carry their native runtime dependencies in the platform.
 
 Maintainers regenerate those inputs only when updating the host or toolchain:
 
@@ -130,9 +131,10 @@ python3 scripts/build_platform.py
 ```
 
 The regeneration script verifies the checksum-pinned libFuzzer source, builds
-the Zig host adapter, copies Zig's static musl and C++ runtimes, and refreshes
-`SHA256SUMS`. Commit the regenerated archives and manifest together. Release
-bundles verify and include those versioned inputs without rebuilding them.
+the Zig host adapter, copies the required Zig C++ and compiler runtimes, and
+refreshes both `SHA256SUMS` manifests. Commit the regenerated archives and
+manifests together. Release bundles verify and include those versioned inputs
+without rebuilding them.
 
 Run the repository validation matrix with:
 

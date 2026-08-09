@@ -18,3 +18,5 @@ __pycache__/
 !/platform/targets/x64musl/
 !/platform/targets/x64musl/*.o
 !/platform/targets/x64musl/*.a
+!/platform/targets/arm64mac/
+!/platform/targets/arm64mac/*.a

@@ -120,7 +120,7 @@ jobs:
         uses: roc-lang/release-package/actions/prepare-bundles@d2560ead9f724bfaabfbc8134b8895e120171064
         with:
           bundle_glob: dist/*.tar.zst
-          test_os_json: '["ubuntu-22.04"]'
+          test_os_json: '["ubuntu-22.04", "macos-26"]'
 
       - name: Upload release bundle
         uses: actions/upload-artifact@v7

@@ -6,7 +6,7 @@ The platform has four layers:
   and statically dispatched target construction.
 - `platform/Target.roc` erases the app's input type behind closures.
 - `platform/main.roc` exposes the byte-oriented native boundary and declares
-  only the x64-musl target.
+  the x64-musl and Apple Silicon macOS targets.
 - `src/main.zig` adapts generated Roc ABI calls to libFuzzer and
   translates the friendly runner commands.
 
@@ -21,10 +21,11 @@ require only:
   [roc-lang/roc#10657](https://github.com/roc-lang/roc/pull/10657);
 - Python 3.10 or newer.
 
-The prebuilt x64-musl inputs under `platform/targets/x64musl` are versioned so
-users and CI do not need a native toolchain to consume the platform. Only
-maintainers intentionally regenerating those inputs additionally need Zig
-0.16.0, GNU `ar`, and network access to the checksum-pinned libFuzzer source.
+The prebuilt inputs under `platform/targets/x64musl` and
+`platform/targets/arm64mac` are versioned so users and CI do not need a native
+toolchain to consume the platform. Only maintainers intentionally regenerating
+those inputs additionally need Zig 0.16.0, `ar`, and network access to the
+checksum-pinned libFuzzer source.
 
 ## Regenerate platform inputs
 
@@ -34,16 +35,29 @@ Regenerate the vendored inputs with:
 python3 scripts/build_platform.py
 ```
 
-The build has one target: `x86_64-linux-musl`. It compiles the thin Zig host,
-the checksum-pinned `libfuzzer-sys` 0.4.5 source, and Zig's static musl and C++
-runtime inputs. It also rewrites `platform/targets/x64musl/SHA256SUMS`.
-Review and commit the archives and checksum manifest as one change.
+The build regenerates `x86_64-linux-musl` and `aarch64-macos.11.0`. It compiles
+the thin Zig host, the checksum-pinned `libfuzzer-sys` 0.4.5 source, and the
+needed Zig runtime inputs. It rewrites one `SHA256SUMS` manifest per target.
+Use `--target x64musl` or `--target arm64mac` to regenerate just one target.
+Review and commit the archives and manifests as one change.
 
 The fully static build excludes `FuzzerInterceptors.cpp`. Its wrappers locate
 libc functions through `dlsym`, which is not usable in the static musl
 executable. The standard libFuzzer scheduler, mutators, corpus engine, crash
 handling, minimizer, and merge engine remain unchanged. Roc's compare and
 switch instrumentation still supplies value feedback.
+
+The macOS target includes `FuzzerInterceptors.cpp`: its `dlsym` lookups work
+with macOS's dynamic `libSystem`. Its deployment target is macOS 11.0, and its
+only allowed dynamic dependencies are system libraries.
+
+`src/macos_sancov.c` supplies the public TLS slot required by Roc's macOS
+stack-depth coverage instrumentation. `src/macos_fuzzer_ext_functions.cpp`
+binds the standalone runner hooks directly because upstream libFuzzer's Darwin
+`dlsym` lookup requires `-export_dynamic`, which Roc does not pass. Both files
+are repository-owned platform glue covered by the project license; the native
+build, `show`/replay, fuzz, failure-artifact, and packaged-bundle smoke tests
+exercise them on Apple Silicon.
 
 ## Regenerate ABI glue
 
@@ -70,10 +84,11 @@ python3 scripts/test.py --operation fuzz --max-total-time 2
 ```
 
 Validation checks the exact example inventory, Roc formatting and types.
-Building creates every self-contained executable and verifies that it is a
-static x86-64 ELF. Seed validation renders and replays each deterministic input.
-The fuzz operation runs short campaigns and verifies that an intentional Roc
-failure is saved byte-for-byte with follow-up commands.
+Building creates every self-contained executable and verifies a static x86-64
+ELF on Linux or an arm64 Mach-O with system-only dynamic dependencies on macOS.
+Seed validation renders and replays each deterministic input. The fuzz
+operation runs short campaigns and verifies that an intentional Roc failure is
+saved byte-for-byte with follow-up commands.
 
 Generate and audit the public API documentation with:
 
@@ -138,5 +153,5 @@ Static dispatch happens while `Fuzz.target` is specialized for the app's
 input type. `Target` then erases that type, preventing the native ABI from
 depending on every app record or tag-union layout.
 
-The platform is intentionally x64-musl only. Keep native calls behind generated
-glue so compiler ABI changes are caught by regeneration and compilation.
+The platform supports x64-musl and Apple Silicon macOS. Keep native calls behind
+generated glue so compiler ABI changes are caught by regeneration and compilation.
