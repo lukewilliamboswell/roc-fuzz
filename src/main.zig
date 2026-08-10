@@ -3,6 +3,11 @@
 const std = @import("std");
 const abi = @import("roc_platform_abi.zig");
 
+comptime {
+    // Replace the RSS-ratcheting malloc from zig's bundled libc; see c_malloc.zig.
+    _ = @import("c_malloc.zig");
+}
+
 const max_input_len = 1024 * 1024;
 const max_args = 256;
 
