@@ -152,6 +152,12 @@ Prefer generating useful values directly instead of rejecting most inputs.
 Range generators such as `Fuzz.u8_in`, bounded lists, and generators composed
 with `Fuzz.map`, `Fuzz.map2`, or a record builder keep the search focused.
 
+Float targets get this focus from `Fuzz.f32` and `Fuzz.f64`, which spend about
+half of their values on `NaN`, the infinities, both zeros, the subnormals, and
+the boundary magnitudes instead of leaving each target to assemble those cases
+from raw bits. Use `Fuzz.f32_in` or `Fuzz.f64_in` when a property holds only for
+finite values within a known range.
+
 ## Build and run
 
 Build the target as a self-contained executable:

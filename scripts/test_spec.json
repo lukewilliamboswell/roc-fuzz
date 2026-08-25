@@ -193,6 +193,12 @@
       "libfuzzer_seed": 1031
     },
     {
+      "name": "floatMinMax",
+      "path": "examples/floatMinMax.roc",
+      "seed_hex": "020000000000000000050000000000000000",
+      "libfuzzer_seed": 1038
+    },
+    {
       "name": "jsonRoundTrip",
       "path": "examples/jsonRoundTrip.roc",
       "seed_hex": "0001020304050607",
