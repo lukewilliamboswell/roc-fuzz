@@ -1,0 +1,248 @@
+app [target] { pf: platform "../../platform/main.roc" }
+
+import pf.Fuzz
+import pf.Arbitrary
+
+## Differential model checker for the Dict builtin surface, including the
+## new `subscript`/`fold_until` (roc-lang/roc#10735). A bounded sequence of
+## operations is decoded from the fuzzer bytes and applied to both a real
+## `Dict` and a reference model -- an insertion-order, last-write-wins
+## `List((U8, U8))` maintained entirely in this file. After every operation
+## the two are checked for agreement.
+Op : [
+	Insert(U8, U8),
+	Remove(U8),
+	Clear,
+	KeepIfGe(U8),
+	DropIfGe(U8),
+	MapAddWrap(U8),
+	InsertAll(List((U8, U8))),
+	RemoveAllKeys(List(U8)),
+	KeepSharedWith(List((U8, U8))),
+]
+
+key_gen : Fuzz.Generator(U8)
+key_gen = Fuzz.u8_in(0, 31)
+
+value_gen : Fuzz.Generator(U8)
+value_gen = Fuzz.u8
+
+pair_gen : Fuzz.Generator((U8, U8))
+pair_gen = Fuzz.map2(key_gen, value_gen, |k, v| (k, v))
+
+pairs_gen : Fuzz.Generator(List((U8, U8)))
+pairs_gen = Fuzz.list(pair_gen, 5)
+
+keys_gen : Fuzz.Generator(List(U8))
+keys_gen = Fuzz.list(key_gen, 5)
+
+op_gen : Fuzz.Generator(Op)
+op_gen = |state0| {
+	{ value: kind, state: state1 } = state0.u64_in_inclusive_range(0, 8)
+	match kind {
+		0 => {
+			{ value: k, state: s1 } = key_gen(state1)
+			{ value: v, state: s2 } = value_gen(s1)
+			{ value: Insert(k, v), state: s2 }
+		}
+		1 => {
+			{ value: k, state: s1 } = key_gen(state1)
+			{ value: Remove(k), state: s1 }
+		}
+		2 => { value: Clear, state: state1 }
+		3 => {
+			{ value: t, state: s1 } = value_gen(state1)
+			{ value: KeepIfGe(t), state: s1 }
+		}
+		4 => {
+			{ value: t, state: s1 } = value_gen(state1)
+			{ value: DropIfGe(t), state: s1 }
+		}
+		5 => {
+			{ value: c, state: s1 } = value_gen(state1)
+			{ value: MapAddWrap(c), state: s1 }
+		}
+		6 => {
+			{ value: pairs, state: s1 } = pairs_gen(state1)
+			{ value: InsertAll(pairs), state: s1 }
+		}
+		7 => {
+			{ value: keys, state: s1 } = keys_gen(state1)
+			{ value: RemoveAllKeys(keys), state: s1 }
+		}
+		_ => {
+			{ value: pairs, state: s1 } = pairs_gen(state1)
+			{ value: KeepSharedWith(pairs), state: s1 }
+		}
+	}
+}
+
+ops_gen : Fuzz.Generator(List(Op))
+ops_gen = Fuzz.list(op_gen, 40)
+
+model_get : List((U8, U8)), U8 -> Try(U8, [KeyNotFound])
+model_get = |model, key|
+	match List.find_first(model, |(k, _)| k == key) {
+		Ok((_, v)) => Ok(v)
+		Err(_) => Err(KeyNotFound)
+	}
+
+model_contains : List((U8, U8)), U8 -> Bool
+model_contains = |model, key|
+	match model_get(model, key) {
+		Ok(_) => Bool.True
+		Err(_) => Bool.False
+	}
+
+model_insert : List((U8, U8)), U8, U8 -> List((U8, U8))
+model_insert = |model, key, value|
+	if model_contains(model, key) {
+		List.map(
+			model,
+			|(k, v)| if k == key {
+				(k, value)
+			} else {
+				(k, v)
+			},
+		)
+	} else {
+		List.concat(model, [(key, value)])
+	}
+
+model_remove : List((U8, U8)), U8 -> List((U8, U8))
+model_remove = |model, key| List.drop_if(model, |(k, _)| k == key)
+
+model_insert_all : List((U8, U8)), List((U8, U8)) -> List((U8, U8))
+model_insert_all = |model, pairs| List.fold(pairs, model, |m, (k, v)| model_insert(m, k, v))
+
+model_remove_all_keys : List((U8, U8)), List(U8) -> List((U8, U8))
+model_remove_all_keys = |model, keys| List.fold(keys, model, |m, k| model_remove(m, k))
+
+model_keep_shared : List((U8, U8)), List((U8, U8)) -> List((U8, U8))
+model_keep_shared = |model, pairs| {
+	# `Dict.keep_shared` compares against `Dict.from_list(pairs)`, which
+	# resolves duplicate keys to the last value -- not the first match.
+	other = model_insert_all([], pairs)
+	List.keep_if(
+		model,
+		|(k, v)|
+			match model_get(other, k) {
+				Ok(ov) => ov == v
+				Err(_) => Bool.False
+			},
+	)
+}
+
+sort_pairs : List((U8, U8)) -> List((U8, U8))
+sort_pairs = |pairs|
+	List.sort_with(
+		pairs,
+		|(k1, _), (k2, _)|
+			if k1 < k2 {
+				LT
+			} else if k1 > k2 {
+				GT
+			} else {
+				EQ
+			},
+	)
+
+assert_agree : Dict(U8, U8), List((U8, U8)) -> {}
+assert_agree = |dict, model| {
+	if Dict.len(dict) != List.len(model) {
+		crash "Dict.len disagreed with the reference model"
+	}
+	if Dict.is_empty(dict) != List.is_empty(model) {
+		crash "Dict.is_empty disagreed with the reference model"
+	}
+	if sort_pairs(Dict.to_list(dict)) != sort_pairs(model) {
+		crash "Dict.to_list disagreed with the reference model"
+	}
+
+	var $key = 0
+	while $key <= 31 {
+		k = U64.to_u8_wrap($key)
+		if Dict.contains(dict, k) != model_contains(model, k) {
+			crash "Dict.contains disagreed with the reference model"
+		}
+		if Dict.get(dict, k) != model_get(model, k) {
+			crash "Dict.get disagreed with the reference model"
+		}
+		if Dict.subscript(dict, k) != Dict.get(dict, k) {
+			crash "Dict.subscript disagreed with Dict.get"
+		}
+		$key = $key + 1
+	}
+
+	fold_sum = Dict.fold(dict, 0.U8, |acc, _k, v| acc.plus_wrap(v))
+	fold_until_sum = Dict.fold_until(dict, 0.U8, |acc, _k, v| Continue(acc.plus_wrap(v)))
+	if fold_sum != fold_until_sum {
+		crash "Dict.fold and Dict.fold_until (never breaking) disagreed"
+	}
+
+	rebuilt = Dict.from_list(Dict.to_list(dict))
+	if !Dict.is_eq(dict, rebuilt) {
+		crash "Dict.is_eq was not reflexive against a structurally rebuilt copy"
+	}
+
+	if Dict.capacity(dict) < Dict.len(dict) {
+		crash "Dict.capacity reported less room than the dictionary's own length"
+	}
+
+	{}
+}
+
+apply_op : { dict : Dict(U8, U8), model : List((U8, U8)) }, Op -> { dict : Dict(U8, U8), model : List((U8, U8)) }
+apply_op = |state, op|
+	match op {
+		Insert(k, v) => { dict: Dict.insert(state.dict, k, v), model: model_insert(state.model, k, v) }
+		Remove(k) => { dict: Dict.remove(state.dict, k), model: model_remove(state.model, k) }
+		Clear => { dict: Dict.clear(state.dict), model: [] }
+		KeepIfGe(t) => {
+			dict: Dict.keep_if(state.dict, |(_, v)| v >= t),
+			model: List.keep_if(state.model, |(_, v)| v >= t),
+		}
+		DropIfGe(t) => {
+			dict: Dict.drop_if(state.dict, |(_, v)| v >= t),
+			model: List.drop_if(state.model, |(_, v)| v >= t),
+		}
+		MapAddWrap(c) => {
+			dict: Dict.map(state.dict, |_k, v| v.plus_wrap(c)),
+			model: List.map(state.model, |(k, v)| (k, v.plus_wrap(c))),
+		}
+		InsertAll(pairs) => {
+			dict: Dict.insert_all(state.dict, Dict.from_list(pairs)),
+			model: model_insert_all(state.model, pairs),
+		}
+		RemoveAllKeys(keys) => {
+			dict: Dict.remove_all(state.dict, Dict.from_list(List.map(keys, |k| (k, 0)))),
+			model: model_remove_all_keys(state.model, keys),
+		}
+		KeepSharedWith(pairs) => {
+			dict: Dict.keep_shared(state.dict, Dict.from_list(pairs)),
+			model: model_keep_shared(state.model, pairs),
+		}
+	}
+
+main : List(U8) -> U8
+main = |data| {
+	{ value: ops, .. } = ops_gen(Arbitrary.new(data))
+
+	final = List.fold(
+		ops,
+		{ dict: Dict.empty(), model: [] },
+		|state, op| {
+			next = apply_op(state, op)
+			assert_agree(next.dict, next.model)
+			next
+		},
+	)
+
+	assert_agree(final.dict, final.model)
+	0
+}
+
+target = Fuzz.from_bytes({
+	name: "dictOps",
+	test: main,
+})
