@@ -94,6 +94,15 @@ The focused builtin regression targets are retained under
 `Arbitrary` API and are useful for compiler and builtin validation, but are not
 the recommended starting point for application authors.
 
+[`examples/sort/`](examples/sort/) holds a dedicated suite for the `List` sorting
+builtins. Sorting is worth its own collection because a sort has properties an
+invariant check alone will not reach: it has to be stable, it has to return a
+permutation of its input, and it changes algorithm with the length of the list
+and the width of the element. The targets check each sorting API against an
+independent stable insertion sort, cover refcounted and oversized elements,
+aliased and sliced lists, structured input shapes such as sawtooths and pipe
+organs, and comparisons that contradict themselves.
+
 ## Runner commands
 
 ```text

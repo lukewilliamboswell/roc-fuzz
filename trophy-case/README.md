@@ -14,3 +14,5 @@ Bugs found in Roc via fuzzing:
  - Accessing past the end of the array in isValidUtf8
  - JSON string decoding doesn't handle missing quotation [roc#5168](https://github.com/roc-lang/roc/issues/5168) 
  - F64.from_str hangs for 30+ minutes on adversarial underscore-heavy decimal literal [roc#10660](https://github.com/roc-lang/roc/issues/10660)
+ - Off-by-one-element pointer arithmetic in fluxsort's quadrant reversal corrupts List.sort for 132+ elements with reversed runs [roc#9832](https://github.com/roc-lang/roc/pull/9832#issuecomment-5434165372)
+ - Self-contradicting comparison duplicates and drops elements in fluxsort's parity merges, and crosses cross_merge's scans [roc#9832](https://github.com/roc-lang/roc/pull/9832#issuecomment-5434772475)

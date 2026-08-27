@@ -24,7 +24,7 @@ OPERATIONS = ("all", "validate", *STAGES)
 REQUIRED_TARGET_KEYS = {"name", "path", "seed_hex", "libfuzzer_seed"}
 OPTIONAL_TARGET_KEYS = {"expected_failure", "skip"}
 GITHUB_ISSUE = re.compile(r"https://github\.com/[^/]+/[^/]+/issues/[1-9][0-9]*$")
-SINGLE_FILE_COLLECTIONS = {"examples", "examples/builtins"}
+SINGLE_FILE_COLLECTIONS = {"examples", "examples/builtins", "examples/sort"}
 
 
 class TestFailure(RuntimeError):
