@@ -139,11 +139,11 @@ sort_pairs = |pairs|
 		pairs,
 		|(k1, _), (k2, _)|
 			if k1 < k2 {
-				LT
+				Before
 			} else if k1 > k2 {
-				GT
+				After
 			} else {
-				EQ
+				Same
 			},
 	)
 
