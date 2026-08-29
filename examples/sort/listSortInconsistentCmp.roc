@@ -2,7 +2,7 @@ app [target] { pf: platform "../../platform/main.roc" }
 
 import pf.Fuzz
 
-Order : [FirstBeforeSecond, Equivalent, SecondBeforeFirst]
+Order : [Before, Same, After]
 
 Item : { key : U64, position : U64 }
 
@@ -18,9 +18,9 @@ inconsistent_compare : U64, Item, Item -> Order
 inconsistent_compare = |seed, left, right| {
 	mixed = left.key.times_wrap(31).plus_wrap(right.key.times_wrap(7)).plus_wrap(seed)
 	match mixed % 3 {
-		0 => FirstBeforeSecond
-		1 => Equivalent
-		_ => SecondBeforeFirst
+		0 => Before
+		1 => Same
+		_ => After
 	}
 }
 

@@ -2,7 +2,7 @@ app [target] { pf: platform "../../platform/main.roc" }
 
 import pf.Fuzz
 
-Order : [FirstBeforeSecond, Equivalent, SecondBeforeFirst]
+Order : [Before, Same, After]
 
 ## An element of exactly 96 bytes, the largest the sort builtin copies through
 ## its fixed element buffer.
@@ -49,7 +49,7 @@ insert_with = |sorted, value, compare| {
 		sorted,
 		{ out: [], inserted: False },
 		|acc, item| {
-			if acc.inserted or compare(item, value) != SecondBeforeFirst {
+			if acc.inserted or compare(item, value) != After {
 				{ out: List.append(acc.out, item), inserted: acc.inserted }
 			} else {
 				{ out: List.append(List.append(acc.out, value), item), inserted: True }
@@ -66,11 +66,11 @@ reference_sort_with = |items, compare|
 compare_u64 : U64, U64 -> Order
 compare_u64 = |left, right| {
 	if left < right {
-		FirstBeforeSecond
+		Before
 	} else if left > right {
-		SecondBeforeFirst
+		After
 	} else {
-		Equivalent
+		Same
 	}
 }
 

@@ -2,7 +2,7 @@ app [target] { pf: platform "../../platform/main.roc" }
 
 import pf.Fuzz
 
-Order : [FirstBeforeSecond, Equivalent, SecondBeforeFirst]
+Order : [Before, Same, After]
 
 ## An item carrying its original position, so ties expose sort stability.
 Item : { key : U64, position : U64 }
@@ -13,11 +13,11 @@ Input : { values : List(U64), modulus : U8 }
 compare_keys : Item, Item -> Order
 compare_keys = |left, right| {
 	if left.key < right.key {
-		FirstBeforeSecond
+		Before
 	} else if left.key > right.key {
-		SecondBeforeFirst
+		After
 	} else {
-		Equivalent
+		Same
 	}
 }
 
@@ -28,9 +28,9 @@ compare_keys = |left, right| {
 compare_reversed : Item, Item -> Order
 compare_reversed = |left, right| {
 	match compare_keys(left, right) {
-		FirstBeforeSecond => SecondBeforeFirst
-		Equivalent => Equivalent
-		SecondBeforeFirst => FirstBeforeSecond
+		Before => After
+		Same => Same
+		After => Before
 	}
 }
 
@@ -41,7 +41,7 @@ insert_reversed = |sorted, value| {
 		sorted,
 		{ out: [], inserted: False },
 		|acc, item| {
-			if acc.inserted or compare_reversed(item, value) != SecondBeforeFirst {
+			if acc.inserted or compare_reversed(item, value) != After {
 				{ out: List.append(acc.out, item), inserted: acc.inserted }
 			} else {
 				{ out: List.append(List.append(acc.out, value), item), inserted: True }

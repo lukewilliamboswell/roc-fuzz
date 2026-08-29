@@ -2,7 +2,7 @@ app [target] { pf: platform "../../platform/main.roc" }
 
 import pf.Fuzz
 
-Order : [FirstBeforeSecond, Equivalent, SecondBeforeFirst]
+Order : [Before, Same, After]
 
 ## A refcounted item carrying its original position.
 ##
@@ -18,25 +18,25 @@ compare_strs = |left, right| {
 	pairs = List.map2(left_bytes, right_bytes, |l, r| (l, r))
 	byte_order = List.fold_until(
 		pairs,
-		Equivalent,
+		Same,
 		|_, (l, r)| {
 			if l < r {
-				Break(FirstBeforeSecond)
+				Break(Before)
 			} else if l > r {
-				Break(SecondBeforeFirst)
+				Break(After)
 			} else {
-				Continue(Equivalent)
+				Continue(Same)
 			}
 		},
 	)
 	match byte_order {
-		Equivalent => {
+		Same => {
 			if List.len(left_bytes) < List.len(right_bytes) {
-				FirstBeforeSecond
+				Before
 			} else if List.len(left_bytes) > List.len(right_bytes) {
-				SecondBeforeFirst
+				After
 			} else {
-				Equivalent
+				Same
 			}
 		}
 		other => other
@@ -52,7 +52,7 @@ insert_with = |sorted, value| {
 		sorted,
 		{ out: [], inserted: False },
 		|acc, item| {
-			if acc.inserted or compare_items(item, value) != SecondBeforeFirst {
+			if acc.inserted or compare_items(item, value) != After {
 				{ out: List.append(acc.out, item), inserted: acc.inserted }
 			} else {
 				{ out: List.append(List.append(acc.out, value), item), inserted: True }
