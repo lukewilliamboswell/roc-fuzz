@@ -73,7 +73,7 @@ jobs:
         run: python scripts/test.py --operation fuzz --max-total-time 1 --verbose
 
   required:
-    name: Required
+    name: CI required
     if: always()
     needs: self-contained-runner
     runs-on: ubuntu-24.04

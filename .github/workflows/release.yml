@@ -458,7 +458,7 @@ jobs:
           github_token: ${{ github.token }}
 
   required:
-    name: Required
+    name: Release required
     if: always() && github.event_name == 'pull_request'
     needs: [release-info, native-inputs, build, test-bundles, build-docs, generate-sbom]
     runs-on: ubuntu-24.04

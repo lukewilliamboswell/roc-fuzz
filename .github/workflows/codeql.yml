@@ -42,7 +42,7 @@ jobs:
         uses: github/codeql-action/analyze@fddeee1a7ece751b577e409a89057319e3172939 # v4
 
   required:
-    name: Required
+    name: CodeQL required
     if: always()
     needs: analyze
     runs-on: ubuntu-24.04
