@@ -242,6 +242,18 @@
       "libfuzzer_seed": 1039
     },
     {
+      "name": "dictInsertAlias",
+      "path": "examples/builtins/dictInsertAlias.roc",
+      "seed_hex": "000102030405060708090a0b",
+      "libfuzzer_seed": 1052
+    },
+    {
+      "name": "dictRefcountAlias",
+      "path": "examples/builtins/dictRefcountAlias.roc",
+      "seed_hex": "000102030405060708090a0b",
+      "libfuzzer_seed": 1053
+    },
+    {
       "name": "dictIterRoundTrip",
       "path": "examples/dictIterRoundTrip.roc",
       "seed_hex": "0001020304050607",

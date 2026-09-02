@@ -9,6 +9,12 @@ import pf.Arbitrary
 ## `Dict` and a reference model -- an insertion-order, last-write-wins
 ## `List((U8, U8))` maintained entirely in this file. After every operation
 ## the two are checked for agreement.
+##
+## The `Snapshot` op additionally retains an older copy of the dict, so the
+## operations that follow it run against a *shared* backing store. `Dict.insert`
+## mutates its entries and Robin Hood buckets in place when it owns them
+## uniquely, so a retained snapshot that drifts is how a lost-uniqueness bug
+## surfaces here.
 Op : [
 	Insert(U8, U8),
 	Remove(U8),
@@ -19,10 +25,12 @@ Op : [
 	InsertAll(List((U8, U8))),
 	RemoveAllKeys(List(U8)),
 	KeepSharedWith(List((U8, U8))),
+	Snapshot,
+	Reserve(U8),
 ]
 
 key_gen : Fuzz.Generator(U8)
-key_gen = Fuzz.u8_in(0, 31)
+key_gen = Fuzz.u8_in(0, 63)
 
 value_gen : Fuzz.Generator(U8)
 value_gen = Fuzz.u8
@@ -38,7 +46,7 @@ keys_gen = Fuzz.list(key_gen, 5)
 
 op_gen : Fuzz.Generator(Op)
 op_gen = |state0| {
-	{ value: kind, state: state1 } = state0.u64_in_inclusive_range(0, 8)
+	{ value: kind, state: state1 } = state0.u64_in_inclusive_range(0, 10)
 	match kind {
 		0 => {
 			{ value: k, state: s1 } = key_gen(state1)
@@ -70,9 +78,14 @@ op_gen = |state0| {
 			{ value: keys, state: s1 } = keys_gen(state1)
 			{ value: RemoveAllKeys(keys), state: s1 }
 		}
-		_ => {
+		8 => {
 			{ value: pairs, state: s1 } = pairs_gen(state1)
 			{ value: KeepSharedWith(pairs), state: s1 }
+		}
+		9 => { value: Snapshot, state: state1 }
+		_ => {
+			{ value: extra, state: s1 } = value_gen(state1)
+			{ value: Reserve(extra), state: s1 }
 		}
 	}
 }
@@ -160,7 +173,7 @@ assert_agree = |dict, model| {
 	}
 
 	var $key = 0
-	while $key <= 31 {
+	while $key <= 63 {
 		k = U64.to_u8_wrap($key)
 		if Dict.contains(dict, k) != model_contains(model, k) {
 			crash "Dict.contains disagreed with the reference model"
@@ -192,35 +205,86 @@ assert_agree = |dict, model| {
 	{}
 }
 
-apply_op : { dict : Dict(U8, U8), model : List((U8, U8)) }, Op -> { dict : Dict(U8, U8), model : List((U8, U8)) }
+Snapshot_ : { dict : Dict(U8, U8), expected : List((U8, U8)) }
+
+## Re-check every retained copy of the dict. These were captured before later
+## mutations ran, so any drift means an operation wrote through a shared
+## backing store instead of copying it.
+assert_snapshots : List(Snapshot_) -> {}
+assert_snapshots = |snapshots| {
+	for snapshot in snapshots {
+		if Dict.len(snapshot.dict) != List.len(snapshot.expected) {
+			crash "a retained Dict snapshot changed length after later operations"
+		}
+		if sort_pairs(Dict.to_list(snapshot.dict)) != snapshot.expected {
+			crash "a retained Dict snapshot changed contents after later operations"
+		}
+		for (k, v) in snapshot.expected {
+			if Dict.get(snapshot.dict, k) != Ok(v) {
+				crash "a retained Dict snapshot lost a key after later operations"
+			}
+		}
+	}
+	{}
+}
+
+State : { dict : Dict(U8, U8), model : List((U8, U8)), snapshots : List(Snapshot_) }
+
+apply_op : State, Op -> State
 apply_op = |state, op|
 	match op {
-		Insert(k, v) => { dict: Dict.insert(state.dict, k, v), model: model_insert(state.model, k, v) }
-		Remove(k) => { dict: Dict.remove(state.dict, k), model: model_remove(state.model, k) }
-		Clear => { dict: Dict.clear(state.dict), model: [] }
+		Insert(k, v) => { dict: Dict.insert(state.dict, k, v), model: model_insert(state.model, k, v), snapshots: state.snapshots }
+		Remove(k) => { dict: Dict.remove(state.dict, k), model: model_remove(state.model, k), snapshots: state.snapshots }
+		Clear => { dict: Dict.clear(state.dict), model: [], snapshots: state.snapshots }
 		KeepIfGe(t) => {
 			dict: Dict.keep_if(state.dict, |(_, v)| v >= t),
 			model: List.keep_if(state.model, |(_, v)| v >= t),
+			snapshots: state.snapshots,
 		}
 		DropIfGe(t) => {
 			dict: Dict.drop_if(state.dict, |(_, v)| v >= t),
 			model: List.drop_if(state.model, |(_, v)| v >= t),
+			snapshots: state.snapshots,
 		}
 		MapAddWrap(c) => {
 			dict: Dict.map(state.dict, |_k, v| v.plus_wrap(c)),
 			model: List.map(state.model, |(k, v)| (k, v.plus_wrap(c))),
+			snapshots: state.snapshots,
 		}
 		InsertAll(pairs) => {
 			dict: Dict.insert_all(state.dict, Dict.from_list(pairs)),
 			model: model_insert_all(state.model, pairs),
+			snapshots: state.snapshots,
 		}
 		RemoveAllKeys(keys) => {
 			dict: Dict.remove_all(state.dict, Dict.from_list(List.map(keys, |k| (k, 0)))),
 			model: model_remove_all_keys(state.model, keys),
+			snapshots: state.snapshots,
 		}
 		KeepSharedWith(pairs) => {
 			dict: Dict.keep_shared(state.dict, Dict.from_list(pairs)),
 			model: model_keep_shared(state.model, pairs),
+			snapshots: state.snapshots,
+		}
+		Reserve(extra) => {
+			dict: Dict.reserve(state.dict, U8.to_u64(extra)),
+			model: state.model,
+			snapshots: state.snapshots,
+		}
+		Snapshot => {
+			# Retaining the dict here makes the next mutating op run against a
+			# shared backing store. Bound the retained set so long inputs stay
+			# bounded in memory.
+			kept = if List.len(state.snapshots) >= 8 {
+				List.drop_first(state.snapshots, 1)
+			} else {
+				state.snapshots
+			}
+			{
+				dict: state.dict,
+				model: state.model,
+				snapshots: List.concat(kept, [{ dict: state.dict, expected: sort_pairs(state.model) }]),
+			}
 		}
 	}
 
@@ -230,15 +294,17 @@ main = |data| {
 
 	final = List.fold(
 		ops,
-		{ dict: Dict.empty(), model: [] },
+		{ dict: Dict.empty(), model: [], snapshots: [] },
 		|state, op| {
 			next = apply_op(state, op)
 			assert_agree(next.dict, next.model)
+			assert_snapshots(next.snapshots)
 			next
 		},
 	)
 
 	assert_agree(final.dict, final.model)
+	assert_snapshots(final.snapshots)
 	0
 }
 
