@@ -229,15 +229,13 @@ check_alloc_invariants! = |count| {
 			$ad = Dict.insert($ad, k, v1)
 		}
 
-		# NOTE: with refcounted keys and values, overwriting an existing key in
-		# a uniquely owned, pre-sized Dict still allocates once per call. The
-		# primitive-key case was fixed by roc 046b7daa26; this one was not.
-		# Tracked as a red test in
-		# trophy-case/repros/dictInsertOverwriteRefcounted.roc and logged in
-		# trophy-case/README.md, rather than failing this target. The loop
-		# below is kept so the alias check that follows sees the same state.
+		before = Fuzz.alloc_count!()
 		for (k, _v1, v2) in $triples {
 			$ad = Dict.insert($ad, k, v2)
+		}
+		after = Fuzz.alloc_count!()
+		if after != before {
+			crash "overwriting existing keys with pre-built refcounted values in a uniquely owned, pre-sized Dict allocated ${(after - before).to_str()} times"
 		}
 
 		# Alias the dict, then confirm the next overwrite copies instead of
