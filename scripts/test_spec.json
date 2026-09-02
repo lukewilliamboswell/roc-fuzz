@@ -254,6 +254,12 @@
       "libfuzzer_seed": 1053
     },
     {
+      "name": "dictInsertUniqueness",
+      "path": "examples/builtins/dictInsertUniqueness.roc",
+      "seed_hex": "0001020304050607",
+      "libfuzzer_seed": 1054
+    },
+    {
       "name": "dictIterRoundTrip",
       "path": "examples/dictIterRoundTrip.roc",
       "seed_hex": "0001020304050607",

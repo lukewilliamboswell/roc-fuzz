@@ -4,8 +4,10 @@ import pf.Fuzz
 
 import pf.Arbitrary
 
-main : List(U8) -> U8
-main = |data| {
+## Allocation invariant: `List.concat` allocates at most once (a single
+## backing buffer sized for the combined length).
+main! : List(U8) => U8
+main! = |data| {
 	first = Arbitrary.new(data)
 	{ value: bytes1, state: second } = first.arbitrary_list_u8()
 	{ value: bytes2, state: choices } = second.arbitrary_list_u8()
@@ -14,7 +16,10 @@ main = |data| {
 	tmp1 = if retain1 bytes1 else []
 	tmp2 = if retain2 bytes2 else []
 
-	out = List.concat(bytes1, bytes2)
+	out = Fuzz.expect_allocs_at_most!(
+		1,
+		|{}| List.concat(bytes1, bytes2),
+	)
 	if List.len(out) != List.len(bytes1) + List.len(bytes2) {
 		crash "concatenated list has the wrong length"
 	}
@@ -30,7 +35,7 @@ main = |data| {
 	x.plus_wrap(y)
 }
 
-target = Fuzz.from_bytes({
+target = Fuzz.from_bytes!({
 	name: "listConcat",
-	test: main,
+	test!: main!,
 })

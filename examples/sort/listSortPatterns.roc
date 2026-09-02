@@ -110,14 +110,25 @@ check_stable_sort = |items, sorted| {
 	{}
 }
 
-test : Input -> Fuzz.Outcome
-test = |input| {
+## `items` is uniquely owned here, so `List.sort_by` must sort in place using
+## only its fixed scratch buffer, no matter which run-length pattern its
+## strategy picks up on -- the allocation count must not scale with the
+## number of elements.
+##
+## Observed: mostly 0 allocations, occasionally up to 5 (fluxsort's scratch
+## buffer plus the projected-key buffer `sort_by` builds, and a degenerate
+## small/empty-list path); the count stays flat across list lengths up to
+## 2000 elements and across every pattern shape, never scaling with the
+## number of elements.
+test! : Input => Fuzz.Outcome
+test! = |input| {
 	items = build(input)
-	check_stable_sort(items, List.sort_by(items, |item| item.key))
+	sorted = Fuzz.expect_allocs_at_most!(5, |{}| List.sort_by(items, |item| item.key))
+	check_stable_sort(items, sorted)
 	Fuzz.keep
 }
 
-target = Fuzz.target_with({
+target = Fuzz.target_with!({
 	name: "listSortPatterns",
 	generator: Fuzz.map2(
 		Fuzz.map2(Fuzz.u8, Fuzz.u64_in(0, 2000), |pattern, length| { pattern, length }),
@@ -129,6 +140,6 @@ target = Fuzz.target_with({
 			seed: noise.seed,
 		},
 	),
-	test,
+	test!,
 	show: |input| Str.inspect(input),
 })

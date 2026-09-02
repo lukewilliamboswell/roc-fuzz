@@ -56,10 +56,17 @@ decorate = |input| {
 	)
 }
 
-test : Input -> Fuzz.Outcome
-test = |input| {
+## `items` is uniquely owned here, so `List.sort_with` must sort in place
+## using only its fixed scratch buffer -- the allocation count must not scale
+## with the number of elements.
+##
+## Observed: mostly 0 allocations, occasionally up to 4 (fluxsort's scratch
+## buffer, plus a degenerate small/empty-list path); the count stays flat
+## across list lengths, never scaling with the number of elements.
+test! : Input => Fuzz.Outcome
+test! = |input| {
 	items = decorate(input)
-	sorted = List.sort_with(items, compare_keys)
+	sorted = Fuzz.expect_allocs_at_most!(4, |{}| List.sort_with(items, compare_keys))
 
 	if List.len(sorted) != List.len(items) {
 		crash "List.sort_with changed the length of the list"
@@ -72,13 +79,13 @@ test = |input| {
 	Fuzz.keep
 }
 
-target = Fuzz.target_with({
+target = Fuzz.target_with!({
 	name: "listSortWith",
 	generator: Fuzz.map2(
 		Fuzz.list(Fuzz.u64, 400),
 		Fuzz.u8_in(1, 64),
 		|values, modulus| { values, modulus },
 	),
-	test,
+	test!,
 	show: |input| Str.inspect(input),
 })

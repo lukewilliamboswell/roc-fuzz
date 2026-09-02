@@ -80,8 +80,8 @@ keys = |input| {
 	List.map(input.values, |value| value % modulus)
 }
 
-test_narrow : Input -> Fuzz.Outcome
-test_narrow = |input| {
+test_narrow! : Input => Fuzz.Outcome
+test_narrow! = |input| {
 	items : List(Narrow)
 	items = List.map_with_index(
 		keys(input),
@@ -100,7 +100,10 @@ test_narrow = |input| {
 			p10: index,
 		},
 	)
-	sorted = List.sort_with(items, |left, right| compare_u64(left.key, right.key))
+	sorted = Fuzz.expect_allocs_at_most!(
+		4,
+		|{}| List.sort_with(items, |left, right| compare_u64(left.key, right.key)),
+	)
 	expected = reference_sort_with(items, |left, right| compare_u64(left.key, right.key))
 	if !List.is_eq(sorted, expected) {
 		crash "sorting 96-byte elements was not a stable sort under the given comparison"
@@ -108,8 +111,8 @@ test_narrow = |input| {
 	Fuzz.keep
 }
 
-test_wide : Input -> Fuzz.Outcome
-test_wide = |input| {
+test_wide! : Input => Fuzz.Outcome
+test_wide! = |input| {
 	items : List(Wide)
 	items = List.map_with_index(
 		keys(input),
@@ -129,7 +132,10 @@ test_wide = |input| {
 			p11: key,
 		},
 	)
-	sorted = List.sort_with(items, |left, right| compare_u64(left.key, right.key))
+	sorted = Fuzz.expect_allocs_at_most!(
+		8,
+		|{}| List.sort_with(items, |left, right| compare_u64(left.key, right.key)),
+	)
 	expected = reference_sort_with(items, |left, right| compare_u64(left.key, right.key))
 	if !List.is_eq(sorted, expected) {
 		crash "sorting 104-byte elements was not a stable sort under the given comparison"
@@ -137,10 +143,15 @@ test_wide = |input| {
 	Fuzz.keep
 }
 
-test : Input -> Fuzz.Outcome
-test = |input| if input.wide test_wide(input) else test_narrow(input)
+## Both element shapes sort with allocation counts that stay flat as the
+## number of elements grows -- the count does not scale with length,
+## whether the sort moves fixed-size elements in place (narrow, <=96 bytes)
+## or has to allocate to order pointers and gather afterward (wide, >96
+## bytes, which is why it gets a looser bound than narrow).
+test! : Input => Fuzz.Outcome
+test! = |input| if input.wide test_wide!(input) else test_narrow!(input)
 
-target = Fuzz.target_with({
+target = Fuzz.target_with!({
 	name: "listSortWideElements",
 	generator: Fuzz.map2(
 		Fuzz.map2(
@@ -155,6 +166,6 @@ target = Fuzz.target_with({
 			wide: wide == 1,
 		},
 	),
-	test,
+	test!,
 	show: |input| Str.inspect(input),
 })

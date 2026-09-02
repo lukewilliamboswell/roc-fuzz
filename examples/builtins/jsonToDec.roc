@@ -4,11 +4,22 @@ import pf.Fuzz
 
 import pf.Arbitrary
 
-main : List(U8) -> U8
-main = |data| {
+parse_dec : Str -> Try(Dec, _)
+parse_dec = |input| Json.parse(input)
+
+## Allocation invariant: `Json.parse` is stable -- parsing the same input
+## twice must cost the same number of allocations both times. (`Dec` can
+## render up to ~40 ASCII characters, so unlike the U64 target we can't
+## also assume `Json.to_str` stays inline.)
+main! : List(U8) => U8
+main! = |data| {
 	input = Arbitrary.new(data).arbitrary_list_u8().value |> Str.from_utf8_lossy
-	result : Try(Dec, _)
-	result = Json.parse(input)
+	first_parse = Fuzz.measure_allocs!(|{}| parse_dec(input))
+	second_parse = Fuzz.measure_allocs!(|{}| parse_dec(input))
+	if first_parse.allocations != second_parse.allocations {
+		crash "Json.parse allocated a different number of times (${first_parse.allocations.to_str()} vs ${second_parse.allocations.to_str()}) for the same input"
+	}
+	result = first_parse.value
 
 	match result {
 		Ok(decoded) => {
@@ -28,7 +39,7 @@ main = |data| {
 	}
 }
 
-target = Fuzz.from_bytes({
+target = Fuzz.from_bytes!({
 	name: "jsonToDec",
-	test: main,
+	test!: main!,
 })

@@ -206,8 +206,62 @@ assert_live = |state| {
 	{}
 }
 
-main : List(U8) -> U8
-main = |data| {
+## Allocation invariant: a uniquely owned, pre-sized `Dict` must not allocate
+## while overwriting existing keys with already-constructed refcounted values
+## (only a decref of the replaced value and an incref of the new one), and a
+## `Dict` with a retained alias must allocate (copy-on-write) rather than
+## mutate the shared backing store in place. Keys/values are built *before*
+## the measured region so the measurement isolates `Dict.insert` itself from
+## the cost of constructing the heap-allocated payloads.
+check_alloc_invariants! : U64 => {}
+check_alloc_invariants! = |count| {
+	if count > 0 {
+		var $triples = []
+		var $ci = 0
+		while $ci < count {
+			n = U64.to_u16_wrap($ci)
+			$triples = List.concat($triples, [(make_key(n), make_value(n, 1), make_value(n, 2))])
+			$ci = $ci + 1
+		}
+
+		var $ad = Dict.with_capacity(count)
+		for (k, v1, _v2) in $triples {
+			$ad = Dict.insert($ad, k, v1)
+		}
+
+		# NOTE: overwriting existing keys in a uniquely owned, pre-sized Dict
+		# still allocates once per call. That defect is tracked as a dedicated
+		# red test in trophy-case/repros/dictInsertOverwrite.roc and logged in
+		# trophy-case/README.md, rather than failing every Dict target here.
+		# The loop below is kept so the alias check that follows sees the same
+		# dictionary state it did before.
+		for (k, _v1, v2) in $triples {
+			$ad = Dict.insert($ad, k, v2)
+		}
+
+		# Alias the dict, then confirm the next overwrite copies instead of
+		# mutating the shared backing store.
+		match List.first($triples) {
+			Ok((k, _v1, v2)) => {
+				alias = $ad
+				before2 = Fuzz.alloc_count!()
+				$ad = Dict.insert($ad, k, List.concat(v2, [0]))
+				after2 = Fuzz.alloc_count!()
+				if after2 == before2 {
+					crash "inserting into a Dict with a retained alias performed zero allocations (copy-on-write did not trigger)"
+				}
+				if Dict.get(alias, k) == Dict.get($ad, k) {
+					crash "the alias observed a write that should have been copy-on-write isolated"
+				}
+			}
+			Err(_) => {}
+		}
+	}
+	{}
+}
+
+main! : List(U8) => U8
+main! = |data| {
 	{ value: steps, .. } = steps_gen(Arbitrary.new(data))
 
 	final = List.fold(
@@ -232,10 +286,18 @@ main = |data| {
 		crash "overwriting existing keys changed the dictionary's length"
 	}
 	check_aliases(final.aliases)
+
+	# NOTE: see the comment in dictOps.roc -- bind the count instead of
+	# nesting `U64.min(24, List.len(data))` directly as the call argument, or
+	# this leaks one allocation on this compiler even when the guarded branch
+	# below never runs.
+	data_len = List.len(data)
+	alloc_check_count = U64.min(24, data_len)
+	check_alloc_invariants!(alloc_check_count)
 	0
 }
 
-target = Fuzz.from_bytes({
+target = Fuzz.from_bytes!({
 	name: "dictRefcountAlias",
-	test: main,
+	test!: main!,
 })

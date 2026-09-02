@@ -65,10 +65,39 @@ insert_with = |sorted, value| {
 reference_sort_with : List(Item) -> List(Item)
 reference_sort_with = |items| List.fold(items, [], insert_with)
 
-test : List(Str) -> Fuzz.Outcome
-test = |values| {
+## The number of bits needed to represent `n`, used below as a stand-in for
+## `log2(n)` since there is no log builtin available here.
+bit_length : U64 -> U64
+bit_length = |n| {
+	var $count = 0
+	var $x = n
+	while $x > 0 {
+		$x = $x / 2
+		$count = $count + 1
+	}
+	$count
+}
+
+## `items` is uniquely owned, so `List.sort_with` itself sorts in place using
+## only its fixed scratch buffer. But `compare_items` calls `Str.to_utf8`
+## twice per comparison, and `Str.to_utf8` allocates a fresh byte copy for
+## any non-empty string -- so the *measured region*, which necessarily
+## includes every comparator call the sort makes, allocates proportionally
+## to the number of comparisons, not to the number of elements moved.
+##
+## FINDING: this is not a `List.sort_with` regression. It is the comparator
+## allocating, which a fixed constant bound cannot capture. A bound scaling
+## with `n * log2(n)` -- an upper bound on a comparison sort's comparison
+## count, times 2 allocations per comparison, times a generous safety
+## margin -- was measured to comfortably cover every case the fuzzer found
+## (observed up to 181 allocations for 152 near-duplicate elements, far
+## below this bound), while still catching a genuine quadratic blow-up.
+test! : List(Str) => Fuzz.Outcome
+test! = |values| {
 	items = List.map_with_index(values, |value, index| { key: value, position: index })
-	sorted = List.sort_with(items, compare_items)
+	n = List.len(items)
+	limit = 4 * n * (bit_length(n) + 1) + 32
+	sorted = Fuzz.expect_allocs_at_most!(limit, |{}| List.sort_with(items, compare_items))
 
 	if List.len(sorted) != List.len(items) {
 		crash "sorting a list of strings changed its length"
@@ -90,9 +119,9 @@ test = |values| {
 	Fuzz.keep
 }
 
-target = Fuzz.target_with({
+target = Fuzz.target_with!({
 	name: "listSortStrings",
 	generator: Fuzz.list(Fuzz.str, 300),
-	test,
+	test!,
 	show: |values| Str.inspect(values),
 })

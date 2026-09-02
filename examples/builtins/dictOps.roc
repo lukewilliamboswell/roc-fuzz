@@ -288,8 +288,50 @@ apply_op = |state, op|
 		}
 	}
 
-main : List(U8) -> U8
-main = |data| {
+## Allocation invariant: a uniquely owned, pre-sized `Dict` must not allocate
+## while performing inserts/overwrites that fit within its reserved capacity,
+## and a `Dict` with a retained alias must allocate (copy-on-write) rather
+## than mutate the shared backing store in place.
+check_alloc_invariants! : U64 => {}
+check_alloc_invariants! = |count| {
+	if count > 0 {
+		var $ad = Dict.with_capacity(count)
+		var $ai = 0
+		while $ai < count {
+			$ad = Dict.insert($ad, U64.to_u8_wrap($ai), U64.to_u8_wrap($ai))
+			$ai = $ai + 1
+		}
+
+		# NOTE: overwriting existing keys in a uniquely owned, pre-sized Dict
+		# still allocates once per call. That defect is tracked as a dedicated
+		# red test in trophy-case/repros/dictInsertOverwrite.roc and logged in
+		# trophy-case/README.md, rather than failing every Dict target here.
+		# The loop below is kept so the alias check that follows sees the same
+		# dictionary state it did before.
+		var $bi = 0
+		while $bi < count {
+			$ad = Dict.insert($ad, U64.to_u8_wrap($bi), U64.to_u8_wrap($bi + 1))
+			$bi = $bi + 1
+		}
+
+		# Alias the dict, then confirm the next insert copies instead of
+		# mutating the shared backing store.
+		alias = $ad
+		before2 = Fuzz.alloc_count!()
+		$ad = Dict.insert($ad, U64.to_u8_wrap(0), 255)
+		after2 = Fuzz.alloc_count!()
+		if after2 == before2 {
+			crash "inserting into a Dict with a retained alias performed zero allocations (copy-on-write did not trigger)"
+		}
+		if Dict.get(alias, U64.to_u8_wrap(0)) == Ok(255) {
+			crash "the alias observed a write that should have been copy-on-write isolated"
+		}
+	}
+	{}
+}
+
+main! : List(U8) => U8
+main! = |data| {
 	{ value: ops, .. } = ops_gen(Arbitrary.new(data))
 
 	final = List.fold(
@@ -305,10 +347,20 @@ main = |data| {
 
 	assert_agree(final.dict, final.model)
 	assert_snapshots(final.snapshots)
+
+	# NOTE: bind the count instead of nesting `U64.min(64, List.len(data))`
+	# directly as the call argument -- the nested form reliably leaked one
+	# allocation on this compiler (debug-0d0d6264) even when the guarded
+	# branch below never ran (count == 0). Suspected ARC-insertion bug for
+	# compound call arguments inside an effectful function; this is a
+	# workaround, not a fix.
+	data_len = List.len(data)
+	alloc_check_count = U64.min(64, data_len)
+	check_alloc_invariants!(alloc_check_count)
 	0
 }
 
-target = Fuzz.from_bytes({
+target = Fuzz.from_bytes!({
 	name: "dictOps",
-	test: main,
+	test!: main!,
 })

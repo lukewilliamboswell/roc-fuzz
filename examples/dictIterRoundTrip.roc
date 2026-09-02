@@ -32,35 +32,49 @@ entry_gen = |state0| {
 entries_gen : Fuzz.Generator(List((U8, U8)))
 entries_gen = Fuzz.list(entry_gen, 20)
 
-test : List((U8, U8)) -> Fuzz.Outcome
-test = |entries| {
-	real_pairs = List.drop_if(entries, |(k, _)| k == junk_key)
+## `key_gen` only produces keys in `0..7`, so a round trip through at most 20
+## entries can never touch more than 8 distinct keys -- generous headroom
+## above what growth/rehashing could plausibly cost here.
+round_trip_alloc_budget : U64
+round_trip_alloc_budget = 64
 
-	filtered_iter = List.iter(entries).keep_if(|(k, _)| k != junk_key)
-	from_skip_iter = Dict.from_iter(filtered_iter)
-	expected = Dict.from_list(real_pairs)
-	if !Dict.is_eq(from_skip_iter, expected) {
-		crash "Dict.from_iter over a Skip-containing iterator disagreed with Dict.from_list over the filtered pairs"
-	}
+test! : List((U8, U8)) => Fuzz.Outcome
+test! = |entries| {
+	Fuzz.expect_no_leaks!(
+		|{}| {
+			real_pairs = List.drop_if(entries, |(k, _)| k == junk_key)
 
-	dict = Dict.from_list(real_pairs)
-	dict_iter = Dict.iter(dict)
+			filtered_iter = List.iter(entries).keep_if(|(k, _)| k != junk_key)
+			from_skip_iter = Dict.from_iter(filtered_iter)
+			expected = Dict.from_list(real_pairs)
+			if !Dict.is_eq(from_skip_iter, expected) {
+				crash "Dict.from_iter over a Skip-containing iterator disagreed with Dict.from_list over the filtered pairs"
+			}
 
-	if List.from_iter(dict_iter) != Dict.to_list(dict) {
-		crash "Dict.iter's yielded pairs did not match Dict.to_list order"
-	}
+			dict = Dict.from_list(real_pairs)
+			dict_iter = Dict.iter(dict)
 
-	round_tripped = Dict.from_iter(Dict.iter(dict))
-	if !Dict.is_eq(round_tripped, dict) {
-		crash "Dict.from_iter(Dict.iter(d)) round trip changed the dict"
-	}
+			if List.from_iter(dict_iter) != Dict.to_list(dict) {
+				crash "Dict.iter's yielded pairs did not match Dict.to_list order"
+			}
+
+			round_tripped = Fuzz.expect_allocs_at_most!(
+				round_trip_alloc_budget,
+				|{}| Dict.from_iter(Dict.iter(dict)),
+			)
+			if !Dict.is_eq(round_tripped, dict) {
+				crash "Dict.from_iter(Dict.iter(d)) round trip changed the dict"
+			}
+			{}
+		},
+	)
 
 	Fuzz.keep
 }
 
-target = Fuzz.target_with({
+target = Fuzz.target_with!({
 	name: "dict-iter-round-trip",
 	generator: entries_gen,
-	test,
+	test!,
 	show: |entries| Str.inspect(entries),
 })

@@ -4,19 +4,26 @@ import pf.Fuzz
 
 import pf.Arbitrary
 
-main : List(U8) -> U8
-main = |data| {
+## Allocation invariant: parsing a Str into a number must not allocate.
+main! : List(U8) => U8
+main! = |data| {
 	{ value: string, state } = Arbitrary.new(data).arbitrary_str()
 	{ value: retain, .. } = state.ratio(1, 2)
 	tmp = if retain string else ""
-	bonus = match I64.from_str(string) {
+	before = Fuzz.alloc_count!()
+	result = I64.from_str(string)
+	after = Fuzz.alloc_count!()
+	if after != before {
+		crash "I64.from_str allocated ${(after - before).to_str()} times (expected 0)"
+	}
+	bonus = match result {
 		Ok(_) => 0
 		Err(_) => 1
 	}
 	(tmp.count_utf8_bytes() + bonus).to_u8_wrap()
 }
 
-target = Fuzz.from_bytes({
+target = Fuzz.from_bytes!({
 	name: "strToI64",
-	test: main,
+	test!: main!,
 })

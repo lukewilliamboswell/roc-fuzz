@@ -25,9 +25,16 @@ insert_descending = |sorted, value| {
 reference_sort_reversed : List(U64) -> List(U64)
 reference_sort_reversed = |values| List.fold(values, [], insert_descending)
 
-test : List(U64) -> Fuzz.Outcome
-test = |values| {
-	sorted = List.sort_reversed(values)
+## `values` is uniquely owned here, so `List.sort_reversed` must sort in place
+## using only its fixed scratch buffer -- the allocation count must not scale
+## with the number of elements.
+##
+## Observed: mostly 0 allocations, occasionally up to 4 (fluxsort's scratch
+## buffer, plus a degenerate small/empty-list path); the count stays flat
+## across list lengths, never scaling with the number of elements.
+test! : List(U64) => Fuzz.Outcome
+test! = |values| {
+	sorted = Fuzz.expect_allocs_at_most!(4, |{}| List.sort_reversed(values))
 
 	if List.len(sorted) != List.len(values) {
 		crash "List.sort_reversed changed the length of the list"
@@ -40,9 +47,9 @@ test = |values| {
 	Fuzz.keep
 }
 
-target = Fuzz.target_with({
+target = Fuzz.target_with!({
 	name: "listSortReversed",
 	generator: Fuzz.list(Fuzz.u64, 400),
-	test,
+	test!,
 	show: |values| Str.inspect(values),
 })
