@@ -79,13 +79,36 @@ fn allocImpl(length: usize, alignment: usize) ?*anyopaque {
     return @ptrFromInt(@intFromPtr(base_bytes) + header_len);
 }
 
+/// Allocation counters served to the running Roc target. `Fuzz.alloc_count!`
+/// and `Fuzz.live_alloc_count!` read these, so a target can assert how many
+/// allocations a region performed and whether that region left anything
+/// outstanding.
+///
+/// `g_alloc_count` counts every `roc_alloc` and `roc_realloc` served, matching
+/// the roc test platform's `Host.alloc_count!`. `g_live_alloc_count` is the
+/// number of allocations still outstanding: a realloc replaces one block with
+/// another and so leaves the balance unchanged, which is why the reallocation
+/// path frees through the uncounted `deallocImpl` rather than `roc_dealloc`.
+var g_alloc_count: u64 = 0;
+var g_live_alloc_count: u64 = 0;
+
+fn deallocImpl(ptr: *anyopaque, alignment: usize) void {
+    const header_len = @max(alignment, @alignOf(usize));
+    std.c.free(@ptrFromInt(@intFromPtr(ptr) - header_len));
+}
+
 pub export fn roc_alloc(length: usize, alignment: usize) callconv(.c) ?*anyopaque {
-    return allocImpl(length, alignment);
+    const ptr = allocImpl(length, alignment);
+    if (ptr != null) {
+        g_alloc_count += 1;
+        g_live_alloc_count += 1;
+    }
+    return ptr;
 }
 
 pub export fn roc_dealloc(ptr: *anyopaque, alignment: usize) callconv(.c) void {
-    const header_len = @max(alignment, @alignOf(usize));
-    std.c.free(@ptrFromInt(@intFromPtr(ptr) - header_len));
+    if (g_live_alloc_count > 0) g_live_alloc_count -= 1;
+    deallocImpl(ptr, alignment);
 }
 
 pub export fn roc_realloc(ptr: *anyopaque, new_length: usize, alignment: usize) callconv(.c) ?*anyopaque {
@@ -93,10 +116,27 @@ pub export fn roc_realloc(ptr: *anyopaque, new_length: usize, alignment: usize) 
     const old_size_ptr: *const usize = @ptrFromInt(@intFromPtr(ptr) - @sizeOf(usize));
     const old_length = old_size_ptr.* - header_len;
     const new_ptr = allocImpl(new_length, alignment) orelse return null;
+    g_alloc_count += 1;
     const copy_len = @min(old_length, new_length);
     @memcpy(@as([*]u8, @ptrCast(new_ptr))[0..copy_len], @as([*]const u8, @ptrCast(ptr))[0..copy_len]);
-    roc_dealloc(ptr, alignment);
+    deallocImpl(ptr, alignment);
     return new_ptr;
+}
+
+/// Fuzz.alloc_count! (hosted): () => U64 involves no refcounted values, so
+/// under the hosted C ABI it takes no parameters.
+fn hostedAllocCount() callconv(.c) u64 {
+    return g_alloc_count;
+}
+
+/// Fuzz.live_alloc_count! (hosted): () => U64.
+fn hostedLiveAllocCount() callconv(.c) u64 {
+    return g_live_alloc_count;
+}
+
+comptime {
+    @export(&hostedAllocCount, .{ .name = "roc_fuzz_alloc_count", .visibility = .hidden });
+    @export(&hostedLiveAllocCount, .{ .name = "roc_fuzz_live_alloc_count", .visibility = .hidden });
 }
 
 pub export fn roc_dbg(bytes: [*]const u8, len: usize) callconv(.c) void {

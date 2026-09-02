@@ -9,8 +9,12 @@ platform "roc-fuzz"
 	packages {}
 	provides {
 		"roc_fuzz_name": name_for_host,
-		"roc_fuzz_run": run_for_host,
+		"roc_fuzz_run": run_for_host!,
 		"roc_fuzz_show": show_for_host,
+	}
+	hosted {
+		"roc_fuzz_alloc_count": Fuzz.alloc_count!,
+		"roc_fuzz_live_alloc_count": Fuzz.live_alloc_count!,
 	}
 	targets: {
 		inputs_dir: "targets/",
@@ -25,8 +29,8 @@ import Target exposing [Target]
 name_for_host : {} -> Str
 name_for_host = |_| target.name()
 
-run_for_host : List(U8) -> U8
-run_for_host = |input| target.run(input)
+run_for_host! : List(U8) => U8
+run_for_host! = |input| target.run!(input)
 
 show_for_host : List(U8) -> Str
 show_for_host = |input| target.show(input)
