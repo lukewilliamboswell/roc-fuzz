@@ -454,18 +454,240 @@ def fuzz_targets(
             continue
         seed = seed_path(target)
         corpus = seed.parent
+        CACHE.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="ci-report-", dir=CACHE) as temp:
+            report_dir = Path(temp) / "evidence with spaces"
+            run(
+                [
+                    str(executable),
+                    "ci",
+                    str(report_dir),
+                    str(corpus),
+                    f"--time={seconds}",
+                    "--max-input-size=4096",
+                    f"--seed={target['libfuzzer_seed']}",
+                    "--source-revision=test-revision",
+                    "--roc-version=test-roc",
+                    "--platform-release=test-platform",
+                    f"--platform-sha256={'a' * 64}",
+                ],
+                verbose=verbose,
+                capture=not verbose,
+            )
+            verify_ci_evidence(
+                report_dir,
+                executable,
+                target_name=None,
+                expected_outcome="passed",
+                expected_finding=None,
+            )
+    first_normal = next(
+        (target for target in targets if not target.get("expected_failure", False)),
+        None,
+    )
+    if first_normal is not None:
+        verify_ci_argument_validation(
+            executables[str(first_normal["name"])],
+        )
+
+
+def expect_exit_two(command: list[str], *, cwd: Path = ROOT) -> str:
+    completed = subprocess.run(
+        command,
+        cwd=cwd,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    if completed.returncode != 2:
+        raise TestFailure(
+            f"expected command to exit 2, got {completed.returncode}: "
+            f"{' '.join(command)}\n{completed.stdout}"
+        )
+    return completed.stdout
+
+
+def verify_ci_argument_validation(executable: Path) -> None:
+    CACHE.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="ci-validation-", dir=CACHE) as temp:
+        work = Path(temp)
+        corpus = work / "missing corpus"
+        report = work / "evidence with spaces"
+        common = [
+            "--source-revision=test-revision",
+            "--roc-version=test-roc",
+            "--platform-release=test-platform",
+            f"--platform-sha256={'a' * 64}",
+        ]
+        run(
+            [str(executable), "ci", str(report), str(corpus), "--runs=0", *common],
+            capture=True,
+        )
+        verify_ci_evidence(
+            report,
+            executable,
+            target_name=None,
+            expected_outcome="passed",
+            expected_finding=None,
+        )
+        if not corpus.is_dir():
+            raise TestFailure("CI did not create a missing corpus directory")
+
+        opt_out_report = work / "leak opt out"
         run(
             [
                 str(executable),
-                "run",
+                "ci",
+                str(opt_out_report),
                 str(corpus),
-                f"--time={seconds}",
-                "--max-input-size=4096",
-                f"--seed={target['libfuzzer_seed']}",
+                "--runs=0",
+                "--no-detect-leaks",
+                *common,
             ],
-            verbose=verbose,
-            capture=not verbose,
+            capture=True,
         )
+        verify_ci_evidence(
+            opt_out_report,
+            executable,
+            target_name=None,
+            expected_outcome="passed",
+            expected_finding=None,
+            expected_leak_detection=False,
+        )
+
+        overlap_output = expect_exit_two(
+            [str(executable), "ci", str(corpus), str(corpus), "--runs=0"]
+        )
+        if "must not overlap" not in overlap_output:
+            raise TestFailure("CI did not explain overlapping report/corpus paths")
+
+        occupied = work / "occupied"
+        occupied.mkdir()
+        sentinel = occupied / "keep"
+        sentinel.write_text("preserve me", encoding="utf-8")
+        expect_exit_two(
+            [str(executable), "ci", str(occupied), str(corpus), "--runs=0"]
+        )
+        if sentinel.read_text(encoding="utf-8") != "preserve me":
+            raise TestFailure("CI altered a non-empty report directory")
+
+        malformed = work / "malformed-sha"
+        sha_output = expect_exit_two(
+            [
+                str(executable),
+                "ci",
+                str(malformed),
+                str(corpus),
+                "--runs=0",
+                "--platform-sha256=not-a-digest",
+            ]
+        )
+        if "64 hexadecimal" not in sha_output:
+            raise TestFailure("CI did not explain malformed platform SHA-256 metadata")
+
+        unknown = work / "unknown-option"
+        unknown_output = expect_exit_two(
+            [str(executable), "ci", str(unknown), str(corpus), "--unknown-option"]
+        )
+        if "unknown option" not in unknown_output:
+            raise TestFailure("CI did not explain an unknown option")
+
+
+def sha256_path(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(64 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def verify_ci_evidence(
+    report_dir: Path,
+    executable: Path,
+    *,
+    target_name: str | None,
+    expected_outcome: str,
+    expected_finding: str | None,
+    expected_leak_detection: bool = True,
+) -> dict[str, object]:
+    report_path = report_dir / "report.json"
+    summary_path = report_dir / "summary.md"
+    log_path = report_dir / "run.log"
+    for required in (report_path, summary_path, log_path, report_dir / "failures"):
+        if not required.exists():
+            raise TestFailure(f"CI evidence is missing {required}")
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise TestFailure(f"invalid CI JSON report: {error}") from error
+
+    required_keys = {
+        "schema_version",
+        "target",
+        "started_at_unix_ms",
+        "finished_at_unix_ms",
+        "duration_ms",
+        "outcome",
+        "finding_kind",
+        "provenance",
+        "configuration",
+        "executable",
+        "termination",
+        "libfuzzer",
+        "corpus",
+        "failures",
+        "log",
+    }
+    if set(report) != required_keys:
+        raise TestFailure(f"unexpected CI report keys: {sorted(set(report) ^ required_keys)}")
+    if report["schema_version"] != "roc-fuzz-ci/v1":
+        raise TestFailure("unexpected CI report schema version")
+    if not isinstance(report["target"], str) or not report["target"]:
+        raise TestFailure("CI report target must be a non-empty string")
+    if target_name is not None and report["target"] != target_name:
+        raise TestFailure(f"CI report target mismatch: {report['target']!r}")
+    if report["outcome"] != expected_outcome or report["finding_kind"] != expected_finding:
+        raise TestFailure(
+            f"CI report result mismatch: {report['outcome']}/{report['finding_kind']}"
+        )
+    if not isinstance(report["duration_ms"], int) or report["duration_ms"] < 0:
+        raise TestFailure("CI report duration must be a non-negative integer")
+    if report["finished_at_unix_ms"] < report["started_at_unix_ms"]:
+        raise TestFailure("CI report timestamps are reversed")
+    provenance = report["provenance"]
+    if provenance != {
+        "source_revision": "test-revision",
+        "roc_version": "test-roc",
+        "platform_release": "test-platform",
+        "platform_sha256": "a" * 64,
+    }:
+        raise TestFailure(f"CI report provenance mismatch: {provenance!r}")
+    configuration = report["configuration"]
+    if configuration["leak_detection"] is not expected_leak_detection:
+        raise TestFailure("CI report leak-detection state mismatch")
+    command_disabled_leaks = "--no-detect-leaks" in configuration["command"]
+    if command_disabled_leaks is expected_leak_detection:
+        raise TestFailure("CI report command disagrees with its leak-detection state")
+    executable_report = report["executable"]
+    if executable_report["sha256"] != sha256_path(executable):
+        raise TestFailure("CI report executable digest mismatch")
+    log_report = report["log"]
+    if log_report["sha256"] != sha256_path(log_path) or log_report["size"] != log_path.stat().st_size:
+        raise TestFailure("CI report log manifest mismatch")
+    for collection_name in ("corpus", "failures"):
+        collection = report[collection_name]
+        paths = [entry["path"] for entry in collection]
+        if paths != sorted(paths):
+            raise TestFailure(f"{collection_name} manifest is not sorted")
+        root = report_dir / "failures" if collection_name == "failures" else Path(configuration["corpus"])
+        for entry in collection:
+            path = root / entry["path"]
+            if not path.is_file() or entry["size"] != path.stat().st_size or entry["sha256"] != sha256_path(path):
+                raise TestFailure(f"invalid {collection_name} manifest entry: {entry!r}")
+    summary = summary_path.read_text(encoding="utf-8")
+    if expected_outcome not in summary or "not Roc statement or branch coverage" not in summary:
+        raise TestFailure("CI Markdown summary is incomplete")
+    return report
 
 
 def verify_failure_artifact(
@@ -478,12 +700,23 @@ def verify_failure_artifact(
         corpus.mkdir()
         seed = corpus / "reproducer"
         seed.write_bytes(bytes.fromhex(str(target["seed_hex"])))
-        artifact = work / ".roc-fuzz" / (
+        report_dir = work / "evidence"
+        artifact = report_dir / "failures" / (
             "crash-" + hashlib.sha1(seed.read_bytes()).hexdigest()
         )
 
         completed = subprocess.run(
-            [str(executable), "run", str(corpus), "--runs=10"],
+            [
+                str(executable),
+                "ci",
+                str(report_dir),
+                str(corpus),
+                "--runs=10",
+                "--source-revision=test-revision",
+                "--roc-version=test-roc",
+                "--platform-release=test-platform",
+                f"--platform-sha256={'a' * 64}",
+            ],
             cwd=work,
             text=True,
             stdout=subprocess.PIPE,
@@ -495,6 +728,15 @@ def verify_failure_artifact(
             )
         if not artifact.is_file() or artifact.read_bytes() != seed.read_bytes():
             raise TestFailure("libFuzzer did not save the exact reproducing input")
+        report = verify_ci_evidence(
+            report_dir,
+            executable,
+            target_name="crashing-target",
+            expected_outcome="finding",
+            expected_finding="roc_crash",
+        )
+        if report["termination"]["exit_code"] != 77:
+            raise TestFailure("CI report did not preserve the Roc failure exit code")
         for command in (" show ", " replay ", " minimize "):
             if command not in completed.stdout:
                 raise TestFailure(

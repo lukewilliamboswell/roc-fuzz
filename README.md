@@ -117,6 +117,7 @@ organs, and comparisons that contradict themselves.
 
 ```text
 TARGET run [CORPUS] [OPTION...]
+TARGET ci REPORT_DIR [CORPUS] [OPTION...]
 TARGET show INPUT
 TARGET replay INPUT
 TARGET minimize INPUT OUTPUT
@@ -131,6 +132,11 @@ flags remain available through `raw`.
 
 When an explicit Roc failure is saved, the runner prints ready-to-run `show`,
 `replay`, and `minimize` commands.
+
+`ci` supervises the run in a child process and writes a versioned JSON report,
+Markdown summary, combined log, hashes, and failure artifacts. See
+[Fuzzing evidence for downstream projects](QUALITY.md) for the report contract,
+OpenSSF guidance, and a complete pull-request/daily workflow.
 
 Rejection-rate reporting remains a follow-up. `Fuzz.reject` already records the
 distinction in the typed target boundary so the runner can expose that metric.
