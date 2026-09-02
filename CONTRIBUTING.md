@@ -107,6 +107,25 @@ both a concrete reason and a full GitHub issue URL. The driver rejects
 unexplained skips; skipping a prerequisite also requires skipping its dependent
 stages.
 
+Every target asserts on allocation behaviour as well as on results. A property
+can check what an operation computes but not what it costs, so a builtin that
+stops mutating a uniquely owned value in place and starts copying it still
+returns the right answer and no content property notices. Pin the cost with
+`Fuzz.alloc_count!`, `Fuzz.measure_allocs!`, `Fuzz.expect_allocs_at_most!` or
+`Fuzz.expect_no_leaks!`, and build the target with `Fuzz.target_with!` or
+`Fuzz.from_bytes!` so the property may perform effects. The `check` stage
+enforces this; a target that genuinely cannot assert on cost belongs in
+`ALLOCATION_ASSERTION_EXEMPT` in `scripts/test.py` with a concrete reason.
+
+Assert on a difference between two counter reads, never on a raw value: the
+counter is process-wide and libFuzzer reuses one process across millions of
+inputs. Only assert zero for a value that is uniquely owned and pre-sized,
+because copy-on-write allocation is correct when a value is aliased.
+
+Separately, the runner checks after every input that the target freed
+everything it allocated, and fails the input otherwise. Pass
+`--no-detect-leaks` to a run to turn that off.
+
 The former byte-oriented builtin targets live under `examples/builtins/` and
 use `Fuzz.from_bytes`. This keeps their existing properties in the regression
 matrix. Top-level examples are an end-user gallery and should prefer

@@ -61,6 +61,65 @@ Use `Fuzz.target` when generation is part of a reusable named input type. Use
 `Fuzz.target_with` with an explicit `Generator(a)` for a local structural input
 or when choosing between generators for the same type in different targets.
 
+## Assert on allocations
+
+A property can check what a builtin computes but not what it costs. A builtin
+that stops mutating a uniquely owned value in place and starts copying it
+still produces correct answers, so no content-based property will notice the
+regression. `Fuzz` exposes the platform's allocation counters so a target can
+assert on cost as well as correctness:
+
+```roc
+Fuzz.alloc_count! : () => U64          # cumulative allocations served this process
+Fuzz.live_alloc_count! : () => U64     # allocations not yet freed
+Fuzz.measure_allocs! : ({} => a) => { value : a, allocations : U64 }
+Fuzz.expect_allocs_at_most! : U64, ({} => a) => a
+Fuzz.expect_no_leaks! : ({} => a) => {}
+```
+
+`alloc_count!` and `live_alloc_count!` are process-wide and monotonic, and
+libFuzzer reuses one process across millions of inputs, so never assert on a
+raw value. Always read the counter before and after the region you care
+about and assert on the difference; `measure_allocs!` and
+`expect_allocs_at_most!` do this for you.
+
+Only assert zero allocations for a value that is genuinely uniquely owned and
+pre-sized. If the value is aliased anywhere, copy-on-write allocation is
+correct behavior, not a regression. Measure only the region you mean to
+check: a constructor call such as `Dict.with_capacity` allocates the entries
+and bucket lists, so keep it outside the measured window.
+
+```roc
+# Build the dict OUTSIDE the measured region: Dict.with_capacity itself
+# allocates the entries and bucket lists.
+var $d = Dict.with_capacity(n)
+
+before = Fuzz.alloc_count!()
+var $i = 0
+while $i < n {
+	$d = Dict.insert($d, $i, $i * 2)
+	$i = $i + 1
+}
+insert_allocs = Fuzz.alloc_count!() - before
+if insert_allocs != 0 {
+	crash "pre-sized Dict inserts allocated ${insert_allocs.to_str()} times (expected 0)"
+}
+```
+
+Allocation assertions need an effectful test, so build the target with
+`Fuzz.target_with!` or `Fuzz.from_bytes!` instead of their pure counterparts.
+`target_with!` takes `test! : a => Outcome`; `from_bytes!` takes
+`test! : List(U8) => U8`.
+
+These constructors exist because the runner calls a target through the
+widened `run! : List(U8) => U8`, not the older pure `run : List(U8) -> U8`.
+This is a backward-compatible change: a pure function body already satisfies
+an effectful signature, so every existing target keeps compiling and running
+unchanged. Keep targets pure unless the property itself needs one of the
+allocation combinators above -- a pure target is deterministic, and
+libFuzzer's crash replay and minimization rely on that determinism to
+reproduce and shrink a saved failure.
+
 ## Tune a run
 
 Give every new target a short, bounded smoke run before a long campaign:

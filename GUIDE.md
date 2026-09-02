@@ -138,6 +138,13 @@ properties include:
 Keep unrelated properties or formats in separate targets. A narrow target is
 usually faster and its failures are easier to understand.
 
+All of these are content-based: they check what an operation returns, not what
+it costs. An allocation regression, such as a builtin that stops mutating a
+uniquely owned value in place and starts copying it, still returns the correct
+answer, so none of the properties above will catch it. See [Assert on
+allocations](ADVANCED.md#assert-on-allocations) for a property that checks
+cost instead.
+
 ### Handle invalid input deliberately
 
 Malformed input is not automatically a bug. For a parser robustness target,

@@ -74,6 +74,14 @@ Existing byte-oriented quality targets can migrate with `Fuzz.from_bytes`
 without changing their property immediately. New targets should prefer typed
 generators because they make the tested input domain visible in the API.
 
+A target can also assert on allocation counts rather than only on returned
+values, which catches regressions such as a builtin that starts copying a
+uniquely owned value instead of mutating it in place. This needs an
+effectful test (`Fuzz.target_with!` or `Fuzz.from_bytes!`); existing pure
+targets are unaffected. See [Assert on
+allocations](ADVANCED.md#assert-on-allocations) for the API and a worked
+example.
+
 ## Examples
 
 The end-user gallery demonstrates several common target shapes:
@@ -132,6 +140,11 @@ Prebuilt target inputs are versioned under `platform/targets/x64musl` and
 building a fuzz target does not require Zig, a C++ toolchain, musl, or a local
 libFuzzer installation. Apple Silicon outputs use the system `libSystem` and
 otherwise carry their native runtime dependencies in the platform.
+
+The `arm64mac` prebuilt host has not yet been regenerated for the allocation
+tracking counters added to `Fuzz`; only `x64musl` has. Until it is, build the
+platform on a Mac with `python3 scripts/build_platform.py --target arm64mac`
+before using allocation assertions on macOS.
 
 Maintainers regenerate those inputs only when updating the host or toolchain:
 

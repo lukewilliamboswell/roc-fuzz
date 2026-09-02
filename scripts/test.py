@@ -199,10 +199,51 @@ def roc_files() -> list[Path]:
     )
 
 
+# Targets exempt from the allocation-assertion norm, each with a concrete
+# reason. Keep this list short: a target that measures nothing about cost
+# cannot catch an allocation regression, which is a whole class of bug that
+# produces correct answers and so is invisible to a content property.
+ALLOCATION_ASSERTION_EXEMPT = {
+    "failureArtifact": "fixture whose whole purpose is to fail on a known input",
+}
+
+ALLOCATION_APIS = (
+    "alloc_count!",
+    "live_alloc_count!",
+    "measure_allocs!",
+    "expect_allocs_at_most!",
+    "expect_no_leaks!",
+)
+
+
+def check_allocation_assertions(targets: list[dict[str, object]]) -> None:
+    """Every target should assert on allocation behaviour, not only on results."""
+
+    missing: list[str] = []
+    for target in targets:
+        name = str(target["name"])
+        if name in ALLOCATION_ASSERTION_EXEMPT:
+            continue
+        source = (ROOT / str(target["path"])).read_text(encoding="utf-8")
+        if not any(api in source for api in ALLOCATION_APIS):
+            missing.append(f"{name} ({target['path']})")
+    if missing:
+        listed = "\n  ".join(missing)
+        raise SystemExit(
+            "these targets assert nothing about allocations:\n  "
+            + listed
+            + "\n\nUse one of "
+            + ", ".join(f"Fuzz.{api}" for api in ALLOCATION_APIS)
+            + " to pin the cost of the operation under test, or add the target to"
+            + " ALLOCATION_ASSERTION_EXEMPT in scripts/test.py with a concrete reason."
+        )
+
+
 def check_targets(roc: str, targets: list[dict[str, object]], verbose: bool) -> None:
     run([roc, "fmt", "--check", *map(str, roc_files())], verbose=verbose)
     for target in targets:
         run([roc, "check", str(ROOT / str(target["path"]))], verbose=verbose)
+    check_allocation_assertions(targets)
 
 
 def test_targets(roc: str, targets: list[dict[str, object]], verbose: bool) -> None:
