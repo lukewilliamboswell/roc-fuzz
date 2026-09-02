@@ -12,12 +12,7 @@ main! = |data| {
 	{ value: string, state } = Arbitrary.new(data).arbitrary_str()
 	{ value: retain, .. } = state.ratio(1, 2)
 	tmp = if retain string else ""
-	before = Fuzz.alloc_count!()
-	trimmed = string.trim_start()
-	after = Fuzz.alloc_count!()
-	if after != before {
-		crash "Str.trim_start allocated ${(after - before).to_str()} times (expected 0)"
-	}
+	trimmed = Fuzz.expect_allocs_at_most!(0, |{}| string.trim_start())
 	bonus = if trimmed.is_empty() 1 else 0
 	(tmp.count_utf8_bytes() + bonus).to_u8_wrap()
 }

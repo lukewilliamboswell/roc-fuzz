@@ -27,13 +27,10 @@ test! = |input| {
 		return Fuzz.reject
 	}
 
-	before = Fuzz.alloc_count!()
-	smaller = F64.min(input.left, input.right)
-	larger = F64.max(input.left, input.right)
-	after = Fuzz.alloc_count!()
-	if after != before {
-		crash "F64.min/F64.max allocated ${(after - before).to_str()} times (expected 0)"
-	}
+	{ smaller, larger } = Fuzz.expect_allocs_at_most!(
+		0,
+		|{}| { smaller: F64.min(input.left, input.right), larger: F64.max(input.left, input.right) },
+	)
 
 	if smaller > larger {
 		crash "min returned a value above max"

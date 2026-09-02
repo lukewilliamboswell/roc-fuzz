@@ -25,42 +25,45 @@ main! = |data| {
 
 	# Pre-size outside the measured region: `with_capacity` allocates the
 	# entries and bucket lists itself.
-	var $unique = Dict.with_capacity(n)
-	unique_before = Fuzz.alloc_count!()
-	var $i = 0
-	while $i < n {
-		$unique = Dict.insert($unique, $i, $i)
-		$i = $i + 1
-	}
-	unique_allocs = Fuzz.alloc_count!() - unique_before
+	unique_start = Dict.with_capacity(n)
+	unique = Fuzz.expect_allocs_at_most!(
+		0,
+		|{}| {
+			var $dict = unique_start
+			var $i = 0
+			while $i < n {
+				$dict = Dict.insert($dict, $i, $i)
+				$i = $i + 1
+			}
+			$dict
+		},
+	)
 
 	# The same inserts with a second reference held across them.
 	base = Dict.with_capacity(n)
 	alias = base
-	shared_before = Fuzz.alloc_count!()
-	var $shared = base
-	var $j = 0
-	while $j < n {
-		$shared = Dict.insert($shared, $j, $j)
-		$j = $j + 1
-	}
-	shared_allocs = Fuzz.alloc_count!() - shared_before
+	shared = Fuzz.expect_allocs_at_least!(
+		1,
+		|{}| {
+			var $dict = base
+			var $j = 0
+			while $j < n {
+				$dict = Dict.insert($dict, $j, $j)
+				$j = $j + 1
+			}
+			$dict
+		},
+	)
 
 	# Use every dict after the measured regions so none can be optimised away,
 	# and so the alias is genuinely still live across the inserts above.
-	if Dict.len($unique) != n or Dict.len($shared) != n {
+	if Dict.len(unique) != n or Dict.len(shared) != n {
 		crash "a dict did not contain every inserted key"
 	}
 	if Dict.len(alias) != 0 {
 		crash "the retained alias observed the inserts made through its copy"
 	}
 
-	if unique_allocs != 0 {
-		crash "inserts into a uniquely owned pre-sized Dict allocated ${unique_allocs.to_str()} times (expected 0)"
-	}
-	if shared_allocs == 0 {
-		crash "inserts into an aliased Dict allocated nothing, so copy-on-write did not happen"
-	}
 	0
 }
 

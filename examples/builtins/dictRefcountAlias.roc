@@ -244,12 +244,10 @@ check_alloc_invariants! = |count| {
 		match List.first($triples) {
 			Ok((k, _v1, v2)) => {
 				alias = $ad
-				before2 = Fuzz.alloc_count!()
-				$ad = Dict.insert($ad, k, List.concat(v2, [0]))
-				after2 = Fuzz.alloc_count!()
-				if after2 == before2 {
-					crash "inserting into a Dict with a retained alias performed zero allocations (copy-on-write did not trigger)"
-				}
+				$ad = Fuzz.expect_allocs_at_least!(
+					1,
+					|{}| Dict.insert($ad, k, List.concat(v2, [0])),
+				)
 				if Dict.get(alias, k) == Dict.get($ad, k) {
 					crash "the alias observed a write that should have been copy-on-write isolated"
 				}

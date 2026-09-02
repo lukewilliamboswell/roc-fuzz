@@ -5,11 +5,7 @@ import pf.Fuzz
 ## Allocation invariant: doing nothing must allocate nothing.
 main! : List(U8) => U8
 main! = |_data| {
-	before = Fuzz.alloc_count!()
-	after = Fuzz.alloc_count!()
-	if after != before {
-		crash "noop allocated ${(after - before).to_str()} times (expected 0)"
-	}
+	Fuzz.expect_allocs_at_most!(0, |{}| {})
 	0
 }
 

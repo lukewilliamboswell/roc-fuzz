@@ -18,7 +18,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-26]
+        include:
+          - os: ubuntu-22.04
+            platform-target: x64musl
+          - os: macos-26
+            platform-target: arm64mac
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -57,6 +61,9 @@ jobs:
           roc version
           zig version
           python --version
+
+      - name: Generate native platform inputs
+        run: python scripts/build_platform.py --target ${{ matrix.platform-target }}
 
       - name: Validate target sources
         run: python scripts/test.py --operation validate --verbose

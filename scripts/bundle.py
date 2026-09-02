@@ -86,7 +86,7 @@ def main() -> None:
         ]
         print(
             f"Bundling {len(roc_files)} Roc modules, {len(platform_inputs)} "
-            f"prebuilt target inputs, and license metadata "
+            f"generated target inputs, and license metadata "
             f"({unpacked_size} bytes unpacked).",
             flush=True,
         )

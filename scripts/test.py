@@ -24,7 +24,7 @@ OPERATIONS = ("all", "validate", *STAGES)
 REQUIRED_TARGET_KEYS = {"name", "path", "seed_hex", "libfuzzer_seed"}
 OPTIONAL_TARGET_KEYS = {"expected_failure", "skip"}
 GITHUB_ISSUE = re.compile(r"https://github\.com/[^/]+/[^/]+/issues/[1-9][0-9]*$")
-SINGLE_FILE_COLLECTIONS = {"examples", "examples/builtins", "examples/sort"}
+SINGLE_FILE_COLLECTIONS = {"examples", "examples/builtins"}
 
 
 class TestFailure(RuntimeError):
@@ -207,13 +207,79 @@ ALLOCATION_ASSERTION_EXEMPT = {
     "failureArtifact": "fixture whose whole purpose is to fail on a known input",
 }
 
-ALLOCATION_APIS = (
-    "alloc_count!",
-    "live_alloc_count!",
-    "measure_allocs!",
-    "expect_allocs_at_most!",
-    "expect_no_leaks!",
+ALLOCATION_ASSERTION = re.compile(
+    r"\bFuzz\.expect_allocs_at_(?:most|least)!\s*\("
 )
+
+
+def strip_roc_comments_and_strings(source: str) -> str:
+    """Remove text that must not satisfy source-level policy checks."""
+
+    output: list[str] = []
+    in_string = False
+    escaped = False
+    for line in source.splitlines():
+        cleaned: list[str] = []
+        for character in line:
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif character == "\\":
+                    escaped = True
+                elif character == '"':
+                    in_string = False
+                cleaned.append(" ")
+            elif character == '"':
+                in_string = True
+                cleaned.append(" ")
+            elif character == "#":
+                break
+            else:
+                cleaned.append(character)
+        output.append("".join(cleaned))
+    return "\n".join(output)
+
+
+def has_allocation_assertion(source: str) -> bool:
+    return ALLOCATION_ASSERTION.search(strip_roc_comments_and_strings(source)) is not None
+
+
+def check_allocation_policy_parser() -> None:
+    accepted = "value = Fuzz.expect_allocs_at_most!(0, |{}| operation())"
+    rejected = (
+        "# Fuzz.expect_allocs_at_most!(0, |{}| operation())",
+        'text = "Fuzz.expect_allocs_at_least!(1, |{}| operation())"',
+        "measured = Fuzz.measure_allocs!(|{}| operation())",
+        "Fuzz.expect_no_leaks!(|{}| operation())",
+    )
+    if not has_allocation_assertion(accepted) or any(
+        has_allocation_assertion(source) for source in rejected
+    ):
+        raise TestFailure("allocation-assertion source policy parser is inconsistent")
+
+
+def check_tracked_artifacts() -> None:
+    """Keep generated executables and native inputs out of source control."""
+
+    if not (ROOT / ".git").exists():
+        return
+    tracked = subprocess.check_output(
+        ["git", "ls-files", "-z"], cwd=ROOT
+    ).decode().split("\0")
+    forbidden = [
+        path
+        for path in tracked
+        if path == "examples/stack/main"
+        or (
+            path.startswith("platform/targets/")
+            and (path.endswith((".a", ".o")) or path.endswith("/SHA256SUMS"))
+        )
+    ]
+    if forbidden:
+        raise TestFailure(
+            "generated native artifacts must not be tracked:\n  "
+            + "\n  ".join(sorted(forbidden))
+        )
 
 
 def check_allocation_assertions(targets: list[dict[str, object]]) -> None:
@@ -225,21 +291,22 @@ def check_allocation_assertions(targets: list[dict[str, object]]) -> None:
         if name in ALLOCATION_ASSERTION_EXEMPT:
             continue
         source = (ROOT / str(target["path"])).read_text(encoding="utf-8")
-        if not any(api in source for api in ALLOCATION_APIS):
+        if not has_allocation_assertion(source):
             missing.append(f"{name} ({target['path']})")
     if missing:
         listed = "\n  ".join(missing)
         raise SystemExit(
             "these targets assert nothing about allocations:\n  "
             + listed
-            + "\n\nUse one of "
-            + ", ".join(f"Fuzz.{api}" for api in ALLOCATION_APIS)
+            + "\n\nUse Fuzz.expect_allocs_at_most! or Fuzz.expect_allocs_at_least!"
             + " to pin the cost of the operation under test, or add the target to"
             + " ALLOCATION_ASSERTION_EXEMPT in scripts/test.py with a concrete reason."
         )
 
 
 def check_targets(roc: str, targets: list[dict[str, object]], verbose: bool) -> None:
+    check_tracked_artifacts()
+    check_allocation_policy_parser()
     run([roc, "fmt", "--check", *map(str, roc_files())], verbose=verbose)
     for target in targets:
         run([roc, "check", str(ROOT / str(target["path"]))], verbose=verbose)
@@ -319,8 +386,15 @@ def build_targets(
 ) -> dict[str, Path]:
     if not targets:
         return {}
+    system = platform.system()
+    if system == "Linux":
+        target_names = {"x64musl"}
+    elif system == "Darwin":
+        target_names = {"arm64mac"}
+    else:
+        raise TestFailure(f"unsupported host platform for target builds: {system}")
     try:
-        validate_platform_inputs(ROOT)
+        validate_platform_inputs(ROOT, target_names)
     except RuntimeError as error:
         raise TestFailure(str(error)) from error
     return {

@@ -2,11 +2,17 @@ app [target] { pf: platform "../../platform/main.roc" }
 
 import pf.Fuzz
 
+## Building a Set from bytes may grow both Dict backing lists. Keep that work
+## within a linear budget while checking the resulting contents independently.
 main! : List(U8) => U8
 main! = |data| {
 	Fuzz.expect_no_leaks!(
 		|{}| {
-			set = List.fold(data, Set.empty(), Set.insert)
+			limit = 40 * List.len(data) + 128
+			set = Fuzz.expect_allocs_at_most!(
+				limit,
+				|{}| List.fold(data, Set.empty(), Set.insert),
+			)
 			for element in data {
 				if !Set.contains(set, element) {
 					crash "set did not contain an inserted element"

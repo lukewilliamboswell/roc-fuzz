@@ -29,7 +29,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
 
@@ -62,9 +62,51 @@ jobs:
             exit 1
           fi
 
+  native-inputs:
+    name: Generate native inputs (${{ matrix.platform_target }})
+    needs: release-info
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform_target: x64musl
+          - os: macos-26
+            platform_target: arm64mac
+    steps:
+      - name: Checkout exact source revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install Python
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
+        with:
+          python-version: "3.13"
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29
+        with:
+          version: "0.16.0"
+          use-cache: false
+
+      - name: Generate and checksum native inputs
+        run: python scripts/build_platform.py --target ${{ matrix.platform_target }}
+
+      - name: Upload native inputs
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.platform_target }}
+          path: platform/targets/${{ matrix.platform_target }}
+          if-no-files-found: error
+          retention-days: 7
+
   build:
     name: Build and validate release bundle
-    needs: release-info
+    needs: [release-info, native-inputs]
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -87,6 +129,18 @@ jobs:
         with:
           version: nightly-new-compiler
           nightly-tag: ${{ needs.release-info.outputs.roc_nightly }}
+
+      - name: Download x64-musl inputs
+        uses: actions/download-artifact@v8
+        with:
+          name: x64musl
+          path: platform/targets/x64musl
+
+      - name: Download Apple Silicon inputs
+        uses: actions/download-artifact@v8
+        with:
+          name: arm64mac
+          path: platform/targets/arm64mac
 
       - name: Validate source and unit tests
         run: python scripts/test.py --operation validate --verbose
@@ -233,9 +287,31 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  attest-release:
+    name: Attest tested release bundle
+    needs: [release-info, build, test-bundles]
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Download the tested release bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: release-bundles
+          path: .release/bundles
+
+      - name: Attest SLSA build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: .release/bundles/*.tar.zst
+
   publish-release:
     name: Publish GitHub release
-    needs: [release-info, build, build-docs, test-bundles]
+    needs: [release-info, build, build-docs, test-bundles, attest-release]
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     permissions:

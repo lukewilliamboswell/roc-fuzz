@@ -10,7 +10,8 @@ import fuzz.Fuzz
 ## trip across 20000 fuzzer runs.
 test! : U64 => Fuzz.Outcome
 test! = |input| {
-	{ value: decoded, allocations } = Fuzz.measure_allocs!(
+	decoded = Fuzz.expect_allocs_at_most!(
+		1,
 		|{}| {
 			encoded = Json.to_str(input)
 			result : Try(U64, _)
@@ -18,9 +19,6 @@ test! = |input| {
 			result
 		},
 	)
-	if allocations > 1 {
-		crash "JSON round trip allocated ${allocations.to_str()} times (expected at most 1)"
-	}
 
 	match decoded {
 		Ok(value) if value == input => Fuzz.keep

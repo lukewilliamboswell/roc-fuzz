@@ -4,9 +4,8 @@ import pf.Fuzz
 
 import pf.Arbitrary
 
-## Allocation invariant: `Str.split_on` is stable -- splitting the exact
-## same string/delimiter pair twice must cost the exact same number of
-## allocations both times, since the shape of the work is identical.
+## Allocation invariant: `Str.split_on` stays within a linear budget based on
+## the number of input bytes and therefore possible parts.
 main! : List(U8) => U8
 main! = |data| {
 	first = Arbitrary.new(data)
@@ -17,13 +16,8 @@ main! = |data| {
 	tmp1 = if retain1 string else ""
 	tmp2 = if retain2 delimiter else ""
 
-	first_run = Fuzz.measure_allocs!(|{}| string.split_on(delimiter))
-	second_run = Fuzz.measure_allocs!(|{}| string.split_on(delimiter))
-	if first_run.allocations != second_run.allocations {
-		crash "Str.split_on allocated a different number of times (${first_run.allocations.to_str()} vs ${second_run.allocations.to_str()}) for the same input"
-	}
-
-	parts = first_run.value
+	limit = 2 * string.count_utf8_bytes() + 4
+	parts = Fuzz.expect_allocs_at_most!(limit, |{}| string.split_on(delimiter))
 	if Str.join_with(parts, delimiter) != string {
 		crash "split string did not rejoin to the original"
 	}

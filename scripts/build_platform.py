@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
+import platform as host_platform
 import shlex
 import shutil
 import subprocess
@@ -106,7 +107,7 @@ def resolve_libfuzzer_source(explicit: Path | None, work: Path) -> Path:
     return validate_libfuzzer_source(source)
 
 
-def build_libfuzzer(zig: str, ar: str, source: Path, output: Path, work: Path, spec: TargetSpec) -> None:
+def build_libfuzzer(zig: str, ar: list[str], source: Path, output: Path, work: Path, spec: TargetSpec) -> None:
     objects: list[str] = []
     object_dir = work / f"{spec.roc_name}-libfuzzer-objects"
     object_dir.mkdir()
@@ -134,7 +135,7 @@ def build_libfuzzer(zig: str, ar: str, source: Path, output: Path, work: Path, s
         ])
         objects.append(str(obj))
     output.unlink(missing_ok=True)
-    run([ar, "rcs", str(output), *objects])
+    run([*ar, "rcs", str(output), *objects])
 
 
 def copy_zig_runtime(zig: str, target_dir: Path, work: Path, spec: TargetSpec) -> None:
@@ -171,7 +172,7 @@ def copy_zig_runtime(zig: str, target_dir: Path, work: Path, spec: TargetSpec) -
         shutil.copy2(source, target_dir / name)
 
 
-def build_target(zig: str, ar: str, source: Path, work: Path, spec: TargetSpec) -> None:
+def build_target(zig: str, ar: list[str], source: Path, work: Path, spec: TargetSpec) -> None:
     directory = target_directory(ROOT, spec)
     directory.mkdir(parents=True, exist_ok=True)
     run([
@@ -184,7 +185,7 @@ def build_target(zig: str, ar: str, source: Path, work: Path, spec: TargetSpec) 
             zig, "cc", "-target", spec.zig_target, *cxx_target_args(spec), "-O2", "-fPIC",
             "-c", str(ROOT / "src" / "macos_sancov.c"), "-o", str(stack_depth),
         ])
-        run([ar, "rcs", str(directory / "libhost.a"), str(stack_depth)])
+        run([*ar, "rcs", str(directory / "libhost.a"), str(stack_depth)])
     build_libfuzzer(zig, ar, source, directory / "libfuzzer.a", work, spec)
     copy_zig_runtime(zig, directory, work, spec)
     manifest = write_platform_manifest(ROOT, spec)
@@ -197,9 +198,9 @@ def main() -> None:
     parser.add_argument("--roc-source", type=Path, default=Path(os.environ["ROC_SOURCE"]) if "ROC_SOURCE" in os.environ else None, help="Roc source checkout used only with --regenerate-glue")
     parser.add_argument("--regenerate-glue", action="store_true")
     parser.add_argument("--libfuzzer-source", type=Path, help="override the pinned libFuzzer source directory")
-    parser.add_argument("--target", choices=tuple(TARGETS_BY_NAME), action="append", help="target to regenerate (default: all)")
+    parser.add_argument("--target", choices=tuple(TARGETS_BY_NAME), action="append", help="target to generate (default: current host)")
     parser.add_argument("--zig", default=os.environ.get("ZIG", "zig"))
-    parser.add_argument("--ar", default=os.environ.get("AR", "ar"))
+    parser.add_argument("--ar", default=os.environ.get("AR"), help="archiver executable (default: `zig ar`)")
     args = parser.parse_args()
 
     generated_glue = ROOT / "src" / "roc_platform_abi.zig"
@@ -217,13 +218,26 @@ def main() -> None:
     elif not generated_glue.is_file():
         raise SystemExit("generated Zig ABI glue is missing; use --regenerate-glue")
 
-    selected = set(args.target or TARGETS_BY_NAME)
+    if args.target:
+        selected = set(args.target)
+    else:
+        system = host_platform.system()
+        machine = host_platform.machine().lower()
+        if system == "Linux" and machine in {"x86_64", "amd64"}:
+            selected = {"x64musl"}
+        elif system == "Darwin" and machine in {"arm64", "aarch64"}:
+            selected = {"arm64mac"}
+        else:
+            raise SystemExit(
+                f"cannot infer a supported target for {system} {machine}; pass --target"
+            )
+    ar = [args.ar] if args.ar else [args.zig, "ar"]
     with tempfile.TemporaryDirectory(prefix="roc-fuzz-build-") as temp:
         work = Path(temp)
         source = resolve_libfuzzer_source(args.libfuzzer_source, work)
         for spec in TARGET_SPECS:
             if spec.roc_name in selected:
-                build_target(args.zig, args.ar, source, work, spec)
+                build_target(args.zig, ar, source, work, spec)
 
 
 if __name__ == "__main__":

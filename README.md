@@ -102,8 +102,8 @@ The focused builtin regression targets are retained under
 `Arbitrary` API and are useful for compiler and builtin validation, but are not
 the recommended starting point for application authors.
 
-[`examples/sort/`](examples/sort/) holds a dedicated suite for the `List` sorting
-builtins. Sorting is worth its own collection because a sort has properties an
+The builtin collection also holds a dedicated suite for the `List` sorting
+builtins. Sorting is worth focused coverage because a sort has properties an
 invariant check alone will not reach: it has to be stable, it has to return a
 permutation of its input, and it changes algorithm with the length of the list
 and the width of the element. The targets check each sorting API against an
@@ -135,28 +135,21 @@ distinction in the typed target boundary so the runner can expose that metric.
 
 ## Develop and package
 
-Prebuilt target inputs are versioned under `platform/targets/x64musl` and
-`platform/targets/arm64mac`. Users and release jobs consume them directly, so
-building a fuzz target does not require Zig, a C++ toolchain, musl, or a local
-libFuzzer installation. Apple Silicon outputs use the system `libSystem` and
-otherwise carry their native runtime dependencies in the platform.
+Native target inputs are not stored in this repository. Trusted release jobs
+generate x64-musl and Apple Silicon macOS inputs, assemble them into the
+published platform bundle, and attach signed build provenance. Bundle users do
+not need Zig, a C++ toolchain, musl, or a local libFuzzer installation.
 
-The `arm64mac` prebuilt host has not yet been regenerated for the allocation
-tracking counters added to `Fuzz`; only `x64musl` has. Until it is, build the
-platform on a Mac with `python3 scripts/build_platform.py --target arm64mac`
-before using allocation assertions on macOS.
-
-Maintainers regenerate those inputs only when updating the host or toolchain:
+A source checkout generates only its current host inputs:
 
 ```sh
 python3 scripts/build_platform.py
 ```
 
-The regeneration script verifies the checksum-pinned libFuzzer source, builds
-the Zig host adapter, copies the required Zig C++ and compiler runtimes, and
-refreshes both `SHA256SUMS` manifests. Commit the regenerated archives and
-manifests together. Release bundles verify and include those versioned inputs
-without rebuilding them.
+The script verifies the checksum-pinned libFuzzer source, builds the Zig host
+adapter, copies the required Zig C++ and compiler runtimes, and writes a local
+`SHA256SUMS` manifest. These generated files are ignored by Git. See
+[`SLSA_PROVENANCE.md`](SLSA_PROVENANCE.md) for release verification.
 
 Run the repository validation matrix with:
 

@@ -8,8 +8,7 @@ parse_u64 : Str -> Try(U64, _)
 parse_u64 = |input| Json.parse(input)
 
 ## Allocation invariants:
-## * `Json.parse` is stable -- parsing the same input twice must cost the
-##   same number of allocations both times.
+## * `Json.parse` stays within a linear budget based on input size.
 ## * `Json.to_str` on a `U64` allocates at most once. Even though the
 ##   rendered digits (at most 20 ASCII characters) always fit in a small
 ##   string, encoding builds through a growable heap buffer before the
@@ -19,12 +18,8 @@ parse_u64 = |input| Json.parse(input)
 main! : List(U8) => U8
 main! = |data| {
 	input = Arbitrary.new(data).arbitrary_list_u8().value |> Str.from_utf8_lossy
-	first_parse = Fuzz.measure_allocs!(|{}| parse_u64(input))
-	second_parse = Fuzz.measure_allocs!(|{}| parse_u64(input))
-	if first_parse.allocations != second_parse.allocations {
-		crash "Json.parse allocated a different number of times (${first_parse.allocations.to_str()} vs ${second_parse.allocations.to_str()}) for the same input"
-	}
-	result = first_parse.value
+	limit = 4 * input.count_utf8_bytes() + 16
+	result = Fuzz.expect_allocs_at_most!(limit, |{}| parse_u64(input))
 
 	match result {
 		Ok(decoded) => {

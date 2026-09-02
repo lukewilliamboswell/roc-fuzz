@@ -83,6 +83,19 @@ Fuzz := [].{
 		measured.value
 	}
 
+	## Crash unless `body!` performs at least `limit` allocations.
+	##
+	## This is useful for copy-on-write invariants: an operation on shared
+	## storage must allocate rather than mutate an alias in place.
+	expect_allocs_at_least! : U64, ({} => a) => a
+	expect_allocs_at_least! = |limit, body!| {
+		measured = Fuzz.measure_allocs!(body!)
+		if measured.allocations < limit {
+			crash "expected at least ${limit.to_str()} allocations, but ${measured.allocations.to_str()} were performed"
+		}
+		measured.value
+	}
+
 	## Crash unless `body!` frees everything it allocated.
 	##
 	## The result is dropped before the balance is read, so a value that is

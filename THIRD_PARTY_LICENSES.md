@@ -1,8 +1,7 @@
 # Third-party software in roc-fuzz platform inputs
 
-The prebuilt files under `platform/targets/x64musl` and
-`platform/targets/arm64mac` contain or link the following third-party software.
-The platform bundle includes this notice.
+The native files generated into release bundles contain or link the following
+third-party software. The platform bundle includes this notice.
 
 | Component | Bundled inputs | License |
 | --- | --- | --- |

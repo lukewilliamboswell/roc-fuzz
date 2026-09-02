@@ -14,12 +14,7 @@ main! = |data| {
 	{ value: retain2, .. } = after_str2.ratio(1, 2)
 	tmp1 = if retain1 str1 else ""
 	tmp2 = if retain2 str2 else ""
-	before = Fuzz.alloc_count!()
-	starts = str1.starts_with(str2)
-	after = Fuzz.alloc_count!()
-	if after != before {
-		crash "Str.starts_with allocated ${(after - before).to_str()} times (expected 0)"
-	}
+	starts = Fuzz.expect_allocs_at_most!(0, |{}| str1.starts_with(str2))
 	result = if starts 1 else 0
 	(tmp1.count_utf8_bytes() + tmp2.count_utf8_bytes() + result).to_u8_wrap()
 }

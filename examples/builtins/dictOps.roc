@@ -317,12 +317,10 @@ check_alloc_invariants! = |count| {
 		# Alias the dict, then confirm the next insert copies instead of
 		# mutating the shared backing store.
 		alias = $ad
-		before2 = Fuzz.alloc_count!()
-		$ad = Dict.insert($ad, U64.to_u8_wrap(0), 255)
-		after2 = Fuzz.alloc_count!()
-		if after2 == before2 {
-			crash "inserting into a Dict with a retained alias performed zero allocations (copy-on-write did not trigger)"
-		}
+		$ad = Fuzz.expect_allocs_at_least!(
+			1,
+			|{}| Dict.insert($ad, U64.to_u8_wrap(0), 255),
+		)
 		if Dict.get(alias, U64.to_u8_wrap(0)) == Ok(255) {
 			crash "the alias observed a write that should have been copy-on-write isolated"
 		}

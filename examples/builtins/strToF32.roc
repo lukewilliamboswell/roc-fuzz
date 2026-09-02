@@ -11,12 +11,7 @@ main! = |data| {
 	{ value: string, state } = Arbitrary.new(data).arbitrary_str()
 	{ value: retain, .. } = state.ratio(1, 2)
 	tmp = if retain string else ""
-	before = Fuzz.alloc_count!()
-	parsed = F32.from_str(string)
-	after = Fuzz.alloc_count!()
-	if after != before {
-		crash "F32.from_str allocated ${(after - before).to_str()} times (expected 0)"
-	}
+	parsed = Fuzz.expect_allocs_at_most!(0, |{}| F32.from_str(string))
 	bonus = match parsed {
 		Ok(_) => 0
 		Err(_) => 1

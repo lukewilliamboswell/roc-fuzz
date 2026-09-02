@@ -267,67 +267,67 @@
     },
     {
       "name": "listSortNumbers",
-      "path": "examples/sort/listSortNumbers.roc",
+      "path": "examples/builtins/listSortNumbers.roc",
       "seed_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728",
       "libfuzzer_seed": 1041
     },
     {
       "name": "listSortReversed",
-      "path": "examples/sort/listSortReversed.roc",
+      "path": "examples/builtins/listSortReversed.roc",
       "seed_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728",
       "libfuzzer_seed": 1042
     },
     {
       "name": "listSortBy",
-      "path": "examples/sort/listSortBy.roc",
+      "path": "examples/builtins/listSortBy.roc",
       "seed_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728",
       "libfuzzer_seed": 1043
     },
     {
       "name": "listSortByReversed",
-      "path": "examples/sort/listSortByReversed.roc",
+      "path": "examples/builtins/listSortByReversed.roc",
       "seed_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728",
       "libfuzzer_seed": 1044
     },
     {
       "name": "listSortWith",
-      "path": "examples/sort/listSortWith.roc",
+      "path": "examples/builtins/listSortWith.roc",
       "seed_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728",
       "libfuzzer_seed": 1045
     },
     {
       "name": "listSortWithReversed",
-      "path": "examples/sort/listSortWithReversed.roc",
+      "path": "examples/builtins/listSortWithReversed.roc",
       "seed_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728",
       "libfuzzer_seed": 1046
     },
     {
       "name": "listSortStrings",
-      "path": "examples/sort/listSortStrings.roc",
+      "path": "examples/builtins/listSortStrings.roc",
       "seed_hex": "0100f780010400",
       "libfuzzer_seed": 1047
     },
     {
       "name": "listSortWideElements",
-      "path": "examples/sort/listSortWideElements.roc",
+      "path": "examples/builtins/listSortWideElements.roc",
       "seed_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728",
       "libfuzzer_seed": 1048
     },
     {
       "name": "listSortInconsistentCmp",
-      "path": "examples/sort/listSortInconsistentCmp.roc",
+      "path": "examples/builtins/listSortInconsistentCmp.roc",
       "seed_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728",
       "libfuzzer_seed": 1049
     },
     {
       "name": "listSortAliasing",
-      "path": "examples/sort/listSortAliasing.roc",
+      "path": "examples/builtins/listSortAliasing.roc",
       "seed_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728",
       "libfuzzer_seed": 1050
     },
     {
       "name": "listSortPatterns",
-      "path": "examples/sort/listSortPatterns.roc",
+      "path": "examples/builtins/listSortPatterns.roc",
       "seed_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728",
       "libfuzzer_seed": 1051
     }

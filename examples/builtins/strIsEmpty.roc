@@ -11,12 +11,7 @@ main! = |data| {
 	{ value: string, state } = first.arbitrary_str()
 	{ value: retain, .. } = state.ratio(1, 2)
 	tmp = if retain string else ""
-	before = Fuzz.alloc_count!()
-	is_empty = string.is_empty()
-	after = Fuzz.alloc_count!()
-	if after != before {
-		crash "Str.is_empty allocated ${(after - before).to_str()} times (expected 0)"
-	}
+	is_empty = Fuzz.expect_allocs_at_most!(0, |{}| string.is_empty())
 	if is_empty != (string.count_utf8_bytes() == 0) {
 		crash "string emptiness disagreed with its byte length"
 	}

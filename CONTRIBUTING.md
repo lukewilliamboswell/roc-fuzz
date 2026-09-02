@@ -21,25 +21,23 @@ require only:
   [roc-lang/roc#10657](https://github.com/roc-lang/roc/pull/10657);
 - Python 3.10 or newer.
 
-The prebuilt inputs under `platform/targets/x64musl` and
-`platform/targets/arm64mac` are versioned so users and CI do not need a native
-toolchain to consume the platform. Only maintainers intentionally regenerating
-those inputs additionally need Zig 0.16.0, `ar`, and network access to the
-checksum-pinned libFuzzer source.
+Native inputs are generated in CI and published only inside release bundles.
+Bundle consumers do not need a native toolchain. Source development requires
+Zig 0.16.0 and network access to the checksum-pinned libFuzzer source; the
+builder uses `zig ar`, not an unpinned system archiver.
 
-## Regenerate platform inputs
+## Generate platform inputs
 
-Regenerate the vendored inputs with:
+Generate the current host's ignored inputs with:
 
 ```sh
 python3 scripts/build_platform.py
 ```
 
-The build regenerates `x86_64-linux-musl` and `aarch64-macos.11.0`. It compiles
+Pass `--target x64musl` or `--target arm64mac` explicitly in automation. The build compiles
 the thin Zig host, the checksum-pinned `libfuzzer-sys` 0.4.5 source, and the
-needed Zig runtime inputs. It rewrites one `SHA256SUMS` manifest per target.
-Use `--target x64musl` or `--target arm64mac` to regenerate just one target.
-Review and commit the archives and manifests as one change.
+needed Zig runtime inputs and writes one local `SHA256SUMS` manifest per target.
+Never commit those archives, objects, or generated manifests.
 
 The fully static build excludes `FuzzerInterceptors.cpp`. Its wrappers locate
 libc functions through `dlsym`, which is not usable in the static musl
@@ -84,7 +82,7 @@ python3 scripts/test.py --operation fuzz --max-total-time 2
 ```
 
 Validation checks the exact example inventory, Roc formatting and types.
-Building creates every self-contained executable and verifies a static x86-64
+After generating the current host inputs, building creates every self-contained executable and verifies a static x86-64
 ELF on Linux or an arm64 Mach-O with system-only dynamic dependencies on macOS.
 Seed validation renders and replays each deterministic input. The fuzz
 operation runs short campaigns and verifies that an intentional Roc failure is
@@ -111,10 +109,11 @@ Every target asserts on allocation behaviour as well as on results. A property
 can check what an operation computes but not what it costs, so a builtin that
 stops mutating a uniquely owned value in place and starts copying it still
 returns the right answer and no content property notices. Pin the cost with
-`Fuzz.alloc_count!`, `Fuzz.measure_allocs!`, `Fuzz.expect_allocs_at_most!` or
-`Fuzz.expect_no_leaks!`, and build the target with `Fuzz.target_with!` or
+`Fuzz.expect_allocs_at_most!` or `Fuzz.expect_allocs_at_least!`, and build the target with `Fuzz.target_with!` or
 `Fuzz.from_bytes!` so the property may perform effects. The `check` stage
-enforces this; a target that genuinely cannot assert on cost belongs in
+requires one of those assertion helpers; raw counter reads, measurements, and
+leak-only checks do not satisfy the policy. A target that genuinely cannot
+assert on cost belongs in
 `ALLOCATION_ASSERTION_EXEMPT` in `scripts/test.py` with a concrete reason.
 
 Assert on a difference between two counter reads, never on a raw value: the
@@ -135,15 +134,16 @@ driver enforces this so editor tooling can discover the project naturally.
 
 ## Release bundle
 
-Create a Roc platform bundle from the vendored target inputs with:
+Create a Roc platform bundle after generating both target input sets with:
 
 ```sh
 python3 scripts/bundle.py --output-dir dist
 ```
 
-`bundle.py` verifies the pinned Roc version and every vendored input checksum,
-then includes the prebuilt archives and license notices in `roc bundle`.
-It does not regenerate native inputs. Test the resulting bundle from an
+`bundle.py` verifies the pinned Roc version and every generated input checksum,
+then includes the archives and license notices in `roc bundle`. Production
+release jobs generate both targets on native hosted runners before bundling.
+Test the resulting bundle from an
 external target with:
 
 ```sh

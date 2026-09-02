@@ -33,14 +33,10 @@ reference_sort = |values| List.fold(values, [], insert_sorted)
 ## list, where the allocation count must stay flat regardless of length.
 check_sorted! : List(U64), Str, Bool => {}
 check_sorted! = |values, description, must_allocate| {
-	measured = Fuzz.measure_allocs!(|{}| List.sort(values))
-	sorted = measured.value
-	if must_allocate {
-		if measured.allocations == 0 {
-			crash "sorting ${description} did not copy-on-write a shared allocation"
-		}
-	} else if measured.allocations > 4 {
-		crash "sorting ${description} allocated ${measured.allocations.to_str()} times (expected at most 4)"
+	sorted = if must_allocate {
+		Fuzz.expect_allocs_at_least!(1, |{}| List.sort(values))
+	} else {
+		Fuzz.expect_allocs_at_most!(4, |{}| List.sort(values))
 	}
 	if List.len(sorted) != List.len(values) {
 		crash "sorting ${description} changed the length of the list"
@@ -61,11 +57,7 @@ test! = |input| {
 	# difference from the snapshot taken beforehand. Sorting a shared list is
 	# exactly the case where copy-on-write allocation is correct, so this
 	# asserts the sort DID allocate rather than that it did not.
-	measured = Fuzz.measure_allocs!(|{}| List.sort(base))
-	shared_sorted = measured.value
-	if measured.allocations == 0 {
-		crash "sorting a shared list did not copy-on-write a shared allocation"
-	}
+	shared_sorted = Fuzz.expect_allocs_at_least!(1, |{}| List.sort(base))
 	if !List.is_eq(base, snapshot) {
 		crash "sorting a shared list modified the original list"
 	}

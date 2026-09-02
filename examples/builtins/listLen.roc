@@ -8,12 +8,7 @@ import pf.Arbitrary
 main! : List(U8) => U8
 main! = |data| {
 	list = Arbitrary.new(data).arbitrary_list_u8().value
-	before = Fuzz.alloc_count!()
-	len = list.len()
-	after = Fuzz.alloc_count!()
-	if after != before {
-		crash "List.len allocated ${(after - before).to_str()} times (expected 0)"
-	}
+	len = Fuzz.expect_allocs_at_most!(0, |{}| list.len())
 	len.to_u8_wrap()
 }
 

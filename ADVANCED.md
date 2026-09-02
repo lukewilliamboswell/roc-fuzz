@@ -74,6 +74,7 @@ Fuzz.alloc_count! : () => U64          # cumulative allocations served this proc
 Fuzz.live_alloc_count! : () => U64     # allocations not yet freed
 Fuzz.measure_allocs! : ({} => a) => { value : a, allocations : U64 }
 Fuzz.expect_allocs_at_most! : U64, ({} => a) => a
+Fuzz.expect_allocs_at_least! : U64, ({} => a) => a
 Fuzz.expect_no_leaks! : ({} => a) => {}
 ```
 
@@ -81,7 +82,7 @@ Fuzz.expect_no_leaks! : ({} => a) => {}
 libFuzzer reuses one process across millions of inputs, so never assert on a
 raw value. Always read the counter before and after the region you care
 about and assert on the difference; `measure_allocs!` and
-`expect_allocs_at_most!` do this for you.
+`expect_allocs_at_most!` and `expect_allocs_at_least!` do this for you.
 
 Only assert zero allocations for a value that is genuinely uniquely owned and
 pre-sized. If the value is aliased anywhere, copy-on-write allocation is
@@ -92,18 +93,20 @@ and bucket lists, so keep it outside the measured window.
 ```roc
 # Build the dict OUTSIDE the measured region: Dict.with_capacity itself
 # allocates the entries and bucket lists.
-var $d = Dict.with_capacity(n)
+d = Dict.with_capacity(n)
 
-before = Fuzz.alloc_count!()
-var $i = 0
-while $i < n {
-	$d = Dict.insert($d, $i, $i * 2)
-	$i = $i + 1
-}
-insert_allocs = Fuzz.alloc_count!() - before
-if insert_allocs != 0 {
-	crash "pre-sized Dict inserts allocated ${insert_allocs.to_str()} times (expected 0)"
-}
+filled = Fuzz.expect_allocs_at_most!(
+	0,
+	|{}| {
+		var $result = d
+		var $i = 0
+		while $i < n {
+			$result = Dict.insert($result, $i, $i * 2)
+			$i = $i + 1
+		}
+		$result
+	},
+)
 ```
 
 Allocation assertions need an effectful test, so build the target with
