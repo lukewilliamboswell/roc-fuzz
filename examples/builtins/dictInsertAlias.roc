@@ -178,16 +178,15 @@ check_alloc_invariants! = |count| {
 			$ai = $ai + 1
 		}
 
-		# NOTE: overwriting existing keys in a uniquely owned, pre-sized Dict
-		# still allocates once per call. That defect is tracked as a dedicated
-		# red test in trophy-case/repros/dictInsertOverwrite.roc and logged in
-		# trophy-case/README.md, rather than failing every Dict target here.
-		# The loop below is kept so the alias check that follows sees the same
-		# dictionary state it did before.
+		before = Fuzz.alloc_count!()
 		var $bi = 0
 		while $bi < count {
 			$ad = Dict.insert($ad, U64.to_u16_wrap($bi), U64.to_u8_wrap($bi + 1))
 			$bi = $bi + 1
+		}
+		after = Fuzz.alloc_count!()
+		if after != before {
+			crash "overwriting existing keys in a uniquely owned, pre-sized Dict allocated ${(after - before).to_str()} times"
 		}
 
 		# Alias the dict, then confirm the next insert copies instead of
