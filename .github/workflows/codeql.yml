@@ -1,0 +1,54 @@
+name: CodeQL
+
+on:
+  pull_request:
+  push:
+    branches: [trunk]
+  schedule:
+    - cron: "23 14 * * 2"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [c-cpp, python]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@fddeee1a7ece751b577e409a89057319e3172939 # v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          queries: security-extended
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@fddeee1a7ece751b577e409a89057319e3172939 # v4
+
+  required:
+    name: Required
+    if: always()
+    needs: analyze
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Require every CodeQL analysis
+        env:
+          ANALYZE_RESULT: ${{ needs.analyze.result }}
+        run: test "$ANALYZE_RESULT" = success

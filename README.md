@@ -1,5 +1,7 @@
 # roc-fuzz
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/lukewilliamboswell/roc-fuzz/badge)](https://scorecard.dev/viewer/?uri=github.com/lukewilliamboswell/roc-fuzz)
+
 `roc-fuzz` is a typed, coverage-guided software-quality platform for Roc.
 It supports Linux x86-64 with musl and Apple Silicon macOS (macOS 11 or newer).
 
@@ -137,7 +139,7 @@ distinction in the typed target boundary so the runner can expose that metric.
 
 Native target inputs are not stored in this repository. Trusted release jobs
 generate x64-musl and Apple Silicon macOS inputs, assemble them into the
-published platform bundle, and attach signed build provenance. Bundle users do
+published platform bundle, and attach signed build provenance and an SPDX SBOM. Bundle users do
 not need Zig, a C++ toolchain, musl, or a local libFuzzer installation.
 
 A source checkout generates only its current host inputs:

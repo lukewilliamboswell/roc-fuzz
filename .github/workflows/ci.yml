@@ -27,32 +27,20 @@ jobs:
 
     steps:
       - name: Checkout roc-fuzz
-        uses: actions/checkout@v4
-
-      - name: Read pinned Roc nightly
-        id: roc-version
-        run: |
-          set -euo pipefail
-          tag="$(sed -n '1p' .roc-version)"
-          if [ -z "$tag" ] || [ "$(wc -l < .roc-version)" -ne 1 ]; then
-            echo ".roc-version must contain exactly one nightly tag" >&2
-            exit 1
-          fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-
-      - name: Install pinned Roc nightly
-        uses: roc-lang/setup-roc@cbe782d6f165b89c87d99f50a59ac4f5f73b4427
-        with:
-          version: nightly-new-compiler
-          nightly-tag: ${{ steps.roc-version.outputs.tag }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.13"
 
+      - name: Install checksum-pinned Roc nightly
+        run: |
+          roc_bin_dir="$(python3 scripts/install_roc.py --install-dir "$RUNNER_TEMP/roc-nightly")"
+          echo "$roc_bin_dir" >> "$GITHUB_PATH"
+
       - name: Install Zig
-        uses: mlugg/setup-zig@v2
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
         with:
           version: "0.16.0"
 
@@ -61,6 +49,9 @@ jobs:
           roc version
           zig version
           python --version
+
+      - name: Validate supply-chain metadata
+        run: python scripts/check_supply_chain.py
 
       - name: Generate native platform inputs
         run: python scripts/build_platform.py --target ${{ matrix.platform-target }}
@@ -80,3 +71,15 @@ jobs:
 
       - name: Smoke-test libFuzzer and failure artifacts
         run: python scripts/test.py --operation fuzz --max-total-time 1 --verbose
+
+  required:
+    name: Required
+    if: always()
+    needs: self-contained-runner
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Require every CI matrix job
+        env:
+          MATRIX_RESULT: ${{ needs.self-contained-runner.result }}
+        run: test "$MATRIX_RESULT" = success

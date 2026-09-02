@@ -31,7 +31,7 @@ jobs:
       nightly_tag: ${{ steps.latest.outputs.nightly_tag }}
     steps:
       - name: Checkout default branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Resolve latest nightly
         id: latest
@@ -48,6 +48,25 @@ jobs:
             nightly-*) ;;
             *) echo "Invalid Roc nightly tag: $tag" >&2; exit 1 ;;
           esac
+          release="$(gh api "repos/roc-lang/nightlies/releases/tags/$tag")"
+          manifest="$RUNNER_TEMP/roc-nightly-sha256"
+          : > "$manifest"
+          for platform in linux_x86_64 macos_apple_silicon; do
+            asset="$(jq -r --arg platform "$platform" \
+              '.assets[] | select(.name | contains($platform)) | select(.name | endswith(".tar.gz")) | [.digest, .name] | @tsv' \
+              <<< "$release")"
+            if [ -z "$asset" ] || [ "$(wc -l <<< "$asset")" -ne 1 ]; then
+              echo "Expected one $platform archive for $tag" >&2
+              exit 1
+            fi
+            digest="${asset%%$'\t'*}"
+            name="${asset#*$'\t'}"
+            case "$digest" in
+              sha256:????????????????????????????????????????????????????????????????) ;;
+              *) echo "Missing SHA-256 digest for $name" >&2; exit 1 ;;
+            esac
+            printf '%s  %s\n' "${digest#sha256:}" "$name" >> "$manifest"
+          done
           echo "nightly_tag=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Update pin and push bot branch
@@ -56,15 +75,21 @@ jobs:
           NIGHTLY_TAG: ${{ steps.latest.outputs.nightly_tag }}
         run: |
           set -euo pipefail
+          proposed="$RUNNER_TEMP/roc-nightly-sha256"
           if [ "$NIGHTLY_TAG" = "$(<.roc-version)" ]; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            exit 0
+            if cmp -s "$proposed" .roc-nightly-sha256; then
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Published digests changed for the already-pinned tag $NIGHTLY_TAG" >&2
+            exit 1
           fi
           printf '%s\n' "$NIGHTLY_TAG" > .roc-version
+          cp "$proposed" .roc-nightly-sha256
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git switch --create "$UPDATE_BRANCH"
-          git add .roc-version
+          git add .roc-version .roc-nightly-sha256
           git commit --message "Update Roc nightly pin to $NIGHTLY_TAG"
           git push --force origin "$UPDATE_BRANCH"
           echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -78,26 +103,26 @@ jobs:
       contents: read
     steps:
       - name: Checkout source under test
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: update-roc-nightly
           persist-credentials: false
 
       - name: Install Python
-        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.13"
 
       - name: Install Zig
-        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
         with:
           version: "0.16.0"
           use-cache: false
 
-      - name: Install proposed Roc nightly
-        uses: roc-lang/setup-roc@cbe782d6f165b89c87d99f50a59ac4f5f73b4427
-        with:
-          version: nightly-new-compiler
-          nightly-tag: ${{ needs.bump.outputs.nightly_tag }}
+      - name: Install proposed checksum-pinned Roc nightly
+        run: |
+          roc_bin_dir="$(python3 scripts/install_roc.py --install-dir "$RUNNER_TEMP/roc-nightly")"
+          echo "$roc_bin_dir" >> "$GITHUB_PATH"
 
       - name: Generate x64-musl platform inputs
         run: python scripts/build_platform.py --target x64musl
@@ -118,7 +143,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout default branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 

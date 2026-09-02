@@ -26,6 +26,11 @@ Bundle consumers do not need a native toolchain. Source development requires
 Zig 0.16.0 and network access to the checksum-pinned libFuzzer source; the
 builder uses `zig ar`, not an unpinned system archiver.
 
+Repository automation also pins the Roc nightly archives themselves. The tag
+in `.roc-version` and the Linux/macOS digests in `.roc-nightly-sha256` are one
+atomic dependency pin. Let the daily updater change them together; a digest
+change to an already-pinned tag is treated as a supply-chain failure.
+
 ## Generate platform inputs
 
 Generate the current host's ignored inputs with:
