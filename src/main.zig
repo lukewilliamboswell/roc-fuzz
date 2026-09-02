@@ -28,6 +28,7 @@ var executable_name: []const u8 = "TARGET";
 var current_input_ptr: ?[*]const u8 = null;
 var current_input_len: usize = 0;
 var friendly_run_active = false;
+var leak_detection_enabled = true;
 
 fn hostAlloc(_: *abi.RocHost, length: usize, alignment: usize) callconv(.c) ?*anyopaque {
     return roc_alloc(length, alignment);
@@ -265,6 +266,7 @@ fn printHelp() void {
         \\  --timeout=SECONDS       bound one target call
         \\  --dictionary=FILE       load useful input tokens
         \\  --seed=NUMBER           make a bounded run reproducible
+        \\  --no-detect-leaks       allow an input to leave allocations unfreed
         \\  --print-final-stats     print libFuzzer's final counters
         \\
         \\Use TARGET raw -help=1 for native libFuzzer flags.
@@ -357,6 +359,8 @@ fn translateFriendlyArgs(argc: *c_int, argv_ptr: *[*][*:0]u8) void {
                 pushTranslatedArg(&count, &dictionary_arg, "-dict=", arg[13..]);
             } else if (std.mem.startsWith(u8, arg, "--seed=")) {
                 pushTranslatedArg(&count, &seed_arg, "-seed=", arg[7..]);
+            } else if (std.mem.eql(u8, arg, "--no-detect-leaks")) {
+                leak_detection_enabled = false;
             } else if (std.mem.eql(u8, arg, "--print-final-stats")) {
                 pushArg(&count, mutableLiteral("-print_final_stats=1"));
             } else if (std.mem.eql(u8, arg, "--help")) {
@@ -442,10 +446,29 @@ pub export fn LLVMFuzzerTestOneInput(data: ?[*]const u8, size: usize) callconv(.
     const input: []const u8 = if (size == 0) &.{} else data.?[0..size];
     current_input_ptr = data;
     current_input_len = size;
+    // A completed iteration must free everything it allocated, including the
+    // input list built below. Sampling the balance here rather than inside the
+    // target keeps this honest for every target, pure ones included, without
+    // any target having to opt in.
+    const live_before = g_live_alloc_count;
     _ = abi.roc_fuzz_run(makeInput(input));
+    if (leak_detection_enabled and g_live_alloc_count > live_before) {
+        reportLeak(g_live_alloc_count - live_before);
+    }
     current_input_ptr = null;
     current_input_len = 0;
     return 0;
+}
+
+fn reportLeak(leaked: u64) void {
+    var buffer: [128]u8 = undefined;
+    const message = std.fmt.bufPrint(
+        &buffer,
+        "[roc-fuzz leak] {d} allocation(s) from this input were never freed\n",
+        .{leaked},
+    ) catch "[roc-fuzz leak] allocations from this input were never freed\n";
+    writeErr(message);
+    finishRocFailure();
 }
 
 // libFuzzer normally receives these hooks from a sanitizer runtime. Roc fuzz
