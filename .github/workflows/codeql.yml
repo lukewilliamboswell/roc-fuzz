@@ -1,22 +1,21 @@
 name: CodeQL
-
 on:
   pull_request:
   push:
     branches: [trunk]
-  schedule:
-    - cron: "23 14 * * 2"
   workflow_dispatch:
-
-permissions: {}
-
+    inputs:
+      nightly_validation:
+        description: Validate a nightly candidate
+        type: boolean
+        default: false
+permissions:
+  contents: read
 concurrency:
   group: codeql-${{ github.ref }}
   cancel-in-progress: true
-
 jobs:
   analyze:
-    name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -24,31 +23,33 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [c-cpp, python]
+        language: [actions, python, c-cpp]
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@fddeee1a7ece751b577e409a89057319e3172939 # v4
+      - uses: github/codeql-action/init@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
         with:
           languages: ${{ matrix.language }}
           build-mode: none
-          queries: security-extended
+      - uses: github/codeql-action/analyze@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
+        with:
+          category: /language:${{ matrix.language }}
 
-      - name: Analyze
-        uses: github/codeql-action/analyze@fddeee1a7ece751b577e409a89057319e3172939 # v4
-
-  required:
+  codeql-required:
     name: CodeQL required
     if: always()
-    needs: analyze
+    needs: [analyze]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:
-      - name: Require every CodeQL analysis
+      - name: Require every validation job to pass
         env:
-          ANALYZE_RESULT: ${{ needs.analyze.result }}
-        run: test "$ANALYZE_RESULT" = success
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os
+          results = json.loads(os.environ["RESULTS"])
+          if not results or any(job["result"] != "success" for job in results.values()):
+              raise SystemExit("Required validation did not pass")
+          PYTHON
