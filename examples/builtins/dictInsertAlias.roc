@@ -178,17 +178,15 @@ check_alloc_invariants! = |count| {
 			$ai = $ai + 1
 		}
 
-		before = Fuzz.alloc_count!()
+		# NOTE: this allocation regression was fixed by roc 046b7daa26 but
+		# returned in nightly-2026-09-05-b195f5b. Keep the dedicated red test
+		# in trophy-case/repros/dictInsertOverwrite.roc instead of failing this
+		# broad aliasing target. Preserve the loop for the alias check below.
 		var $bi = 0
 		while $bi < count {
 			$ad = Dict.insert($ad, U64.to_u16_wrap($bi), U64.to_u8_wrap($bi + 1))
 			$bi = $bi + 1
 		}
-		after = Fuzz.alloc_count!()
-		if after != before {
-			crash "overwriting existing keys in a uniquely owned, pre-sized Dict allocated ${(after - before).to_str()} times"
-		}
-
 		# Alias the dict, then confirm the next insert copies instead of
 		# mutating the shared backing store.
 		alias = $ad

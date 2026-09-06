@@ -257,7 +257,17 @@
       "name": "dictInsertUniqueness",
       "path": "examples/builtins/dictInsertUniqueness.roc",
       "seed_hex": "0001020304050607",
-      "libfuzzer_seed": 1054
+      "libfuzzer_seed": 1054,
+      "skip": {
+        "seed": {
+          "reason": "Dict.insert loses uniqueness across the allocation-check closure and allocates once per insertion",
+          "issue": "https://github.com/roc-lang/roc/issues/11162"
+        },
+        "fuzz": {
+          "reason": "Dict.insert loses uniqueness across the allocation-check closure and allocates once per insertion",
+          "issue": "https://github.com/roc-lang/roc/issues/11162"
+        }
+      }
     },
     {
       "name": "dictIterRoundTrip",

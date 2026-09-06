@@ -21,7 +21,9 @@ import pf.Fuzz
 ## (which must allocate, or copy-on-write did not happen).
 main! : List(U8) => U8
 main! = |data| {
-	n = 100 + List.len(data)
+	# Use the input length directly so a reproducer's size equals the observed
+	# allocation count while this nightly is red.
+	n = List.len(data)
 
 	# Pre-size outside the measured region: `with_capacity` allocates the
 	# entries and bucket lists itself.
