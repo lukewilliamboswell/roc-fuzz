@@ -129,11 +129,11 @@ jobs:
           name: arm64mac
           path: platform/targets/arm64mac
 
-      - name: Validate source and unit tests
-        run: python scripts/test.py --operation validate --verbose
+      - name: Bundle platform
+        run: python scripts/bundle.py --output-dir dist
 
-      - name: Build and smoke-test every target
-        run: python scripts/test.py --operation fuzz --max-total-time 1 --verbose
+      - name: Validate candidate release bundle
+        run: python scripts/test_bundle.py dist/*.tar.zst
 
       - name: Resolve previous release
         if: github.event_name == 'workflow_dispatch'
@@ -152,9 +152,6 @@ jobs:
           previous_url: ${{ steps.previous.outputs.previous_url }}
           bump_check: warn
           bump_entrypoint: platform/main.roc
-
-      - name: Bundle platform
-        run: python scripts/bundle.py --output-dir dist
 
       - name: Prepare release bundle metadata
         id: bundles
