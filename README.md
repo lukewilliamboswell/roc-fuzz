@@ -41,7 +41,7 @@ The application exposes `target : Target`. Its input type can provide a
 statically dispatched `generator_for` method:
 
 ```roc
-app [target] { fuzz: platform "path/to/roc-fuzz/platform/main.roc" }
+app [target] { fuzz: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.3.0/FTcKnkDxL1ZXfKsxeLmNKZ6XKnuKDd47Gv79ThxLYSfw.tar.zst" }
 
 import fuzz.Fuzz
 
@@ -159,12 +159,13 @@ adapter, copies the required Zig C++ and compiler runtimes, and writes a local
 `SHA256SUMS` manifest. These generated files are ignored by Git. See
 [`SLSA_PROVENANCE.md`](SLSA_PROVENANCE.md) for release verification.
 
-Run the repository validation matrix with:
+Build and serve the working-tree platform package, rewrite temporary copies of
+the examples to its localhost URL, and run the repository validation matrix with:
 
 ```sh
-python3 scripts/test.py --operation validate
-python3 scripts/test.py --operation build
-python3 scripts/test.py --operation fuzz --max-total-time 2
+python3 scripts/test_local.py --operation validate
+python3 scripts/test_local.py --operation build
+python3 scripts/test_local.py --operation fuzz --max-total-time 2
 ```
 
 Start with the [beginner guide](GUIDE.md) for target design and the normal

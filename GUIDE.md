@@ -51,7 +51,7 @@ Start with one operation and one clear property. This target checks that
 splitting and rejoining a string does not change it:
 
 ```roc
-app [target] { fuzz: platform "path/to/roc-fuzz/platform/main.roc" }
+app [target] { fuzz: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.3.0/FTcKnkDxL1ZXfKsxeLmNKZ6XKnuKDd47Gv79ThxLYSfw.tar.zst" }
 
 import fuzz.Fuzz
 

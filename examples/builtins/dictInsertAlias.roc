@@ -1,4 +1,4 @@
-app [target] { pf: platform "../../platform/main.roc" }
+app [target] { pf: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.3.0/FTcKnkDxL1ZXfKsxeLmNKZ6XKnuKDd47Gv79ThxLYSfw.tar.zst" }
 
 import pf.Fuzz
 import pf.Arbitrary

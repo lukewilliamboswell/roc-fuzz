@@ -80,13 +80,17 @@ Use the compiler under development through `ROC`:
 
 ```sh
 export ROC=/path/to/roc
-python3 scripts/test.py --operation validate --verbose
-python3 scripts/test.py --operation build --verbose
-python3 scripts/test.py --operation seed
-python3 scripts/test.py --operation fuzz --max-total-time 2
+python3 scripts/test_local.py --operation validate --verbose
+python3 scripts/test_local.py --operation build --verbose
+python3 scripts/test_local.py --operation seed
+python3 scripts/test_local.py --operation fuzz --max-total-time 2
 ```
 
-Validation checks the exact example inventory, Roc formatting and types.
+`test_local.py` generates the current host inputs, packages the working-tree
+platform, serves it from an ephemeral localhost port, and asks `test.py` to use
+temporary rewritten copies of every example. Checked-in example declarations
+remain pinned to the latest published release, while local and CI runs exercise
+unreleased platform changes. Validation checks the exact example inventory, Roc formatting and types.
 After generating the current host inputs, building creates every self-contained executable and verifies a static x86-64
 ELF on Linux or an arm64 Mach-O with system-only dynamic dependencies on macOS.
 Seed validation renders and replays each deterministic input. The fuzz

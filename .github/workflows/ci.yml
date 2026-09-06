@@ -53,11 +53,8 @@ jobs:
       - name: Validate supply-chain metadata
         run: python scripts/check_supply_chain.py
 
-      - name: Generate native platform inputs
-        run: python scripts/build_platform.py --target ${{ matrix.platform-target }}
-
-      - name: Validate target sources
-        run: python scripts/test.py --operation validate --verbose
+      - name: Test examples against the working-tree platform package
+        run: python scripts/test_local.py --platform-target ${{ matrix.platform-target }} --operation all --max-total-time 1 --verbose
 
       - name: Generate and validate API documentation
         env:
@@ -65,12 +62,6 @@ jobs:
         run: |
           roc docs --output=.test-cache/docs platform/main.roc
           python scripts/check_docs.py .test-cache/docs
-
-      - name: Build every self-contained target
-        run: python scripts/test.py --operation build --verbose
-
-      - name: Smoke-test libFuzzer and failure artifacts
-        run: python scripts/test.py --operation fuzz --max-total-time 1 --verbose
 
   required:
     name: CI required

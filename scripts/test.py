@@ -9,8 +9,10 @@ import json
 import os
 import platform
 import re
+import shutil
 import subprocess
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 from platform_inputs import validate_platform_inputs
@@ -25,6 +27,7 @@ REQUIRED_TARGET_KEYS = {"name", "path", "seed_hex", "libfuzzer_seed"}
 OPTIONAL_TARGET_KEYS = {"expected_failure", "skip"}
 GITHUB_ISSUE = re.compile(r"https://github\.com/[^/]+/[^/]+/issues/[1-9][0-9]*$")
 SINGLE_FILE_COLLECTIONS = {"examples", "examples/builtins"}
+PLATFORM_DECLARATION = re.compile(r'\bplatform\s+"[^"]+"')
 
 
 class TestFailure(RuntimeError):
@@ -304,21 +307,51 @@ def check_allocation_assertions(targets: list[dict[str, object]]) -> None:
         )
 
 
-def check_targets(roc: str, targets: list[dict[str, object]], verbose: bool) -> None:
+def target_path(target: dict[str, object], example_root: Path | None) -> Path:
+    relative = Path(str(target["path"]))
+    if example_root is None:
+        return ROOT / relative
+    return example_root / relative.relative_to("examples")
+
+
+@contextmanager
+def rewritten_examples(platform_url: str | None):
+    if platform_url is None:
+        yield None
+        return
+    CACHE.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="examples-", dir=CACHE) as temp:
+        example_root = Path(temp) / "examples"
+        shutil.copytree(ROOT / "examples", example_root)
+        rewritten_count = 0
+        for source in example_root.rglob("*.roc"):
+            text = source.read_text(encoding="utf-8")
+            rewritten, count = PLATFORM_DECLARATION.subn(
+                f'platform "{platform_url}"', text, count=1
+            )
+            if count:
+                source.write_text(rewritten, encoding="utf-8")
+                rewritten_count += 1
+        if rewritten_count == 0:
+            raise TestFailure("no example platform declarations were rewritten")
+        yield example_root
+
+
+def check_targets(roc: str, targets: list[dict[str, object]], verbose: bool, example_root: Path | None) -> None:
     check_tracked_artifacts()
     check_allocation_policy_parser()
     run([roc, "fmt", "--check", *map(str, roc_files())], verbose=verbose)
     for target in targets:
-        run([roc, "check", str(ROOT / str(target["path"]))], verbose=verbose)
+        run([roc, "check", str(target_path(target, example_root))], verbose=verbose)
     check_allocation_assertions(targets)
 
 
-def test_targets(roc: str, targets: list[dict[str, object]], verbose: bool) -> None:
+def test_targets(roc: str, targets: list[dict[str, object]], verbose: bool, example_root: Path | None) -> None:
     for target in targets:
-        run([roc, "test", str(ROOT / str(target["path"]))], verbose=verbose)
+        run([roc, "test", str(target_path(target, example_root))], verbose=verbose)
 
 
-def build_target(roc: str, target: dict[str, object], verbose: bool) -> Path:
+def build_target(roc: str, target: dict[str, object], verbose: bool, example_root: Path | None) -> Path:
     output_dir = CACHE / "executables"
     output_dir.mkdir(parents=True, exist_ok=True)
     output = output_dir / str(target["name"])
@@ -327,7 +360,7 @@ def build_target(roc: str, target: dict[str, object], verbose: bool) -> Path:
             roc,
             "build",
             "--fuzz",
-            str(ROOT / str(target["path"])),
+            str(target_path(target, example_root)),
             f"--output={output}",
         ],
         verbose=verbose,
@@ -382,7 +415,7 @@ def validate_macos_deployment_target(output: Path) -> None:
 
 
 def build_targets(
-    roc: str, targets: list[dict[str, object]], verbose: bool
+    roc: str, targets: list[dict[str, object]], verbose: bool, example_root: Path | None
 ) -> dict[str, Path]:
     if not targets:
         return {}
@@ -393,12 +426,13 @@ def build_targets(
         target_names = {"arm64mac"}
     else:
         raise TestFailure(f"unsupported host platform for target builds: {system}")
-    try:
-        validate_platform_inputs(ROOT, target_names)
-    except RuntimeError as error:
-        raise TestFailure(str(error)) from error
+    if example_root is None:
+        try:
+            validate_platform_inputs(ROOT, target_names)
+        except RuntimeError as error:
+            raise TestFailure(str(error)) from error
     return {
-        str(target["name"]): build_target(roc, target, verbose) for target in targets
+        str(target["name"]): build_target(roc, target, verbose, example_root) for target in targets
     }
 
 
@@ -750,6 +784,10 @@ def main() -> None:
     parser.add_argument("--target", action="append", default=[])
     parser.add_argument("--max-total-time", type=int, default=2)
     parser.add_argument("--verbose", "-v", action="store_true")
+    parser.add_argument(
+        "--platform-url",
+        help="test temporary example copies rewritten to this platform package URL",
+    )
     args = parser.parse_args()
 
     if args.max_total_time < 1:
@@ -758,37 +796,38 @@ def main() -> None:
     roc = os.environ.get("ROC", "roc")
     try:
         targets = load_targets(args.target)
-        if args.operation in ("all", "validate", "check"):
-            check_targets(roc, targets_for_stage(targets, "check"), args.verbose)
-        if args.operation in ("all", "validate", "test"):
-            test_targets(roc, targets_for_stage(targets, "test"), args.verbose)
+        with rewritten_examples(args.platform_url) as example_root:
+            if args.operation in ("all", "validate", "check"):
+                check_targets(roc, targets_for_stage(targets, "check"), args.verbose, example_root)
+            if args.operation in ("all", "validate", "test"):
+                test_targets(roc, targets_for_stage(targets, "test"), args.verbose, example_root)
 
-        if args.operation == "all":
-            buildable = targets_for_stage(targets, "build")
-            executables = build_targets(roc, buildable, args.verbose)
-            replay_seeds(
-                executables,
-                targets_for_stage(targets, "seed"),
-                args.verbose,
-            )
-            fuzz_targets(
-                executables,
-                targets_for_stage(targets, "fuzz"),
-                args.max_total_time,
-                args.verbose,
-            )
-        elif args.operation in ("build", "seed", "fuzz"):
-            stage_targets = targets_for_stage(targets, args.operation)
-            executables = build_targets(roc, stage_targets, args.verbose)
-            if args.operation in ("seed", "fuzz"):
-                replay_seeds(executables, stage_targets, args.verbose)
-            if args.operation == "fuzz":
+            if args.operation == "all":
+                buildable = targets_for_stage(targets, "build")
+                executables = build_targets(roc, buildable, args.verbose, example_root)
+                replay_seeds(
+                    executables,
+                    targets_for_stage(targets, "seed"),
+                    args.verbose,
+                )
                 fuzz_targets(
                     executables,
-                    stage_targets,
+                    targets_for_stage(targets, "fuzz"),
                     args.max_total_time,
                     args.verbose,
                 )
+            elif args.operation in ("build", "seed", "fuzz"):
+                stage_targets = targets_for_stage(targets, args.operation)
+                executables = build_targets(roc, stage_targets, args.verbose, example_root)
+                if args.operation in ("seed", "fuzz"):
+                    replay_seeds(executables, stage_targets, args.verbose)
+                if args.operation == "fuzz":
+                    fuzz_targets(
+                        executables,
+                        stage_targets,
+                        args.max_total_time,
+                        args.verbose,
+                    )
     except (OSError, subprocess.CalledProcessError, TestFailure) as error:
         raise SystemExit(str(error)) from error
 

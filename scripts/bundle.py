@@ -7,7 +7,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from platform_inputs import MANIFEST_NAME, TARGET_SPECS, target_directory, validate_platform_inputs
+from platform_inputs import MANIFEST_NAME, TARGETS_BY_NAME, TARGET_SPECS, target_directory, validate_platform_inputs
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,6 +34,12 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, default=ROOT / "dist")
     parser.add_argument("--roc", default=os.environ.get("ROC", "roc"))
     parser.add_argument("--compression", type=int, choices=range(1, 23), default=19)
+    parser.add_argument(
+        "--target",
+        action="append",
+        choices=sorted(TARGETS_BY_NAME),
+        help="bundle only this generated target (repeatable; defaults to all targets)",
+    )
     args = parser.parse_args()
 
     roc = args.roc
@@ -57,14 +63,21 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        platform_inputs = validate_platform_inputs(ROOT)
+        selected_specs = (
+            [TARGETS_BY_NAME[name] for name in args.target]
+            if args.target
+            else list(TARGET_SPECS)
+        )
+        platform_inputs = validate_platform_inputs(
+            ROOT, {spec.roc_name for spec in selected_specs}
+        )
     except RuntimeError as error:
         raise SystemExit(str(error)) from error
 
     roc_files = sorted(PLATFORM_DIR.glob("*.roc"))
     metadata_files = [
         path
-        for spec in TARGET_SPECS
+        for spec in selected_specs
         for path in (target_directory(ROOT, spec) / MANIFEST_NAME, target_directory(ROOT, spec) / "README.md")
     ]
     license_sources = [ROOT / "LICENSE", ROOT / "THIRD_PARTY_LICENSES.md"]
