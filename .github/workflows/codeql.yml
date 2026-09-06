@@ -1,0 +1,55 @@
+name: CodeQL
+on:
+  pull_request:
+  push:
+    branches: [trunk]
+  workflow_dispatch:
+    inputs:
+      nightly_validation:
+        description: Validate a nightly candidate
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [actions, python, c-cpp]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+      - uses: github/codeql-action/analyze@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
+        with:
+          category: /language:${{ matrix.language }}
+
+  codeql-required:
+    name: CodeQL required
+    if: always()
+    needs: [analyze]
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Require every validation job to pass
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os
+          results = json.loads(os.environ["RESULTS"])
+          if not results or any(job["result"] != "success" for job in results.values()):
+              raise SystemExit("Required validation did not pass")
+          PYTHON
