@@ -5,6 +5,12 @@ on:
   push:
     branches: [trunk]
   workflow_dispatch:
+    inputs:
+      nightly_validation:
+        description: "Validate a nightly candidate without publishing or deploying"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -23,7 +29,7 @@ jobs:
 
     steps:
       - name: Checkout roc-fuzz
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Read pinned Roc nightly
         id: roc-version
@@ -43,12 +49,12 @@ jobs:
           nightly-tag: ${{ steps.roc-version.outputs.tag }}
 
       - name: Install Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.13"
 
       - name: Install Zig
-        uses: mlugg/setup-zig@v2
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
         with:
           version: "0.16.0"
 
@@ -73,3 +79,21 @@ jobs:
 
       - name: Smoke-test libFuzzer and failure artifacts
         run: python scripts/test.py --operation fuzz --max-total-time 1 --verbose
+
+  ci-required:
+    name: CI required
+    if: always()
+    needs: [self-contained-runner]
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Require every validation job to pass
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os
+          results = json.loads(os.environ["RESULTS"])
+          if not results or any(job["result"] != "success" for job in results.values()):
+              raise SystemExit("Required validation did not pass")
+          PYTHON
