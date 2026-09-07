@@ -220,6 +220,7 @@ def roc_files() -> list[Path]:
         [
             *(ROOT / "examples").rglob("*.roc"),
             *(ROOT / "platform").glob("*.roc"),
+            *(ROOT / "tests").rglob("*.roc"),
         ]
     )
 
@@ -345,6 +346,7 @@ def rewritten_examples(platform_url: str | None):
     with tempfile.TemporaryDirectory(prefix="examples-", dir=CACHE) as temp:
         example_root = Path(temp) / "examples"
         shutil.copytree(ROOT / "examples", example_root)
+        shutil.copytree(ROOT / "tests", Path(temp) / "tests")
         rewritten_count = 0
         for source in example_root.rglob("*.roc"):
             text = source.read_text(encoding="utf-8")

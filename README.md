@@ -104,6 +104,11 @@ The focused builtin regression targets are retained under
 `Arbitrary` API and are useful for compiler and builtin validation, but are not
 the recommended starting point for application authors.
 
+The [`setOps`](examples/builtins/setOps/main.roc) and
+[`setCollisions`](examples/builtins/setCollisions/main.roc) targets use typed
+operation sequences and a [shared list model](tests/set-model/README.md) to
+check Set storage, iteration, folds, algebra, collisions, and shared heap values.
+
 The builtin collection also holds a dedicated suite for the `List` sorting
 builtins. Sorting is worth focused coverage because a sort has properties an
 invariant check alone will not reach: it has to be stable, it has to return a
