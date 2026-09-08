@@ -192,6 +192,14 @@ The bump check requires a version increment from the previous platform release.
 The release policy explicitly permits exact-nightly bootstrap on `trunk`; no
 stable compiler compatibility or maintenance branch is implied.
 
+To unblock a source PR before stable bootstrap, dispatch `Release` on that branch
+with `release_candidate=true`, a new `X.Y.Z-rcN` version, and the full source SHA
+in `expected_sha`. Both target bundles must pass before the workflow attests and
+publishes the RC. Only this explicit RC path permits source-built libraries.
+It preserves the latest stable release and Pages, and does not create a
+default-branch URL follow-up. Verify the published archive and adopt its URL in
+the originating PR. Stable releases still require the independent library lock.
+
 After publication, `Release follow-up` verifies the published archive, tests
 proposed URLs on Linux and macOS, creates a verified signed URL-update PR, and
 dispatches its validation. Compiler pins are preserved. Required PR workflows

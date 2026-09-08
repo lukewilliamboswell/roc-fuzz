@@ -414,11 +414,21 @@ jobs:
         with:
           subject-path: .release/bundles/*.tar.zst
 
+      - name: Resolve the single SBOM file
+        id: sbom-file
+        run: |
+          files=(.release/sbom/*.spdx.json)
+          test "${#files[@]}" -eq 1
+          test -f "${files[0]}"
+          echo "path=${files[0]}" >> "$GITHUB_OUTPUT"
+
       - name: Attest the SPDX SBOM
+        # sbom-path is a single file path, not a glob.
+        id: attest-sbom
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: .release/bundles/*.tar.zst
-          sbom-path: .release/sbom/*.spdx.json
+          sbom-path: ${{ steps.sbom-file.outputs.path }}
 
       - name: Export attestations for offline verification
         env:

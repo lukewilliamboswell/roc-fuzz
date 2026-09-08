@@ -110,7 +110,7 @@ jobs:
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: assets/*.tar.gz
-          sbom-path: assets/*.spdx.json
+          sbom-path: assets/${{ inputs.release_version }}-${{ matrix.target }}.tar.gz.spdx.json
       - name: Export attestation bundles
         env:
           GH_TOKEN: ${{ github.token }}
