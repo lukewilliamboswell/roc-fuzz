@@ -19,6 +19,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  published-examples:
+    name: Public downloads (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-26]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.13"
+      - name: Install the examples' declared compiler
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          roc_bin_dir="$(python scripts/install_roc.py --tag-file examples/stack/main.roc --install-dir "$RUNNER_TEMP/roc")"
+          echo "$roc_bin_dir" >> "$GITHUB_PATH"
+      - name: Test committed URLs from a fresh cache
+        run: python scripts/test.py --operation all --max-total-time 1 --verbose
+
   self-contained-runner:
     strategy:
       fail-fast: false
@@ -79,11 +102,14 @@ jobs:
   required:
     name: CI required
     if: always()
-    needs: self-contained-runner
+    needs: [self-contained-runner, published-examples]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:
       - name: Require every CI matrix job
         env:
           MATRIX_RESULT: ${{ needs.self-contained-runner.result }}
-        run: test "$MATRIX_RESULT" = success
+          PUBLIC_RESULT: ${{ needs.published-examples.result }}
+        run: |
+          test "$MATRIX_RESULT" = success
+          test "$PUBLIC_RESULT" = success

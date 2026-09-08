@@ -1,7 +1,6 @@
 {
   "workflows": [
     "ci.yml",
-    "published-examples.yml",
     "release.yml",
     "codeql.yml"
   ],

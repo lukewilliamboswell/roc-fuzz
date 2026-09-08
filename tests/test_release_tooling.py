@@ -1,4 +1,3 @@
-import base64
 import hashlib
 import io
 import json
@@ -11,7 +10,6 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import native_libraries as native
-import release_followup
 from compiler_pins import replace_pin
 from platform_inputs import TARGETS_BY_NAME, digest
 
@@ -132,23 +130,7 @@ class NativeLibrariesTests(unittest.TestCase):
         self.assertEqual(provenance["source_revision"], "b" * 40)
 
 
-class ReleaseFollowupTests(unittest.TestCase):
-    def test_only_release_urls_change(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            app = root / "examples/hello/main.roc"
-            app.parent.mkdir(parents=True)
-            old = 'https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.3.0/abc.tar.zst'
-            new = old.replace("0.3.0/abc", "0.4.0/def")
-            source = f'app [main] {{ roc: "nightly-2026-09-05-b195f5b", pf: platform "{old}" }}\n'
-            app.write_text(source)
-            (app.parent / "Companion.roc").write_text("value = 42\n")
-            (root / "README.md").write_text(old)
-            edits = release_followup.changes(root, new)
-            self.assertEqual({e["path"] for e in edits}, {"README.md", "examples/hello/main.roc"})
-            changed_app = next(e for e in edits if e["path"].endswith("main.roc"))
-            self.assertEqual(base64.b64decode(changed_app["contents"]).decode(), source.replace(old, new))
-            self.assertEqual(app.read_text(), source)
+class CompilerPinTests(unittest.TestCase):
 
     def test_compiler_update_preserves_published_dependency(self):
         source = 'app [main] { roc: "nightly-2026-09-05-b195f5b", pf: platform "https://example.com/release.tar.zst" }'

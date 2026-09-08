@@ -568,14 +568,3 @@ jobs:
     with:
       docs_artifact: platform-docs
       docs_version: ${{ needs.release-info.outputs.docs_version }}
-
-  release-followup:
-    needs: [release-info, publish-release]
-    if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && !inputs.release_candidate
-    permissions:
-      contents: write
-      pull-requests: write
-      actions: write
-    uses: ./.github/workflows/release-followup.yml
-    with:
-      release_version: ${{ needs.release-info.outputs.release_version }}

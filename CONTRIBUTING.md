@@ -134,10 +134,11 @@ both a concrete reason and a full GitHub issue URL. The driver rejects
 unexplained skips; skipping a prerequisite also requires skipping its dependent
 stages.
 
-Published-example compatibility checks run when existing compiler header pins or
-published dependency URLs change, and on every manual/nightly dispatch. Source
-and candidate-bundle checks cover platform development and initial migration
-from local paths. `nightly_validation: true` never publishes or deploys.
+CI has two explicit lanes: public downloads use committed URLs on fresh runners,
+and development tests use the working-tree bundle. Both run on every PR and
+manual/nightly dispatch; there is no change classifier or migration exception.
+The release workflow additionally tests the exact candidate archives.
+`nightly_validation: true` never publishes or deploys.
 
 Every target asserts on allocation behaviour as well as on results. A property
 can check what an operation computes but not what it costs, so a builtin that
@@ -208,22 +209,27 @@ It preserves the latest stable release and Pages, and does not create a
 default-branch URL follow-up. Verify the published archive and adopt its URL in
 the originating PR. Stable releases still require the independent library lock.
 
-After publication, `Release follow-up` verifies the published archive, tests
-proposed URLs on Linux and macOS, creates a verified signed URL-update PR, and
-dispatches its validation. Compiler pins are preserved. Required PR workflows
-may still need approval to start; dispatch success alone does not establish
-that branch protection accepts the PR. If an old platform lacks newly used APIs,
-publish a compatible platform and adopt its URL through the follow-up.
+URL follow-ups are a maintainer task, not another release workflow:
+
+1. Download the published archive, compare its digest with the tested artifact,
+   and verify its attestation with `gh attestation verify --repo
+   lukewilliamboswell/roc-fuzz --signer-workflow
+   lukewilliamboswell/roc-fuzz/.github/workflows/release.yml <archive>`.
+2. Update the example and README platform URLs without changing compiler pins.
+   Commit with a verified signature and open a reviewed PR.
+3. Require current-head CI (including Linux/macOS public-download tests) before
+   merging. If workflows do not start automatically, dispatch CI on that branch
+   with `nightly_validation=true` and check that branch protection accepts it.
+
+If new examples need unpublished APIs, use a tested RC and adopt its URL before
+merging. The nightly updater remains pin-only and must not repair release URLs.
 Inspect partial publication before recovery; never replace existing tags or
 assets or rebuild an already-published release from a moving branch.
 Preserve the run's exact tested artifacts and inspect the tag SHA and uploaded
 digests before recovery; do not blindly rerun a publishing job.
 
-After an interrupted follow-up, dispatch `Release follow-up` with the existing
-platform version. It tests against the current default-branch head and refuses
-to replace an existing `release-followup/<version>` branch. Inspect that branch
-and its PR before manual recovery. URL updates exclude compiler pins and
-generated documentation.
+After an interrupted URL follow-up, resume the existing reviewed PR and rerun
+validation on its current head; do not create a duplicate PR or republish assets.
 
 ## Design constraints
 
