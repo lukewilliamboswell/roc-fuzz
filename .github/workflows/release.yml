@@ -3,6 +3,14 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
+      release_candidate:
+        description: Publish a branch RC; permits source-built bootstrap libraries, excludes Pages and default-branch follow-up
+        type: boolean
+        default: false
+      expected_sha:
+        description: Full source commit required for explicit RC publication
+        type: string
+        required: false
       nightly_validation:
         description: Validate without publishing, follow-ups or deployment
         type: boolean
@@ -45,7 +53,7 @@ jobs:
           github_token: ${{ github.token }}
 
       - name: Check compiler release policy
-        if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation
+        if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && !inputs.release_candidate
         uses: lukewilliamboswell/roc-automation/actions/check-release@b60d561cbd53c911b29238b30624827f8487113a # b60d561
         with:
           version: ${{ inputs.release_version }}
@@ -54,7 +62,7 @@ jobs:
           allow-nightly-bootstrap: 'true'
 
       - name: Validate release branch
-        if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation
+        if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && !inputs.release_candidate
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
@@ -62,6 +70,15 @@ jobs:
             echo "Releases must be dispatched from the default branch: $DEFAULT_BRANCH" >&2
             exit 1
           fi
+
+      - name: Validate explicit release candidate source
+        if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && inputs.release_candidate
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          python3 scripts/validate_release_candidate.py
+          python3 scripts/check_supply_chain.py
 
   native-inputs:
     name: Generate native inputs (${{ matrix.platform_target }})
@@ -147,11 +164,11 @@ jobs:
           path: platform/targets/arm64mac
 
       - name: Bundle platform
-        if: github.event_name != 'workflow_dispatch' || inputs.nightly_validation
+        if: github.event_name != 'workflow_dispatch' || inputs.nightly_validation || inputs.release_candidate
         run: python scripts/bundle.py --output-dir dist
 
       - name: Require released libraries and bundle for publication
-        if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation
+        if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && !inputs.release_candidate
         run: |
           python scripts/native_libraries.py check
           python scripts/bundle.py --output-dir dist
@@ -485,11 +502,26 @@ jobs:
           github_token: ${{ github.token }}
 
       - name: Publish release
+        if: '!inputs.release_candidate'
         uses: roc-lang/release-package/actions/publish-release@48ccc909bd8f6ba60feb1d33d8b6ac1dc1c7af36 # main
         with:
           release_version: ${{ needs.release-info.outputs.release_version }}
           additional_assets: ${{ steps.additional-assets.outputs.paths }}
           github_token: ${{ github.token }}
+
+      - name: Publish tested RC without changing the stable release
+        if: inputs.release_candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          python3 scripts/validate_release_candidate.py
+          # gh release create refuses an existing release; refuse an existing tag too.
+          refs="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$RELEASE_VERSION")"
+          test "$(jq --arg tag "refs/tags/$RELEASE_VERSION" '[.[] | select(.ref == $tag)] | length' <<< "$refs")" -eq 0
+          gh release create "$RELEASE_VERSION" .release/bundles/*.tar.zst .release/supply-chain/* docs.tar.gz --target "$GITHUB_SHA" --prerelease --latest=false --title "$RELEASE_VERSION" --notes "Release candidate built and tested from $GITHUB_SHA. Includes source-built bootstrap native libraries and signed platform provenance/SBOM. The independent native-library release is still required for stable publication. API docs are included as docs.tar.gz; stable Pages are unchanged."
 
   required:
     name: Release required
@@ -517,7 +549,7 @@ jobs:
   publish-docs:
     name: Publish versioned API docs
     needs: [release-info, publish-release]
-    if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation
+    if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && !inputs.release_candidate
     permissions:
       contents: read
       pages: write
@@ -529,7 +561,7 @@ jobs:
 
   release-followup:
     needs: [release-info, publish-release]
-    if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation
+    if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && !inputs.release_candidate
     permissions:
       contents: write
       pull-requests: write

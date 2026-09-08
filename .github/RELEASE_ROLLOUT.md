@@ -6,6 +6,15 @@ compiler line or support branch is claimed.
 
 ## Bootstrap sequence
 
+An explicit branch RC can unblock public examples before stable bootstrap:
+dispatch `Release` on the source branch with `release_candidate=true`, a new
+`X.Y.Z-rcN` version and `expected_sha` equal to its full commit. The workflow
+checks source identity, tests the exact bundle on both targets and attests it,
+then publishes a prerelease with `--latest=false`. This RC alone may contain
+source-built libraries. It does not deploy Pages or open a default-branch
+follow-up. Adopt and test its URL on the originating PR after publication.
+Stable publication retains the released-library provenance requirement below.
+
 1. Land and validate the `Native libraries` workflow on the default branch.
    Its default manual run is validation-only. Explicit publication of
    `native-libs-v1.0.0` builds and tests both targets, attests the archives and
@@ -41,8 +50,9 @@ nightly compatibility claim, not a reason to block the source release workflow.
 
 ## Validation and live acceptance
 
-Platform publication refuses an empty native lock or target provenance that does
-not match it. Source-build bootstrap is available to validation jobs only.
+Stable platform publication refuses an empty native lock or target provenance
+that does not match it. Source-build bootstrap is available to validation and
+explicitly requested release candidates.
 
 Local verification completed during implementation: Linux native archive creation
 and extraction, full platform-bundle checks/builds/replays/fuzz campaigns (retaining
