@@ -1,22 +1,24 @@
-app [target] { pf: platform "../../platform/main.roc" }
+app [target] { pf: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.0-rc1/9k2cfuAWoBfcRBRiVbriXFf1dHktoRBbieifYN7NmTHc.tar.zst", roc: "nightly-2026-09-05-b195f5b" }
 
 import pf.Fuzz
 
 import pf.Arbitrary
 
-main : List(U8) -> U8
-main = |data| {
+## Allocation invariant: parsing a Str into a number must not allocate.
+main! : List(U8) => U8
+main! = |data| {
 	{ value: string, state } = Arbitrary.new(data).arbitrary_str()
 	{ value: retain, .. } = state.ratio(1, 2)
 	tmp = if retain string else ""
-	bonus = match U32.from_str(string) {
+	result = Fuzz.expect_allocs_at_most!(0, |{}| U32.from_str(string))
+	bonus = match result {
 		Ok(_) => 0
 		Err(_) => 1
 	}
 	(tmp.count_utf8_bytes() + bonus).to_u8_wrap()
 }
 
-target = Fuzz.from_bytes({
+target = Fuzz.from_bytes!({
 	name: "strToU32",
-	test: main,
+	test!: main!,
 })

@@ -5,7 +5,6 @@ on:
     branches: [trunk]
     paths:
       - ".github/workflows/deploy-docs.yml"
-      - ".roc-version"
       - "docs/**"
       - "platform/**"
       - "scripts/check_docs.py"
@@ -44,19 +43,21 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Read pinned Roc nightly
+      - name: Install Python
         if: inputs.docs_artifact == ''
-        id: roc-version
-        run: echo "tag=$(sed -n '1p' .roc-version)" >> "$GITHUB_OUTPUT"
-
-      - name: Install pinned Roc nightly
-        if: inputs.docs_artifact == ''
-        uses: roc-lang/setup-roc@cbe782d6f165b89c87d99f50a59ac4f5f73b4427
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
-          version: nightly-new-compiler
-          nightly-tag: ${{ steps.roc-version.outputs.tag }}
+          python-version: "3.13"
+
+      - name: Install checksum-pinned Roc nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        if: inputs.docs_artifact == ''
+        run: |
+          roc_bin_dir="$(python3 scripts/install_roc.py --install-dir "$RUNNER_TEMP/roc-nightly")"
+          echo "$roc_bin_dir" >> "$GITHUB_PATH"
 
       - name: Restore released docs
         env:
@@ -65,13 +66,13 @@ jobs:
 
       - name: Download versioned docs archive
         if: inputs.docs_artifact != ''
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: ${{ inputs.docs_artifact }}
 
       - name: Snapshot existing docs
         if: inputs.docs_artifact != ''
-        uses: roc-lang/release-package/actions/docs-snapshot@d2560ead9f724bfaabfbc8134b8895e120171064
+        uses: roc-lang/release-package/actions/docs-snapshot@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
           docs_root: www
 
@@ -81,7 +82,7 @@ jobs:
 
       - name: Update docs index
         if: inputs.docs_artifact != ''
-        uses: roc-lang/release-package/actions/docs-index@d2560ead9f724bfaabfbc8134b8895e120171064
+        uses: roc-lang/release-package/actions/docs-index@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
           docs_root: www
           docs_version: ${{ inputs.docs_version }}
@@ -96,19 +97,19 @@ jobs:
 
       - name: Validate versioned docs
         if: inputs.docs_artifact != ''
-        uses: roc-lang/release-package/actions/docs-validate@d2560ead9f724bfaabfbc8134b8895e120171064
+        uses: roc-lang/release-package/actions/docs-validate@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
           docs_root: www
           docs_version: ${{ inputs.docs_version }}
 
       - name: Setup Pages
-        uses: actions/configure-pages@v6
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v5
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: www
 
       - name: Deploy Pages
         id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5

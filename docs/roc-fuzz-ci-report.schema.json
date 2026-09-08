@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/lukewilliamboswell/roc-fuzz/refs/heads/trunk/docs/roc-fuzz-ci-report.schema.json",
+  "title": "roc-fuzz CI evidence report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "target",
+    "started_at_unix_ms",
+    "finished_at_unix_ms",
+    "duration_ms",
+    "outcome",
+    "finding_kind",
+    "provenance",
+    "configuration",
+    "executable",
+    "termination",
+    "libfuzzer",
+    "corpus",
+    "failures",
+    "log"
+  ],
+  "properties": {
+    "schema_version": { "const": "roc-fuzz-ci/v1" },
+    "target": { "type": "string", "minLength": 1 },
+    "started_at_unix_ms": { "type": "integer" },
+    "finished_at_unix_ms": { "type": "integer" },
+    "duration_ms": { "type": "integer", "minimum": 0 },
+    "outcome": { "enum": ["passed", "finding", "infrastructure_error"] },
+    "finding_kind": {
+      "type": ["string", "null"],
+      "enum": [null, "roc_expectation", "roc_crash", "roc_leak", "native_crash", "timeout", "oom", "slow_unit", "unknown"]
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_revision", "roc_version", "platform_release", "platform_sha256"],
+      "properties": {
+        "source_revision": { "type": ["string", "null"] },
+        "roc_version": { "type": ["string", "null"] },
+        "platform_release": { "type": ["string", "null"] },
+        "platform_sha256": { "type": ["string", "null"], "pattern": "^[0-9A-Fa-f]{64}$" }
+      }
+    },
+    "configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["corpus", "time_seconds", "runs", "max_input_size", "memory_limit_mb", "timeout_seconds", "dictionary", "seed", "leak_detection", "command"],
+      "properties": {
+        "corpus": { "type": "string" },
+        "time_seconds": { "type": ["string", "null"] },
+        "runs": { "type": ["string", "null"] },
+        "max_input_size": { "type": ["string", "null"] },
+        "memory_limit_mb": { "type": ["string", "null"] },
+        "timeout_seconds": { "type": ["string", "null"] },
+        "dictionary": { "type": ["string", "null"] },
+        "seed": { "type": ["string", "null"] },
+        "leak_detection": { "type": "boolean" },
+        "command": { "type": "array", "items": { "type": "string" }, "minItems": 5 }
+      }
+    },
+    "executable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "sha256"],
+      "properties": {
+        "name": { "type": "string" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "termination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exit_code", "signal"],
+      "properties": {
+        "exit_code": { "type": ["integer", "null"], "minimum": 0, "maximum": 255 },
+        "signal": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "libfuzzer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coverage_kind", "executed_units", "average_exec_per_sec", "new_units_added", "slowest_unit_time_sec", "peak_rss_mb", "coverage_edges", "coverage_features"],
+      "properties": {
+        "coverage_kind": { "const": "sanitizer_edge_feedback" },
+        "executed_units": { "$ref": "#/$defs/nullableCount" },
+        "average_exec_per_sec": { "$ref": "#/$defs/nullableCount" },
+        "new_units_added": { "$ref": "#/$defs/nullableCount" },
+        "slowest_unit_time_sec": { "$ref": "#/$defs/nullableCount" },
+        "peak_rss_mb": { "$ref": "#/$defs/nullableCount" },
+        "coverage_edges": { "$ref": "#/$defs/nullableCount" },
+        "coverage_features": { "$ref": "#/$defs/nullableCount" }
+      }
+    },
+    "corpus": { "$ref": "#/$defs/manifest" },
+    "failures": { "$ref": "#/$defs/manifest" },
+    "log": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "size", "sha256"],
+      "properties": {
+        "path": { "const": "run.log" },
+        "size": { "type": "integer", "minimum": 0 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    }
+  },
+  "$defs": {
+    "nullableCount": { "type": ["integer", "null"], "minimum": 0 },
+    "manifest": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "size", "sha256"],
+        "properties": {
+          "path": { "type": "string" },
+          "size": { "type": "integer", "minimum": 0 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    }
+  }
+}
