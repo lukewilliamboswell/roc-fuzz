@@ -5,6 +5,11 @@ on:
   push:
     branches: [trunk]
   workflow_dispatch:
+    inputs:
+      nightly_validation:
+        description: Validate a nightly candidate without publication
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -35,6 +40,8 @@ jobs:
           python-version: "3.13"
 
       - name: Install checksum-pinned Roc nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           roc_bin_dir="$(python3 scripts/install_roc.py --install-dir "$RUNNER_TEMP/roc-nightly")"
           echo "$roc_bin_dir" >> "$GITHUB_PATH"
@@ -54,7 +61,13 @@ jobs:
         run: python scripts/check_supply_chain.py
 
       - name: Test examples against the working-tree platform package
-        run: python scripts/test_local.py --platform-target ${{ matrix.platform-target }} --operation all --max-total-time 1 --verbose
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # Bootstrap only: switch to release when the first native-library lock is adopted.
+        run: python scripts/test_local.py --libraries source --platform-target ${{ matrix.platform-target }} --operation all --max-total-time 1 --verbose
+
+      - name: Test release tooling
+        run: python -m unittest discover -s tests -p 'test_*.py'
 
       - name: Generate and validate API documentation
         env:

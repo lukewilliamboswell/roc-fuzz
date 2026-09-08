@@ -197,6 +197,10 @@ TARGET reduce-corpus quality/corpus/my-target quality/corpus/my-target-small
 ```
 
 Keep valuable seeds and fixed crash inputs with the target in version control.
+Use a deliberate directory such as `fuzz/corpus/<target>/`, document why each
+seed matters, and replay it in tests. Generated `.roc-fuzz/` directories are
+ignored at every depth; keep evolving campaign corpora in local storage or CI
+caches, and preserve findings as CI artifacts until reduced to regressions.
 Run them after code changes so the target does not silently stop compiling or
 exercising the intended behavior.
 

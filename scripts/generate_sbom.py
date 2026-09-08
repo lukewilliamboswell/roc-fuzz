@@ -101,7 +101,7 @@ def native_packages(manifests: list[str], release_version: str) -> list[dict[str
     return packages
 
 
-def generate(bundle: Path, release_version: str, manifests: list[str]) -> dict[str, object]:
+def generate(bundle: Path, release_version: str, manifests: list[str], library_manifests: list[Path] | None = None) -> dict[str, object]:
     bundle = bundle.resolve()
     if not bundle.is_file() or not bundle.name.endswith(".tar.zst"):
         raise SystemExit(f"expected a .tar.zst release bundle: {bundle}")
@@ -147,10 +147,19 @@ def generate(bundle: Path, release_version: str, manifests: list[str]) -> dict[s
         ),
     ]
     packages.extend(native_packages(manifests, release_version))
+    for manifest in library_manifests or []:
+        native = json.loads(manifest.read_text())
+        packages.append(package(
+            f"SPDXRef-NativeRelease-{native['target']}",
+            f"roc-fuzz native-library archive {native['target']}", native["release"],
+            "NOASSERTION",
+            f"https://github.com/{native['repository']}/releases/download/{native['release']}/{native['archive']}",
+            native["sha256"],
+        ))
     relationships = [
         {
             "spdxElementId": root_id,
-            "relationshipType": "CONTAINS",
+            "relationshipType": "DEPENDS_ON" if str(component["SPDXID"]).startswith("SPDXRef-NativeRelease-") else "CONTAINS",
             "relatedSpdxElement": component["SPDXID"],
         }
         for component in packages[1:]
@@ -183,11 +192,11 @@ def generate(bundle: Path, release_version: str, manifests: list[str]) -> dict[s
     }
 
 
-def validate(document: dict[str, object], bundle: Path, release_version: str) -> None:
+def validate(document: dict[str, object], bundle: Path, release_version: str, library_count: int = 0) -> None:
     if document.get("spdxVersion") != "SPDX-2.3":
         raise SystemExit("SBOM does not declare SPDX 2.3")
     packages = document.get("packages")
-    if not isinstance(packages, list) or len(packages) != 19:
+    if not isinstance(packages, list) or len(packages) != 19 + library_count:
         raise SystemExit("SBOM component inventory is incomplete")
     root = packages[0]
     if not isinstance(root, dict) or root.get("versionInfo") != release_version:
@@ -208,10 +217,11 @@ def main() -> None:
         help="generated native checksum manifest as TARGET=PATH (repeat for both targets)",
     )
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--library-manifest", type=Path, action="append", default=[])
     args = parser.parse_args()
 
-    document = generate(args.bundle, args.release_version, args.native_manifest)
-    validate(document, args.bundle, args.release_version)
+    document = generate(args.bundle, args.release_version, args.native_manifest, args.library_manifest)
+    validate(document, args.bundle, args.release_version, len(args.library_manifest))
     output = args.output or Path(f"{args.bundle}.spdx.json")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")

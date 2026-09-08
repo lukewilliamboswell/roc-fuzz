@@ -1,173 +1,17 @@
 name: Update Roc nightly
-
 on:
   schedule:
-    # Roc nightlies are normally published around 10:30 UTC.
-    - cron: "0 11 * * *"
+    - cron: "28 13 * * *"
   workflow_dispatch:
-    inputs:
-      nightly_tag:
-        description: "Nightly tag to test instead of the latest published tag"
-        required: false
-        type: string
-
 permissions: {}
-
 concurrency:
-  group: update-roc-nightly
+  group: roc-nightly-update
   cancel-in-progress: false
-
-env:
-  UPDATE_BRANCH: update-roc-nightly
-
 jobs:
-  bump:
-    name: Prepare nightly pin update
-    runs-on: ubuntu-24.04
+  update:
     permissions:
       contents: write
-    outputs:
-      changed: ${{ steps.bump.outputs.changed }}
-      nightly_tag: ${{ steps.latest.outputs.nightly_tag }}
-    steps:
-      - name: Checkout default branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Resolve latest nightly
-        id: latest
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REQUESTED_TAG: ${{ inputs.nightly_tag || '' }}
-        run: |
-          set -euo pipefail
-          tag="$REQUESTED_TAG"
-          if [ -z "$tag" ]; then
-            tag="$(gh release view --repo roc-lang/nightlies --json tagName --jq .tagName)"
-          fi
-          case "$tag" in
-            nightly-*) ;;
-            *) echo "Invalid Roc nightly tag: $tag" >&2; exit 1 ;;
-          esac
-          release="$(gh api "repos/roc-lang/nightlies/releases/tags/$tag")"
-          manifest="$RUNNER_TEMP/roc-nightly-sha256"
-          : > "$manifest"
-          for platform in linux_x86_64 macos_apple_silicon; do
-            asset="$(jq -r --arg platform "$platform" \
-              '.assets[] | select(.name | contains($platform)) | select(.name | endswith(".tar.gz")) | [.digest, .name] | @tsv' \
-              <<< "$release")"
-            if [ -z "$asset" ] || [ "$(wc -l <<< "$asset")" -ne 1 ]; then
-              echo "Expected one $platform archive for $tag" >&2
-              exit 1
-            fi
-            digest="${asset%%$'\t'*}"
-            name="${asset#*$'\t'}"
-            case "$digest" in
-              sha256:????????????????????????????????????????????????????????????????) ;;
-              *) echo "Missing SHA-256 digest for $name" >&2; exit 1 ;;
-            esac
-            printf '%s  %s\n' "${digest#sha256:}" "$name" >> "$manifest"
-          done
-          echo "nightly_tag=$tag" >> "$GITHUB_OUTPUT"
-
-      - name: Update pin and push bot branch
-        id: bump
-        env:
-          NIGHTLY_TAG: ${{ steps.latest.outputs.nightly_tag }}
-        run: |
-          set -euo pipefail
-          proposed="$RUNNER_TEMP/roc-nightly-sha256"
-          if [ "$NIGHTLY_TAG" = "$(<.roc-version)" ]; then
-            if cmp -s "$proposed" .roc-nightly-sha256; then
-              echo "changed=false" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            echo "Published digests changed for the already-pinned tag $NIGHTLY_TAG" >&2
-            exit 1
-          fi
-          printf '%s\n' "$NIGHTLY_TAG" > .roc-version
-          cp "$proposed" .roc-nightly-sha256
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git switch --create "$UPDATE_BRANCH"
-          git add .roc-version .roc-nightly-sha256
-          git commit --message "Update Roc nightly pin to $NIGHTLY_TAG"
-          git push --force origin "$UPDATE_BRANCH"
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-
-  smoke:
-    name: Smoke-test latest nightly on x64-musl
-    needs: bump
-    if: needs.bump.outputs.changed == 'true'
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout source under test
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: update-roc-nightly
-          persist-credentials: false
-
-      - name: Install Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
-        with:
-          python-version: "3.13"
-
-      - name: Install Zig
-        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
-        with:
-          version: "0.16.0"
-          use-cache: false
-
-      - name: Install proposed checksum-pinned Roc nightly
-        run: |
-          roc_bin_dir="$(python3 scripts/install_roc.py --install-dir "$RUNNER_TEMP/roc-nightly")"
-          echo "$roc_bin_dir" >> "$GITHUB_PATH"
-
-      - name: Generate x64-musl platform inputs
-        run: python scripts/build_platform.py --target x64musl
-
-      - name: Validate every target
-        run: python scripts/test.py --operation validate --verbose
-
-      - name: Replay seeds and smoke-fuzz every target
-        run: python scripts/test.py --operation fuzz --max-total-time 1 --verbose
-
-  pull-request:
-    name: Report nightly compatibility
-    needs: [bump, smoke]
-    if: always() && needs.bump.outputs.changed == 'true'
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
       pull-requests: write
-    steps:
-      - name: Checkout default branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - name: Open or refresh update PR
-        env:
-          GH_TOKEN: ${{ github.token }}
-          NIGHTLY_TAG: ${{ needs.bump.outputs.nightly_tag }}
-          SMOKE_RESULT: ${{ needs.smoke.result }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          if [ "$SMOKE_RESULT" = success ]; then
-            status=":white_check_mark: All x64-musl allocation, correctness, and leak checks passed."
-          else
-            status=":x: The x64-musl smoke suite finished with status \`$SMOKE_RESULT\`."
-          fi
-          title="Update Roc nightly pin to $NIGHTLY_TAG"
-          body="$(printf '%s\n\n%s\n\n%s\n' \
-            "Updates \`.roc-version\` to [\`$NIGHTLY_TAG\`](https://github.com/roc-lang/nightlies/releases/tag/$NIGHTLY_TAG)." \
-            "$status See the [workflow run]($RUN_URL)." \
-            "Normal pull-request CI performs the complete Linux and Apple Silicon matrix.")"
-          pr="$(gh pr list --head "$UPDATE_BRANCH" --state open --json number --jq '.[0].number // empty')"
-          if [ -z "$pr" ]; then
-            gh pr create --head "$UPDATE_BRANCH" --title "$title" --body "$body"
-          else
-            gh pr edit "$pr" --title "$title" --body "$body"
-          fi
+      actions: write
+      statuses: write
+    uses: lukewilliamboswell/roc-automation/.github/workflows/update-roc-nightly.yml@b60d561cbd53c911b29238b30624827f8487113a # b60d561

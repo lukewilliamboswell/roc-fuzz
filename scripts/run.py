@@ -31,6 +31,7 @@ def main() -> None:
     parser.add_argument("--timeout", type=int)
     parser.add_argument("--seed", type=int)
     parser.add_argument("--verbose", "-v", action="store_true")
+    parser.add_argument("--libraries", choices=("release", "source"), default="release")
     args = parser.parse_args()
 
     app = args.app.resolve()
@@ -48,7 +49,7 @@ def main() -> None:
     target = host_target()
     env = local_env()
     subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "build_platform.py"), "--target", target],
+        [sys.executable, str(ROOT / "scripts" / "build_platform.py"), "--target", target, "--libraries", args.libraries],
         cwd=ROOT,
         env=env,
         check=True,

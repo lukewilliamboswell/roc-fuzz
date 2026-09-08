@@ -4,16 +4,16 @@
 from __future__ import annotations
 
 import re
+import json
 from pathlib import Path
 
-from install_roc import read_checksums, read_tag
+from compiler_pins import discover, local_sources
 
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_DIR = ROOT / ".github" / "workflows"
 USE_PATTERN = re.compile(r"^\s*uses:\s*([^\s#]+)(?:\s+#\s*(\S+))?\s*$")
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
-REQUIRED_FRAGMENTS = {"linux_x86_64", "macos_apple_silicon"}
 
 
 def validate_actions() -> None:
@@ -43,15 +43,14 @@ def validate_actions() -> None:
 
 
 def validate_roc_pin() -> None:
-    tag = read_tag(ROOT / ".roc-version")
-    checksums = read_checksums(ROOT / ".roc-nightly-sha256")
-    if len(checksums) != len(REQUIRED_FRAGMENTS):
-        raise SystemExit("Roc checksum manifest must contain exactly two supported archives")
-    archive_version = tag.removeprefix("nightly-")
-    for fragment in REQUIRED_FRAGMENTS:
-        matches = [name for name in checksums if fragment in name and archive_version in name]
-        if len(matches) != 1:
-            raise SystemExit(f"expected one {fragment} checksum matching {tag}")
+    config = json.loads((ROOT / ".github/roc-nightly.json").read_text())
+    targets = json.loads((ROOT / "scripts/test_spec.json").read_text())["targets"]
+    expected_roots = {"platform/main.roc", *(target["path"] for target in targets)}
+    if set(config["compiler_roots"]) != expected_roots:
+        raise SystemExit("nightly compiler roots must cover the platform and every example")
+    discover(local_sources(ROOT, config["compiler_roots"]))
+    if (ROOT / ".roc-version").exists():
+        raise SystemExit("Remove legacy .roc-version when using header pins")
 
 
 def main() -> None:

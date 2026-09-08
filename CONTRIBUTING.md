@@ -19,17 +19,18 @@ require only:
 
 - a Roc compiler containing
   [roc-lang/roc#10657](https://github.com/roc-lang/roc/pull/10657);
-- Python 3.10 or newer.
+- Python 3.12 or newer.
 
-Native inputs are generated in CI and published only inside release bundles.
-Bundle consumers do not need a native toolchain. Source development requires
-Zig 0.16.0 and network access to the checksum-pinned libFuzzer source; the
-builder uses `zig ar`, not an unpinned system archiver.
+Native libraries have an independent release cycle; `libhost.a` is built with
+each platform update. Source development requires Zig 0.16.0 and GitHub CLI for
+library attestation verification. The builder uses `zig ar`.
 
-Repository automation also pins the Roc nightly archives themselves. The tag
-in `.roc-version` and the Linux/macOS digests in `.roc-nightly-sha256` are one
-atomic dependency pin. Let the daily updater change them together; a digest
-change to an already-pinned tag is treated as a supply-chain failure.
+Exact compiler versions live in the platform and application header `roc`
+fields. The shared updater changes only those pins, preserving published URLs.
+The installer verifies archives against SHA-256 digests returned by GitHub for
+the exact upstream release. These digests are no longer committed beside a
+duplicate `.roc-version`; independently recorded digests can be supplied using
+`install_roc.py --checksums-file`.
 
 ## Generate platform inputs
 
@@ -39,10 +40,26 @@ Generate the current host's ignored inputs with:
 python3 scripts/build_platform.py
 ```
 
-Pass `--target x64musl` or `--target arm64mac` explicitly in automation. The build compiles
-the thin Zig host, the checksum-pinned `libfuzzer-sys` 0.4.5 source, and the
-needed Zig runtime inputs and writes one local `SHA256SUMS` manifest per target.
-Never commit those archives, objects, or generated manifests.
+Pass `--target x64musl` or `--target arm64mac` explicitly in automation. The default
+restores the archive in `native-libraries.lock.json`, verifies its digest and
+producing workflow's attestation, builds the current host, and writes local
+`SHA256SUMS`. Never commit generated archives, objects, or manifests.
+
+During initial bootstrap, the lock intentionally has no published release.
+Use `--libraries source` explicitly with `build_platform.py`, `test_local.py`, or
+`run.py` until adopting the first release. This compiles pinned libFuzzer and Zig
+runtimes locally. CI's temporary source-build flags must be removed in the same
+reviewed change that adopts the published lock. See the
+[rollout checklist](.github/RELEASE_ROLLOUT.md).
+
+The `Native libraries` workflow packages each target without `libhost.a`, tests
+the archive with a fresh host, and signs provenance and an SPDX SBOM when
+explicitly publishing from the default branch. Tags use `native-libs-vX.Y.Z`
+and never become GitHub's latest platform release. Release new libraries for
+changes to library sources, runtimes/toolchains, flags, targets, security fixes,
+or the macOS adapter compiled into `libfuzzer.a`. The workflow emits the archive
+pins and source identity as a lock-file release asset for review. The macOS
+coverage shim stays with `libhost.a`.
 
 The fully static build excludes `FuzzerInterceptors.cpp`. Its wrappers locate
 libc functions through `dlsym`, which is not usable in the static musl
@@ -86,7 +103,7 @@ python3 scripts/test_local.py --operation seed
 python3 scripts/test_local.py --operation fuzz --max-total-time 2
 ```
 
-`test_local.py` generates the current host inputs, packages the working-tree
+`test_local.py` prepares the current host inputs, packages the working-tree
 platform, serves it from an ephemeral localhost port, and asks `test.py` to use
 temporary rewritten copies of every example. Checked-in example declarations
 remain pinned to the latest published release, while local and CI runs exercise
@@ -151,7 +168,7 @@ python3 scripts/bundle.py --output-dir dist
 
 `bundle.py` verifies the pinned Roc version and every generated input checksum,
 then includes the archives and license notices in `roc bundle`. Production
-release jobs generate both targets on native hosted runners before bundling.
+release jobs build both hosts on native hosted runners before bundling.
 Test the resulting bundle from an
 external target with:
 
@@ -171,9 +188,18 @@ mode. A real release:
 4. publishes the bundle and docs archive in a GitHub release; and
 5. deploys the versioned docs to Pages and updates the root redirect.
 
-The bump check is intentionally `warn` while there is no previous release.
-Change it to `require` after the first release establishes a compatible bundle
-baseline.
+The bump check requires a version increment from the previous platform release.
+The release policy explicitly permits exact-nightly bootstrap on `trunk`; no
+stable compiler compatibility or maintenance branch is implied.
+
+After publication, `Release follow-up` verifies the published archive, tests
+proposed URLs on Linux and macOS, creates a verified signed URL-update PR, and
+dispatches its validation. Compiler pins are preserved. Required PR workflows
+may still need approval to start; dispatch success alone does not establish
+that branch protection accepts the PR. If an old platform lacks newly used APIs,
+publish a compatible platform and adopt its URL through the follow-up.
+Inspect partial publication before recovery; never replace existing tags or
+assets or rebuild an already-published release from a moving branch.
 
 ## Design constraints
 

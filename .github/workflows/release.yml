@@ -3,9 +3,13 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
+      nightly_validation:
+        description: Validate without publishing, follow-ups or deployment
+        type: boolean
+        default: false
       release_version:
         description: "Release version, for example 0.1.0 or 0.2.0-rc1"
-        required: true
+        required: false
         type: string
   pull_request:
 
@@ -13,8 +17,8 @@ on:
 permissions: {}
 
 concurrency:
-  group: ${{ github.event_name == 'workflow_dispatch' && format('release-{0}', github.repository) || format('release-validate-{0}-{1}', github.repository, github.ref) }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+  group: ${{ (github.event_name == 'workflow_dispatch' && !inputs.nightly_validation) && format('release-{0}', github.repository) || format('release-validate-{0}-{1}', github.repository, github.ref) }}
+  cancel-in-progress: ${{ (github.event_name != 'workflow_dispatch' || inputs.nightly_validation) }}
 
 jobs:
   release-info:
@@ -36,12 +40,21 @@ jobs:
         id: validate
         uses: roc-lang/release-package/actions/validate-release@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
-          release_version: ${{ github.event_name == 'workflow_dispatch' && inputs.release_version || '' }}
-          dry_run: ${{ github.event_name != 'workflow_dispatch' }}
+          release_version: ${{ github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && inputs.release_version || '' }}
+          dry_run: ${{ (github.event_name != 'workflow_dispatch' || inputs.nightly_validation) }}
           github_token: ${{ github.token }}
 
+      - name: Check compiler release policy
+        if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation
+        uses: lukewilliamboswell/roc-automation/actions/check-release@b60d561cbd53c911b29238b30624827f8487113a # b60d561
+        with:
+          version: ${{ inputs.release_version }}
+          compiler-root: platform/main.roc
+          allow-default-branch: 'true'
+          allow-nightly-bootstrap: 'true'
+
       - name: Validate release branch
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
@@ -79,10 +92,12 @@ jobs:
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
         with:
           version: "0.16.0"
-          use-cache: false
 
       - name: Generate and checksum native inputs
-        run: python scripts/build_platform.py --target ${{ matrix.platform_target }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/build_platform.py --target ${{ matrix.platform_target }} --libraries source
+        # Bootstrap only: switch to release when adopting the first published library lock.
 
       - name: Upload native inputs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -113,6 +128,8 @@ jobs:
           python-version: "3.13"
 
       - name: Install checksum-pinned Roc nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           roc_bin_dir="$(python3 scripts/install_roc.py --install-dir "$RUNNER_TEMP/roc-nightly")"
           echo "$roc_bin_dir" >> "$GITHUB_PATH"
@@ -130,27 +147,32 @@ jobs:
           path: platform/targets/arm64mac
 
       - name: Bundle platform
+        if: github.event_name != 'workflow_dispatch' || inputs.nightly_validation
         run: python scripts/bundle.py --output-dir dist
+
+      - name: Require released libraries and bundle for publication
+        if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation
+        run: |
+          python scripts/native_libraries.py check
+          python scripts/bundle.py --output-dir dist
 
       - name: Validate candidate release bundle
         run: python scripts/test_bundle.py dist/*.tar.zst
 
       - name: Resolve previous release
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation
         id: previous
         uses: roc-lang/release-package/actions/resolve-previous-release@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
           github_token: ${{ github.token }}
 
-      # This repository has no prior platform release. Change `warn` to
-      # `require` after the first release establishes a roc bump baseline.
       - name: Check version bump
         uses: roc-lang/release-package/actions/run-bump-check@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
           release_version: ${{ needs.release-info.outputs.release_version }}
-          dry_run: ${{ github.event_name != 'workflow_dispatch' }}
+          dry_run: ${{ (github.event_name != 'workflow_dispatch' || inputs.nightly_validation) }}
           previous_url: ${{ steps.previous.outputs.previous_url }}
-          bump_check: warn
+          bump_check: require
           bump_entrypoint: platform/main.roc
 
       - name: Prepare release bundle metadata
@@ -173,6 +195,11 @@ jobs:
           mkdir -p .release/native-inputs
           cp platform/targets/x64musl/SHA256SUMS .release/native-inputs/x64musl.SHA256SUMS
           cp platform/targets/arm64mac/SHA256SUMS .release/native-inputs/arm64mac.SHA256SUMS
+          for target in x64musl arm64mac; do
+            if test -f "platform/targets/$target/NATIVE_LIBRARIES.json"; then
+              cp "platform/targets/$target/NATIVE_LIBRARIES.json" ".release/native-inputs/$target.NATIVE_LIBRARIES.json"
+            fi
+          done
 
       - name: Upload release metadata
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -184,6 +211,7 @@ jobs:
             .release/release-bundles.json
             .release/test-matrix.json
             .release/native-inputs/*.SHA256SUMS
+            .release/native-inputs/*.NATIVE_LIBRARIES.json
           if-no-files-found: error
           retention-days: 7
 
@@ -207,6 +235,8 @@ jobs:
           python-version: "3.13"
 
       - name: Install checksum-pinned Roc nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           roc_bin_dir="$(python3 scripts/install_roc.py --install-dir "$RUNNER_TEMP/roc-nightly")"
           echo "$roc_bin_dir" >> "$GITHUB_PATH"
@@ -259,10 +289,15 @@ jobs:
           RELEASE_VERSION: ${{ needs.release-info.outputs.release_version }}
         run: |
           mkdir -p .release/sbom
+          library_args=()
+          for manifest in .release/metadata/native-inputs/*.NATIVE_LIBRARIES.json; do
+            if test -f "$manifest"; then library_args+=(--library-manifest "$manifest"); fi
+          done
           for bundle in .release/bundles/*.tar.zst; do
             python scripts/generate_sbom.py \
               --bundle "$bundle" \
               --release-version "$RELEASE_VERSION" \
+              "${library_args[@]}" \
               --native-manifest x64musl=.release/metadata/native-inputs/x64musl.SHA256SUMS \
               --native-manifest arm64mac=.release/metadata/native-inputs/arm64mac.SHA256SUMS \
               --output ".release/sbom/$(basename "$bundle").spdx.json"
@@ -293,6 +328,8 @@ jobs:
           python-version: "3.13"
 
       - name: Install checksum-pinned Roc nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           roc_bin_dir="$(python3 scripts/install_roc.py --install-dir "$RUNNER_TEMP/roc-nightly")"
           echo "$roc_bin_dir" >> "$GITHUB_PATH"
@@ -456,7 +493,7 @@ jobs:
 
   required:
     name: Release required
-    if: always() && github.event_name == 'pull_request'
+    if: always() && (github.event_name == 'pull_request' || inputs.nightly_validation)
     needs: [release-info, native-inputs, build, test-bundles, build-docs, generate-sbom]
     runs-on: ubuntu-24.04
     permissions: {}
@@ -480,7 +517,7 @@ jobs:
   publish-docs:
     name: Publish versioned API docs
     needs: [release-info, publish-release]
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation
     permissions:
       contents: read
       pages: write
@@ -489,3 +526,14 @@ jobs:
     with:
       docs_artifact: platform-docs
       docs_version: ${{ needs.release-info.outputs.docs_version }}
+
+  release-followup:
+    needs: [release-info, publish-release]
+    if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    uses: ./.github/workflows/release-followup.yml
+    with:
+      release_version: ${{ needs.release-info.outputs.release_version }}

@@ -5,7 +5,6 @@ on:
     branches: [trunk]
     paths:
       - ".github/workflows/deploy-docs.yml"
-      - ".roc-version"
       - "docs/**"
       - "platform/**"
       - "scripts/check_docs.py"
@@ -53,6 +52,8 @@ jobs:
           python-version: "3.13"
 
       - name: Install checksum-pinned Roc nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
         if: inputs.docs_artifact == ''
         run: |
           roc_bin_dir="$(python3 scripts/install_roc.py --install-dir "$RUNNER_TEMP/roc-nightly")"

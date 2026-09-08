@@ -1,7 +1,7 @@
 /target
 /out
 /dist
-/.roc-fuzz
+.roc-fuzz/
 /typedTarget
 /failureArtifact
 /.test-cache
@@ -12,7 +12,8 @@ __pycache__/
 *.o
 *.a
 
-# Native platform inputs are generated in trusted CI and published only inside
-# release bundles. Keep the target documentation, never the payloads.
+# Native inputs are built locally or restored from attested native-library
+# releases. Keep the target documentation, never the payloads.
 /platform/targets/*/SHA256SUMS
+/platform/targets/*/NATIVE_LIBRARIES.json
 /examples/**/main

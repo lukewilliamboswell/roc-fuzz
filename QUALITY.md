@@ -90,7 +90,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Read the pinned Roc version
-        run: printf 'ROC_NIGHTLY_TAG=%s\n' "$(sed -n '1p' .roc-version)" >> "$GITHUB_ENV"
+        run: |
+          pin="$(sed -n 's/.*roc: "\([^"]*\)".*/\1/p' fuzz/parser.roc)"
+          test -n "$pin"
+          printf 'ROC_NIGHTLY_TAG=%s\n' "$pin" >> "$GITHUB_ENV"
 
       - uses: roc-lang/setup-roc@cbe782d6f165b89c87d99f50a59ac4f5f73b4427
         with:

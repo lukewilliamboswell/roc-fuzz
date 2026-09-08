@@ -1,10 +1,16 @@
 # Release bundle provenance
 
-roc-fuzz does not store native archives or objects in Git. The release workflow
-builds the x64-musl inputs on a GitHub-hosted Linux runner and the Apple Silicon
-inputs on a GitHub-hosted macOS runner. A Linux packaging job downloads both
-sets, verifies their generated checksum manifests, and creates the platform
-bundle that is tested on both supported operating systems.
+roc-fuzz does not store native archives or objects in Git. The independent
+`native-libraries.yml` workflow builds x64-musl and Apple Silicon libraries on
+native GitHub-hosted runners, packages them without `libhost.a`, and tests the
+exact archives with fresh hosts. Publication attaches signed provenance, an SPDX
+SBOM, exported attestations and checksums to `native-libs-vX.Y.Z` releases.
+
+Platform builds restore the reviewed `native-libraries.lock.json` archives,
+verify their SHA-256 digests and the native workflow's attestation at the locked
+source revision, and build fresh hosts. Cached archives are verified on reuse.
+The first library release still needs bootstrapping; CI explicitly builds from
+source until its lock is adopted. See [rollout status](.github/RELEASE_ROLLOUT.md).
 
 After those consumer tests pass, GitHub's attestation service creates signed
 SLSA build provenance and an SBOM attestation for the exact `.tar.zst` bundle.
@@ -17,11 +23,15 @@ Each release also publishes `<bundle>.intoto.jsonl` for offline attestation
 verification and `<bundle>.spdx.json` as an SPDX 2.3 software bill of materials.
 The SBOM records the bundle digest and the libFuzzer, Zig runtime, musl, and LLVM
 runtime components contained in the supported native inputs.
+When using released libraries, the bundle includes per-target
+`NATIVE_LIBRARIES.json` records and its SBOM identifies the library release archive
+URLs and digests. Source builds clear these records to avoid claiming provenance
+from previously restored archives.
 
 The build pins Zig 0.16.0 and the SHA-256 of the `libfuzzer-sys` 0.4.5 source
 archive. The macOS build necessarily uses the SDK supplied by the selected
-GitHub-hosted macOS runner. The final bundle, rather than intermediate native
-inputs, is the published and attested subject.
+GitHub-hosted macOS runner. Native-library archives and the final platform bundle
+are separate published and attested subjects, with independent versions.
 
 ## Verify a release
 

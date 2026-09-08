@@ -38,13 +38,14 @@ def host_target() -> str:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--platform-target", choices=("x64musl", "arm64mac"))
+    parser.add_argument("--libraries", choices=("release", "source"), default="release")
     args, test_args = parser.parse_known_args()
     target = args.platform_target or host_target()
     roc = os.environ.get("ROC", "roc")
     env = local_env()
 
     subprocess.run(
-        [sys.executable, str(ROOT / "scripts/build_platform.py"), "--target", target],
+        [sys.executable, str(ROOT / "scripts/build_platform.py"), "--target", target, "--libraries", args.libraries],
         cwd=ROOT,
         env=env,
         check=True,

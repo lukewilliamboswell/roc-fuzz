@@ -8,10 +8,11 @@ import subprocess
 from pathlib import Path
 
 from platform_inputs import MANIFEST_NAME, TARGETS_BY_NAME, TARGET_SPECS, target_directory, validate_platform_inputs
+from compiler_pins import read_pin
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PIN_PATH = ROOT / ".roc-version"
+PIN_PATH = ROOT / "platform" / "main.roc"
 PLATFORM_DIR = ROOT / "platform"
 MAX_PLATFORM_BYTES = 100 * 1024 * 1024
 
@@ -46,16 +47,14 @@ def main() -> None:
     if os.sep in roc or (os.altsep is not None and os.altsep in roc):
         roc = str(Path(roc).resolve())
 
-    pin_lines = PIN_PATH.read_text(encoding="utf-8").splitlines()
-    if len(pin_lines) != 1 or not pin_lines[0].startswith("nightly-"):
-        raise SystemExit(".roc-version must contain exactly one Roc nightly tag")
+    pin = read_pin(PIN_PATH)
     try:
         version = subprocess.check_output([roc, "version"], text=True).strip()
     except (OSError, subprocess.CalledProcessError) as error:
         raise SystemExit(f"failed to query Roc compiler: {error}") from error
-    if not compiler_matches_pin(version, pin_lines[0]) and os.environ.get("ROC_ALLOW_UNPINNED") != "1":
+    if not compiler_matches_pin(version, pin) and os.environ.get("ROC_ALLOW_UNPINNED") != "1":
         raise SystemExit(
-            f"compiler reports {version!r}, which does not match .roc-version; "
+            f"compiler reports {version!r}, which does not match platform/main.roc; "
             "set ROC_ALLOW_UNPINNED=1 only for intentional compiler development"
         )
 
@@ -80,6 +79,11 @@ def main() -> None:
         for spec in selected_specs
         for path in (target_directory(ROOT, spec) / MANIFEST_NAME, target_directory(ROOT, spec) / "README.md")
     ]
+    metadata_files.extend(
+        target_directory(ROOT, spec) / "NATIVE_LIBRARIES.json"
+        for spec in selected_specs
+        if (target_directory(ROOT, spec) / "NATIVE_LIBRARIES.json").is_file()
+    )
     license_sources = [ROOT / "LICENSE", ROOT / "THIRD_PARTY_LICENSES.md"]
     bundle_sources = [*roc_files, *platform_inputs, *metadata_files]
     unpacked_size = sum(path.stat().st_size for path in [*bundle_sources, *license_sources])

@@ -41,7 +41,7 @@ The application exposes `target : Target`. Its input type can provide a
 statically dispatched `generator_for` method:
 
 ```roc
-app [target] { fuzz: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.3.0/FTcKnkDxL1ZXfKsxeLmNKZ6XKnuKDd47Gv79ThxLYSfw.tar.zst" }
+app [target] { roc: "nightly-2026-09-05-b195f5b", fuzz: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.3.0/FTcKnkDxL1ZXfKsxeLmNKZ6XKnuKDd47Gv79ThxLYSfw.tar.zst" }
 
 import fuzz.Fuzz
 
@@ -143,9 +143,9 @@ distinction in the typed target boundary so the runner can expose that metric.
 
 ## Develop and package
 
-Native target inputs are not stored in this repository. Trusted release jobs
-generate x64-musl and Apple Silicon macOS inputs, assemble them into the
-published platform bundle, and attach signed build provenance and an SPDX SBOM. Bundle users do
+Native libraries are published independently with checksums, provenance and an
+SPDX SBOM. Platform builds restore pinned libraries and build the current
+`libhost.a`, then test and attest the complete platform bundle. Bundle users do
 not need Zig, a C++ toolchain, musl, or a local libFuzzer installation.
 
 A source checkout generates only its current host inputs:
@@ -154,9 +154,11 @@ A source checkout generates only its current host inputs:
 python3 scripts/build_platform.py
 ```
 
-The script verifies the checksum-pinned libFuzzer source, builds the Zig host
-adapter, copies the required Zig C++ and compiler runtimes, and writes a local
-`SHA256SUMS` manifest. These generated files are ignored by Git. See
+The script verifies the pinned library archive and workflow attestation, builds
+the Zig host adapter, and writes a local `SHA256SUMS` manifest. During initial
+bootstrap, add `--libraries source` to this command and the local test commands
+below until the first native-library release is adopted. See the
+[rollout status](.github/RELEASE_ROLLOUT.md). Generated files are ignored by Git. See
 [`SLSA_PROVENANCE.md`](SLSA_PROVENANCE.md) for release verification.
 
 Build and serve the working-tree platform package, rewrite temporary copies of

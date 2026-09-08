@@ -10,7 +10,7 @@ mkdir -p "$docs_root" "$download_root"
 
 release_names="$(
   gh api --paginate "repos/$repository/releases?per_page=100" \
-    --jq '.[] | select(.draft == false) | .tag_name'
+    --jq '.[] | select(.draft == false) | select(.tag_name | startswith("native-libs-") | not) | .tag_name'
 )"
 
 while IFS= read -r release_name; do

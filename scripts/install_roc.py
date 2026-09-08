@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import platform
 import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -16,8 +18,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_TAG_FILE = ROOT / ".roc-version"
-DEFAULT_CHECKSUM_FILE = ROOT / ".roc-nightly-sha256"
+DEFAULT_TAG_FILE = ROOT / "platform" / "main.roc"
 RELEASE_ROOT = "https://github.com/roc-lang/nightlies/releases/download"
 
 
@@ -31,6 +32,9 @@ def host_asset_fragment() -> str:
 
 
 def read_tag(path: Path) -> str:
+    if path.suffix == ".roc":
+        from compiler_pins import read_pin
+        return read_pin(path)
     lines = path.read_text(encoding="utf-8").splitlines()
     if len(lines) != 1 or not lines[0].startswith("nightly-"):
         raise SystemExit(f"{path} must contain exactly one nightly tag")
@@ -106,12 +110,33 @@ def install(tag: str, name: str, expected: str, destination: Path) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tag-file", type=Path, default=DEFAULT_TAG_FILE)
-    parser.add_argument("--checksums-file", type=Path, default=DEFAULT_CHECKSUM_FILE)
+    parser.add_argument("--checksums-file", type=Path, help="optional independently recorded archive digests")
     parser.add_argument("--install-dir", type=Path, required=True)
     args = parser.parse_args()
 
     tag = read_tag(args.tag_file)
-    name, digest = select_asset(tag, read_checksums(args.checksums_file))
+    if args.checksums_file:
+        checksums = read_checksums(args.checksums_file)
+    else:
+        if not tag.startswith("nightly-"):
+            raise SystemExit("This bootstrap installer currently supports exact nightlies only")
+        release = json.loads(subprocess.check_output([
+            "gh", "api", f"repos/roc-lang/nightlies/releases/tags/{tag}"
+        ], text=True))
+        if release.get("tag_name") != tag or release.get("draft"):
+            raise SystemExit("expected a published release matching the exact compiler pin")
+        checksums = {}
+        for asset in release["assets"]:
+            name = asset["name"]
+            if host_asset_fragment() not in name or not name.endswith(".tar.gz"):
+                continue
+            value = asset.get("digest") or ""
+            if not value.startswith("sha256:") or len(value) != 71 or any(c not in "0123456789abcdef" for c in value[7:]):
+                raise SystemExit(f"Roc release has no valid SHA-256 digest for {name}")
+            if name in checksums:
+                raise SystemExit(f"duplicate Roc archive: {name}")
+            checksums[name] = value[7:]
+    name, digest = select_asset(tag, checksums)
     print(install(tag, name, digest, args.install_dir.resolve()))
 
 
