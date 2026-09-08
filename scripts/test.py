@@ -15,7 +15,6 @@ import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 
-from platform_inputs import validate_platform_inputs
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -420,17 +419,10 @@ def build_targets(
     if not targets:
         return {}
     system = platform.system()
-    if system == "Linux":
-        target_names = {"x64musl"}
-    elif system == "Darwin":
-        target_names = {"arm64mac"}
-    else:
+    if system not in {"Linux", "Darwin"}:
         raise TestFailure(f"unsupported host platform for target builds: {system}")
-    if example_root is None:
-        try:
-            validate_platform_inputs(ROOT, target_names)
-        except RuntimeError as error:
-            raise TestFailure(str(error)) from error
+    # Public examples resolve their own published platform inputs. Local inputs
+    # are validated by bundle.py when test_local.py prepares a source bundle.
     return {
         str(target["name"]): build_target(roc, target, verbose, example_root) for target in targets
     }
