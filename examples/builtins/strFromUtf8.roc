@@ -1,13 +1,16 @@
-app [target] { pf: platform "../../platform/main.roc" }
+app [target] { pf: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.0-rc1/9k2cfuAWoBfcRBRiVbriXFf1dHktoRBbieifYN7NmTHc.tar.zst", roc: "nightly-2026-09-05-b195f5b" }
 
 import pf.Fuzz
 
 import pf.Arbitrary
 
-main : List(U8) -> U8
-main = |data| {
+## Allocation invariant: `Str.from_utf8` allocates at most once (it either
+## reuses the input `List(U8)`'s backing buffer or copies into a new one;
+## small results are stored inline and allocate nothing).
+main! : List(U8) => U8
+main! = |data| {
 	bytes = Arbitrary.new(data).arbitrary_list_u8().value
-	string = match Str.from_utf8(bytes) {
+	string = match Fuzz.expect_allocs_at_most!(1, |{}| Str.from_utf8(bytes)) {
 		Ok(value) => value
 		Err(BadUtf8({ index, .. })) => {
 			prefix = List.take_first(bytes, index)
@@ -27,7 +30,7 @@ main = |data| {
 	0
 }
 
-target = Fuzz.from_bytes({
+target = Fuzz.from_bytes!({
 	name: "strFromUtf8",
-	test: main,
+	test!: main!,
 })

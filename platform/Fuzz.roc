@@ -38,6 +38,79 @@ Fuzz := [].{
 	keep : Outcome
 	keep = Keep
 
+	## Total allocations the platform has served this process so far.
+	##
+	## Read it before and after a region of code and subtract to count that
+	## region's allocations. Counts every `roc_alloc` and `roc_realloc`; a
+	## reallocation counts as one allocation.
+	##
+	## The absolute value is meaningless across runs -- the counter is
+	## process-wide and the fuzzer reuses the process for millions of inputs --
+	## so always assert on a difference, never on the raw number.
+	alloc_count! : () => U64
+
+	## Allocations served but not yet freed.
+	##
+	## A region that frees everything it allocates leaves this unchanged. Use
+	## it to assert that a property does not leak; see
+	## [`expect_no_leaks!`](#Fuzz.expect_no_leaks).
+	live_alloc_count! : () => U64
+
+	## Run `body!` and report how many allocations it performed.
+	##
+	## ```roc
+	## { value: dict, allocations } = Fuzz.measure_allocs!(|{}| build_dict(pairs))
+	## ```
+	measure_allocs! : ({} => a) => { value : a, allocations : U64 }
+	measure_allocs! = |body!| {
+		before = Fuzz.alloc_count!()
+		value = body!({})
+		after = Fuzz.alloc_count!()
+		{ value, allocations: after - before }
+	}
+
+	## Crash unless `body!` performs at most `limit` allocations.
+	##
+	## This is the allocation analogue of a property assertion: it turns a
+	## silent performance regression, such as a builtin that stops mutating a
+	## uniquely owned value in place, into a fuzz failure.
+	expect_allocs_at_most! : U64, ({} => a) => a
+	expect_allocs_at_most! = |limit, body!| {
+		measured = Fuzz.measure_allocs!(body!)
+		if measured.allocations > limit {
+			crash "expected at most ${limit.to_str()} allocations, but ${measured.allocations.to_str()} were performed"
+		}
+		measured.value
+	}
+
+	## Crash unless `body!` performs at least `limit` allocations.
+	##
+	## This is useful for copy-on-write invariants: an operation on shared
+	## storage must allocate rather than mutate an alias in place.
+	expect_allocs_at_least! : U64, ({} => a) => a
+	expect_allocs_at_least! = |limit, body!| {
+		measured = Fuzz.measure_allocs!(body!)
+		if measured.allocations < limit {
+			crash "expected at least ${limit.to_str()} allocations, but ${measured.allocations.to_str()} were performed"
+		}
+		measured.value
+	}
+
+	## Crash unless `body!` frees everything it allocated.
+	##
+	## The result is dropped before the balance is read, so a value that is
+	## still alive does not read as a leak.
+	expect_no_leaks! : ({} => a) => {}
+	expect_no_leaks! = |body!| {
+		before = Fuzz.live_alloc_count!()
+		_ = body!({})
+		after = Fuzz.live_alloc_count!()
+		if after > before {
+			crash "expected no leaked allocations, but ${(after - before).to_str()} were still outstanding"
+		}
+		{}
+	}
+
 	## Discard a generated value that is outside the property's valid domain.
 	##
 	## Prefer generators that produce valid inputs directly. Use `reject` for
@@ -86,7 +159,7 @@ Fuzz := [].{
 	target_with = |config|
 		Target.new({
 			name: config.name,
-			run: |input| {
+			run!: |input| {
 				generated = (config.generator)(Arbitrary.new(input))
 				match (config.test)(generated.value) {
 					Keep => 0
@@ -97,6 +170,41 @@ Fuzz := [].{
 				generated = (config.generator)(Arbitrary.new(input))
 				(config.show)(generated.value)
 			},
+		})
+
+	## Effectful sibling of [`target_with`](#Fuzz.target_with).
+	##
+	## Use this when the property itself needs the platform's allocation
+	## counters, for example to assert that a builtin mutates a uniquely owned
+	## value in place instead of reallocating.
+	target_with! : { name : Str, generator : Generator(a), test! : a => Outcome, show : a -> Str } -> Target
+	target_with! = |config|
+		Target.new({
+			name: config.name,
+			run!: |input| {
+				generated = (config.generator)(Arbitrary.new(input))
+				match (config.test!)(generated.value) {
+					Keep => 0
+					Reject => 1
+				}
+			},
+			show: |input| {
+				generated = (config.generator)(Arbitrary.new(input))
+				(config.show)(generated.value)
+			},
+		})
+
+	## Effectful sibling of [`from_bytes`](#Fuzz.from_bytes).
+	from_bytes! : { name : Str, test! : List(U8) => U8 } -> Target
+	from_bytes! = |config|
+		Fuzz.target_with!({
+			name: config.name,
+			generator: Fuzz.raw_bytes,
+			test!: |input| {
+				_ = (config.test!)(input)
+				Keep
+			},
+			show: |input| Str.inspect(input),
 		})
 
 	## Adapt an existing `List(U8) -> U8` quality target.

@@ -1,4 +1,4 @@
-"""Validate and record the prebuilt inputs shipped by the roc-fuzz platform."""
+"""Validate and record generated native inputs for the roc-fuzz platform."""
 
 from __future__ import annotations
 
@@ -80,17 +80,27 @@ def write_platform_manifest(root: Path, spec: TargetSpec) -> Path:
     return manifest
 
 
-def validate_platform_inputs(root: Path) -> list[Path]:
+def validate_platform_inputs(
+    root: Path, target_names: set[str] | None = None
+) -> list[Path]:
     """Return every verified native input, in deterministic target order."""
 
     inputs: list[Path] = []
-    for spec in TARGET_SPECS:
+    specs = (
+        TARGET_SPECS
+        if target_names is None
+        else tuple(spec for spec in TARGET_SPECS if spec.roc_name in target_names)
+    )
+    if target_names is not None and {spec.roc_name for spec in specs} != target_names:
+        unknown = sorted(target_names - {spec.roc_name for spec in specs})
+        raise RuntimeError(f"unknown platform targets: {', '.join(unknown)}")
+    for spec in specs:
         directory = target_directory(root, spec)
         manifest = directory / MANIFEST_NAME
         if not manifest.is_file():
             raise RuntimeError(
-                f"prebuilt {spec.roc_name} platform manifest is missing: {manifest}; "
-                "maintainers can regenerate it with scripts/build_platform.py"
+                f"generated {spec.roc_name} platform manifest is missing: {manifest}; "
+                "run scripts/build_platform.py for this target"
             )
 
         recorded: dict[str, str] = {}
@@ -119,11 +129,11 @@ def validate_platform_inputs(root: Path) -> list[Path]:
         for name in spec.input_names:
             path = directory / name
             if not path.is_file():
-                raise RuntimeError(f"prebuilt {spec.roc_name} platform input is missing: {path}")
+                raise RuntimeError(f"generated {spec.roc_name} platform input is missing: {path}")
             actual = digest(path)
             if actual != recorded[name]:
                 raise RuntimeError(
-                    f"prebuilt {spec.roc_name} platform input checksum mismatch for "
+                    f"generated {spec.roc_name} platform input checksum mismatch for "
                     f"{name}: {actual}"
                 )
             inputs.append(path)

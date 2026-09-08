@@ -1,14 +1,20 @@
-app [target] { pf: platform "../../platform/main.roc" }
+app [target] { pf: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.0-rc1/9k2cfuAWoBfcRBRiVbriXFf1dHktoRBbieifYN7NmTHc.tar.zst", roc: "nightly-2026-09-05-b195f5b" }
 
 import pf.Fuzz
 
 import pf.Arbitrary
 
-main : List(U8) -> U8
-main = |data| {
+parse_dec : Str -> Try(Dec, _)
+parse_dec = |input| Json.parse(input)
+
+## Allocation invariant: parsing stays within a linear budget based on input
+## size. (`Dec` can render up to ~40 ASCII characters, so unlike the U64
+## target we cannot assume `Json.to_str` stays inline.)
+main! : List(U8) => U8
+main! = |data| {
 	input = Arbitrary.new(data).arbitrary_list_u8().value |> Str.from_utf8_lossy
-	result : Try(Dec, _)
-	result = Json.parse(input)
+	limit = 4 * input.count_utf8_bytes() + 16
+	result = Fuzz.expect_allocs_at_most!(limit, |{}| parse_dec(input))
 
 	match result {
 		Ok(decoded) => {
@@ -28,7 +34,7 @@ main = |data| {
 	}
 }
 
-target = Fuzz.from_bytes({
+target = Fuzz.from_bytes!({
 	name: "jsonToDec",
-	test: main,
+	test!: main!,
 })

@@ -1,9 +1,11 @@
-app [target] { pf: platform "../../platform/main.roc" }
+app [target] { pf: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.0-rc1/9k2cfuAWoBfcRBRiVbriXFf1dHktoRBbieifYN7NmTHc.tar.zst", roc: "nightly-2026-09-05-b195f5b" }
 
 import pf.Fuzz
 
-main : List(U8) -> U8
-main = |data| {
+## Allocation invariant: materializing a `U8` range into a `List` allocates
+## at most once (a single backing buffer sized for the range).
+main! : List(U8) => U8
+main! = |data| {
 	match data {
 		[start, end, inclusive, ..] => {
 			range = if inclusive % 2 == 0 {
@@ -12,14 +14,17 @@ main = |data| {
 				U8.range_exclusive_to(start, end)
 			}
 			values : List(U8)
-			values = List.from_iter(range.iter())
+			values = Fuzz.expect_allocs_at_most!(
+				1,
+				|{}| List.from_iter(range.iter()),
+			)
 			if List.is_empty(values) 0 else 1
 		}
 		_ => 2
 	}
 }
 
-target = Fuzz.from_bytes({
+target = Fuzz.from_bytes!({
 	name: "listRange",
-	test: main,
+	test!: main!,
 })

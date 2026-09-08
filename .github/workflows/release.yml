@@ -3,10 +3,17 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      nightly_validation:
-        description: "Validate a nightly candidate without publishing or deploying"
+      release_candidate:
+        description: Publish a branch RC; permits source-built bootstrap libraries, excludes Pages and default-branch follow-up
         type: boolean
+        default: false
+      expected_sha:
+        description: Full source commit required for explicit RC publication
+        type: string
         required: false
+      nightly_validation:
+        description: Validate without publishing, follow-ups or deployment
+        type: boolean
         default: false
       release_version:
         description: "Release version, for example 0.1.0 or 0.2.0-rc1"
@@ -30,42 +37,32 @@ jobs:
     outputs:
       release_version: ${{ steps.validate.outputs.release_version }}
       docs_version: ${{ steps.validate.outputs.docs_version }}
-      roc_nightly: ${{ steps.roc-version.outputs.tag }}
 
     steps:
-      - name: Require a version for publication
-        if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation
-        shell: bash
-        env:
-          RELEASE_VERSION: ${{ inputs.release_version }}
-        run: test -n "$RELEASE_VERSION" || { echo "A release version is required for publication" >&2; exit 1; }
-
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
-      - name: Read pinned Roc nightly
-        id: roc-version
-        run: |
-          set -euo pipefail
-          tag="$(sed -n '1p' .roc-version)"
-          if [ -z "$tag" ] || [ "$(wc -l < .roc-version)" -ne 1 ]; then
-            echo ".roc-version must contain exactly one nightly tag" >&2
-            exit 1
-          fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-
       - name: Validate release request
         id: validate
-        uses: roc-lang/release-package/actions/validate-release@d2560ead9f724bfaabfbc8134b8895e120171064
+        uses: roc-lang/release-package/actions/validate-release@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
-          release_version: ${{ (github.event_name == 'workflow_dispatch' && !inputs.nightly_validation) && inputs.release_version || '' }}
+          release_version: ${{ github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && inputs.release_version || '' }}
           dry_run: ${{ (github.event_name != 'workflow_dispatch' || inputs.nightly_validation) }}
           github_token: ${{ github.token }}
 
+      - name: Check compiler release policy
+        if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && !inputs.release_candidate
+        uses: lukewilliamboswell/roc-automation/actions/check-release@b60d561cbd53c911b29238b30624827f8487113a # b60d561
+        with:
+          version: ${{ inputs.release_version }}
+          compiler-root: platform/main.roc
+          allow-default-branch: 'true'
+          allow-nightly-bootstrap: 'true'
+
       - name: Validate release branch
-        if: (github.event_name == 'workflow_dispatch' && !inputs.nightly_validation)
+        if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && !inputs.release_candidate
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
@@ -74,9 +71,62 @@ jobs:
             exit 1
           fi
 
+      - name: Validate explicit release candidate source
+        if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && inputs.release_candidate
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          python3 scripts/validate_release_candidate.py
+          python3 scripts/check_supply_chain.py
+
+  native-inputs:
+    name: Generate native inputs (${{ matrix.platform_target }})
+    needs: release-info
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform_target: x64musl
+          - os: macos-26
+            platform_target: arm64mac
+    steps:
+      - name: Checkout exact source revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.13"
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
+        with:
+          version: "0.16.0"
+
+      - name: Generate and checksum native inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/build_platform.py --target ${{ matrix.platform_target }} --libraries source
+        # Bootstrap only: switch to release when adopting the first published library lock.
+
+      - name: Upload native inputs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ matrix.platform_target }}
+          path: platform/targets/${{ matrix.platform_target }}
+          if-no-files-found: error
+          retention-days: 7
+
   build:
     name: Build and validate release bundle
-    needs: release-info
+    needs: [release-info, native-inputs]
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -94,42 +144,57 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install pinned Roc nightly
-        uses: roc-lang/setup-roc@cbe782d6f165b89c87d99f50a59ac4f5f73b4427
+      - name: Install checksum-pinned Roc nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          roc_bin_dir="$(python3 scripts/install_roc.py --install-dir "$RUNNER_TEMP/roc-nightly")"
+          echo "$roc_bin_dir" >> "$GITHUB_PATH"
+
+      - name: Download x64-musl inputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          version: nightly-new-compiler
-          nightly-tag: ${{ needs.release-info.outputs.roc_nightly }}
+          name: x64musl
+          path: platform/targets/x64musl
 
-      - name: Validate source and unit tests
-        run: python scripts/test.py --operation validate --verbose
+      - name: Download Apple Silicon inputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: arm64mac
+          path: platform/targets/arm64mac
 
-      - name: Build and smoke-test every target
-        run: python scripts/test.py --operation fuzz --max-total-time 1 --verbose
+      - name: Bundle platform
+        if: github.event_name != 'workflow_dispatch' || inputs.nightly_validation || inputs.release_candidate
+        run: python scripts/bundle.py --output-dir dist
+
+      - name: Require released libraries and bundle for publication
+        if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && !inputs.release_candidate
+        run: |
+          python scripts/native_libraries.py check
+          python scripts/bundle.py --output-dir dist
+
+      - name: Validate candidate release bundle
+        run: python scripts/test_bundle.py dist/*.tar.zst
 
       - name: Resolve previous release
-        if: (github.event_name == 'workflow_dispatch' && !inputs.nightly_validation)
+        if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation
         id: previous
-        uses: roc-lang/release-package/actions/resolve-previous-release@d2560ead9f724bfaabfbc8134b8895e120171064
+        uses: roc-lang/release-package/actions/resolve-previous-release@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
           github_token: ${{ github.token }}
 
-      # This repository has no prior platform release. Change `warn` to
-      # `require` after the first release establishes a roc bump baseline.
       - name: Check version bump
-        uses: roc-lang/release-package/actions/run-bump-check@d2560ead9f724bfaabfbc8134b8895e120171064
+        uses: roc-lang/release-package/actions/run-bump-check@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
           release_version: ${{ needs.release-info.outputs.release_version }}
           dry_run: ${{ (github.event_name != 'workflow_dispatch' || inputs.nightly_validation) }}
           previous_url: ${{ steps.previous.outputs.previous_url }}
-          bump_check: warn
+          bump_check: require
           bump_entrypoint: platform/main.roc
-
-      - name: Bundle platform
-        run: python scripts/bundle.py --output-dir dist
 
       - name: Prepare release bundle metadata
         id: bundles
-        uses: roc-lang/release-package/actions/prepare-bundles@d2560ead9f724bfaabfbc8134b8895e120171064
+        uses: roc-lang/release-package/actions/prepare-bundles@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
           bundle_glob: dist/*.tar.zst
           test_os_json: '["ubuntu-22.04", "macos-26"]'
@@ -142,6 +207,17 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Collect native input manifests
+        run: |
+          mkdir -p .release/native-inputs
+          cp platform/targets/x64musl/SHA256SUMS .release/native-inputs/x64musl.SHA256SUMS
+          cp platform/targets/arm64mac/SHA256SUMS .release/native-inputs/arm64mac.SHA256SUMS
+          for target in x64musl arm64mac; do
+            if test -f "platform/targets/$target/NATIVE_LIBRARIES.json"; then
+              cp "platform/targets/$target/NATIVE_LIBRARIES.json" ".release/native-inputs/$target.NATIVE_LIBRARIES.json"
+            fi
+          done
+
       - name: Upload release metadata
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -151,6 +227,8 @@ jobs:
             .release/previous-url.txt
             .release/release-bundles.json
             .release/test-matrix.json
+            .release/native-inputs/*.SHA256SUMS
+            .release/native-inputs/*.NATIVE_LIBRARIES.json
           if-no-files-found: error
           retention-days: 7
 
@@ -173,11 +251,12 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install pinned Roc nightly
-        uses: roc-lang/setup-roc@cbe782d6f165b89c87d99f50a59ac4f5f73b4427
-        with:
-          version: nightly-new-compiler
-          nightly-tag: ${{ needs.release-info.outputs.roc_nightly }}
+      - name: Install checksum-pinned Roc nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          roc_bin_dir="$(python3 scripts/install_roc.py --install-dir "$RUNNER_TEMP/roc-nightly")"
+          echo "$roc_bin_dir" >> "$GITHUB_PATH"
 
       - name: Download release bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -186,12 +265,68 @@ jobs:
           path: .release/test-bundles
 
       - name: Test release bundle
-        uses: roc-lang/release-package/actions/test-bundle@d2560ead9f724bfaabfbc8134b8895e120171064
+        uses: roc-lang/release-package/actions/test-bundle@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
           test_bundle_command: python scripts/test_bundle.py
           bundle_path: .release/test-bundles/${{ matrix.artifact_file }}
           bundle_name: ${{ matrix.bundle_name }}
           release_version: ${{ needs.release-info.outputs.release_version }}
+
+  generate-sbom:
+    name: Generate release SBOM
+    needs: [release-info, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.13"
+
+      - name: Download release bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-bundles
+          path: .release/bundles
+
+      - name: Download native input metadata
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-metadata
+          path: .release/metadata
+
+      - name: Generate and validate SPDX 2.3 metadata
+        env:
+          RELEASE_VERSION: ${{ needs.release-info.outputs.release_version }}
+        run: |
+          mkdir -p .release/sbom
+          library_args=()
+          for manifest in .release/metadata/native-inputs/*.NATIVE_LIBRARIES.json; do
+            if test -f "$manifest"; then library_args+=(--library-manifest "$manifest"); fi
+          done
+          for bundle in .release/bundles/*.tar.zst; do
+            python scripts/generate_sbom.py \
+              --bundle "$bundle" \
+              --release-version "$RELEASE_VERSION" \
+              "${library_args[@]}" \
+              --native-manifest x64musl=.release/metadata/native-inputs/x64musl.SHA256SUMS \
+              --native-manifest arm64mac=.release/metadata/native-inputs/arm64mac.SHA256SUMS \
+              --output ".release/sbom/$(basename "$bundle").spdx.json"
+          done
+
+      - name: Upload release SBOM
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-sbom
+          path: .release/sbom/*.spdx.json
+          if-no-files-found: error
+          retention-days: 7
 
   build-docs:
     name: Build API docs archive
@@ -204,17 +339,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Install pinned Roc nightly
-        uses: roc-lang/setup-roc@cbe782d6f165b89c87d99f50a59ac4f5f73b4427
+      - name: Install Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
-          version: nightly-new-compiler
-          nightly-tag: ${{ needs.release-info.outputs.roc_nightly }}
+          python-version: "3.13"
+
+      - name: Install checksum-pinned Roc nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          roc_bin_dir="$(python3 scripts/install_roc.py --install-dir "$RUNNER_TEMP/roc-nightly")"
+          echo "$roc_bin_dir" >> "$GITHUB_PATH"
 
       - name: Create docs staging tree
         run: mkdir -p docs-site
 
       - name: Snapshot docs staging tree
-        uses: roc-lang/release-package/actions/docs-snapshot@d2560ead9f724bfaabfbc8134b8895e120171064
+        uses: roc-lang/release-package/actions/docs-snapshot@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
           docs_root: docs-site
 
@@ -227,7 +368,7 @@ jobs:
           python3 scripts/check_docs.py "docs-site/$DOCS_VERSION"
 
       - name: Validate versioned docs
-        uses: roc-lang/release-package/actions/docs-validate@d2560ead9f724bfaabfbc8134b8895e120171064
+        uses: roc-lang/release-package/actions/docs-validate@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
           docs_root: docs-site
           docs_version: ${{ needs.release-info.outputs.docs_version }}
@@ -245,9 +386,80 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  attest-release:
+    name: Attest tested release bundle
+    needs: [release-info, build, test-bundles, generate-sbom]
+    if: (github.event_name == 'workflow_dispatch' && !inputs.nightly_validation)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Download the tested release bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-bundles
+          path: .release/bundles
+
+      - name: Download the release SBOM
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-sbom
+          path: .release/sbom
+
+      - name: Attest SLSA build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: .release/bundles/*.tar.zst
+
+      - name: Resolve the single SBOM file
+        id: sbom-file
+        run: |
+          files=(.release/sbom/*.spdx.json)
+          test "${#files[@]}" -eq 1
+          test -f "${files[0]}"
+          echo "path=${files[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Attest the SPDX SBOM
+        # sbom-path is a single file path, not a glob.
+        id: attest-sbom
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: .release/bundles/*.tar.zst
+          sbom-path: ${{ steps.sbom-file.outputs.path }}
+
+      - name: Export attestations for offline verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p .release/supply-chain
+          for bundle in .release/bundles/*.tar.zst; do
+            work="$RUNNER_TEMP/attestations-$(basename "$bundle")"
+            mkdir -p "$work"
+            (cd "$work" && gh attestation download "$GITHUB_WORKSPACE/$bundle" --repo "$GITHUB_REPOSITORY")
+            exported="$(find "$work" -maxdepth 1 -type f -name 'sha256*.jsonl')"
+            if [ -z "$exported" ] || [ "$(wc -l <<< "$exported")" -ne 1 ]; then
+              echo "Expected one exported attestation set for $bundle" >&2
+              exit 1
+            fi
+            cp "$exported" ".release/supply-chain/$(basename "$bundle").intoto.jsonl"
+          done
+          cp .release/sbom/*.spdx.json .release/supply-chain/
+
+      - name: Upload release supply-chain assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-supply-chain
+          path: .release/supply-chain/*
+          if-no-files-found: error
+          retention-days: 7
+
   publish-release:
     name: Publish GitHub release
-    needs: [release-info, build, build-docs, test-bundles]
+    needs: [release-info, build, build-docs, test-bundles, attest-release]
     if: (github.event_name == 'workflow_dispatch' && !inputs.nightly_validation)
     runs-on: ubuntu-24.04
     permissions:
@@ -276,24 +488,78 @@ jobs:
         with:
           name: platform-docs
 
+      - name: Download release supply-chain assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-supply-chain
+          path: .release/supply-chain
+
+      - name: List additional release assets
+        id: additional-assets
+        run: |
+          {
+            echo 'paths<<EOF'
+            echo 'docs.tar.gz'
+            find .release/supply-chain -maxdepth 1 -type f -print | sort
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Make release notes
-        uses: roc-lang/release-package/actions/make-release-notes@d2560ead9f724bfaabfbc8134b8895e120171064
+        uses: roc-lang/release-package/actions/make-release-notes@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
           release_version: ${{ needs.release-info.outputs.release_version }}
           docs_url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/${{ needs.release-info.outputs.docs_version }}/
           github_token: ${{ github.token }}
 
       - name: Publish release
-        uses: roc-lang/release-package/actions/publish-release@48ccc909bd8f6ba60feb1d33d8b6ac1dc1c7af36
+        if: '!inputs.release_candidate'
+        uses: roc-lang/release-package/actions/publish-release@48ccc909bd8f6ba60feb1d33d8b6ac1dc1c7af36 # main
         with:
           release_version: ${{ needs.release-info.outputs.release_version }}
-          additional_assets: docs.tar.gz
+          additional_assets: ${{ steps.additional-assets.outputs.paths }}
           github_token: ${{ github.token }}
+
+      - name: Publish tested RC without changing the stable release
+        if: inputs.release_candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          python3 scripts/validate_release_candidate.py
+          # gh release create refuses an existing release; refuse an existing tag too.
+          refs="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$RELEASE_VERSION")"
+          test "$(jq --arg tag "refs/tags/$RELEASE_VERSION" '[.[] | select(.ref == $tag)] | length' <<< "$refs")" -eq 0
+          gh release create "$RELEASE_VERSION" .release/bundles/*.tar.zst .release/supply-chain/* docs.tar.gz --target "$GITHUB_SHA" --prerelease --latest=false --title "$RELEASE_VERSION" --notes "Release candidate built and tested from $GITHUB_SHA. Includes source-built bootstrap native libraries and signed platform provenance/SBOM. The independent native-library release is still required for stable publication. API docs are included as docs.tar.gz; stable Pages are unchanged."
+
+  required:
+    name: Release required
+    if: always() && (github.event_name == 'pull_request' || inputs.nightly_validation)
+    needs: [release-info, native-inputs, build, test-bundles, build-docs, generate-sbom]
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Require every release validation job
+        env:
+          RELEASE_INFO: ${{ needs.release-info.result }}
+          NATIVE_INPUTS: ${{ needs.native-inputs.result }}
+          BUILD: ${{ needs.build.result }}
+          TEST_BUNDLES: ${{ needs.test-bundles.result }}
+          BUILD_DOCS: ${{ needs.build-docs.result }}
+          GENERATE_SBOM: ${{ needs.generate-sbom.result }}
+        run: |
+          test "$RELEASE_INFO" = success
+          test "$NATIVE_INPUTS" = success
+          test "$BUILD" = success
+          test "$TEST_BUNDLES" = success
+          test "$BUILD_DOCS" = success
+          test "$GENERATE_SBOM" = success
 
   publish-docs:
     name: Publish versioned API docs
     needs: [release-info, publish-release]
-    if: (github.event_name == 'workflow_dispatch' && !inputs.nightly_validation)
+    if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && !inputs.release_candidate
     permissions:
       contents: read
       pages: write
@@ -302,21 +568,3 @@ jobs:
     with:
       docs_artifact: platform-docs
       docs_version: ${{ needs.release-info.outputs.docs_version }}
-
-  release-required:
-    name: Release required
-    if: always()
-    needs: [release-info, build, test-bundles, build-docs]
-    runs-on: ubuntu-24.04
-    permissions: {}
-    steps:
-      - name: Require every validation job to pass
-        env:
-          RESULTS: ${{ toJSON(needs) }}
-        run: |
-          python3 - <<'PYTHON'
-          import json, os
-          results = json.loads(os.environ["RESULTS"])
-          if not results or any(job["result"] != "success" for job in results.values()):
-              raise SystemExit("Required validation did not pass")
-          PYTHON

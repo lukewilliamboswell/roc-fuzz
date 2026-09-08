@@ -1,19 +1,23 @@
-app [target] { pf: platform "../../platform/main.roc" }
+app [target] { pf: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.0-rc1/9k2cfuAWoBfcRBRiVbriXFf1dHktoRBbieifYN7NmTHc.tar.zst", roc: "nightly-2026-09-05-b195f5b" }
 
 import pf.Fuzz
 
 import pf.Arbitrary
 
-main : List(U8) -> U8
-main = |data| {
+## Allocation invariant: `Str.trim_end` returns a view sharing the
+## original's backing buffer (or a small inline string), so it must not
+## allocate.
+main! : List(U8) => U8
+main! = |data| {
 	{ value: string, state } = Arbitrary.new(data).arbitrary_str()
 	{ value: retain, .. } = state.ratio(1, 2)
 	tmp = if retain string else ""
-	bonus = if string.trim_end().is_empty() 1 else 0
+	trimmed = Fuzz.expect_allocs_at_most!(0, |{}| string.trim_end())
+	bonus = if trimmed.is_empty() 1 else 0
 	(tmp.count_utf8_bytes() + bonus).to_u8_wrap()
 }
 
-target = Fuzz.from_bytes({
+target = Fuzz.from_bytes!({
 	name: "strTrimRight",
-	test: main,
+	test!: main!,
 })
