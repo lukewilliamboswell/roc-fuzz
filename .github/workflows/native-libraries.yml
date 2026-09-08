@@ -1,0 +1,159 @@
+name: Native libraries
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: "Independent library tag (native-libs-vX.Y.Z)"
+        required: true
+        default: native-libs-v1.0.0
+        type: string
+      publish:
+        description: "Publish the exact tested archives from the default branch"
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - .github/workflows/native-libraries.yml
+      - scripts/build_platform.py
+      - scripts/native_libraries.py
+      - scripts/platform_inputs.py
+      - src/macos_fuzzer_ext_functions.cpp
+      - THIRD_PARTY_LICENSES.md
+
+permissions: {}
+concurrency:
+  group: native-libraries-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x64musl
+          - os: macos-26
+            target: arm64mac
+    runs-on: ${{ matrix.os }}
+    env:
+      LIBRARY_RELEASE: ${{ inputs.release_version || 'native-libs-v1.0.0' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Validate request before installing build tools
+        env:
+          PUBLISH: ${{ inputs.publish || false }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          [[ "$LIBRARY_RELEASE" =~ ^native-libs-v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          if [ "$PUBLISH" = true ]; then
+            test "$GITHUB_REF" = "refs/heads/$DEFAULT_BRANCH"
+          fi
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.13"
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
+        with:
+          version: "0.16.0"
+          use-cache: false
+      - name: Install pinned Roc
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          roc_bin_dir="$(python scripts/install_roc.py --install-dir "$RUNNER_TEMP/roc")"
+          echo "$roc_bin_dir" >> "$GITHUB_PATH"
+      - name: Build and package libraries without libhost
+        run: |
+          python scripts/build_platform.py --target ${{ matrix.target }} --libraries source --libraries-only
+          python scripts/native_libraries.py pack --target ${{ matrix.target }} --release "$LIBRARY_RELEASE"
+      - name: Extract and test the exact candidate archive
+        run: |
+          python scripts/native_libraries.py extract --target ${{ matrix.target }} --archive "dist/native/$LIBRARY_RELEASE-${{ matrix.target }}.tar.gz" --directory "$RUNNER_TEMP/extracted"
+          # Copy only the validated library inventory; build a fresh host around it.
+          python -c 'import shutil, sys; sys.path.insert(0, "scripts"); from native_libraries import library_names; from platform_inputs import TARGETS_BY_NAME; from pathlib import Path; spec = TARGETS_BY_NAME[sys.argv[1]]; [shutil.copy2(Path(sys.argv[2])/n, Path("platform/targets")/spec.roc_name/n) for n in library_names(spec)]' '${{ matrix.target }}' "$RUNNER_TEMP/extracted"
+          python scripts/build_platform.py --target ${{ matrix.target }} --host-only
+          python scripts/bundle.py --target ${{ matrix.target }} --output-dir "$RUNNER_TEMP/bundle"
+          python scripts/test_bundle.py "$RUNNER_TEMP"/bundle/*.tar.zst
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: native-${{ matrix.target }}
+          path: dist/native/*
+          if-no-files-found: error
+          retention-days: 30
+
+  attest:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    strategy:
+      matrix:
+        target: [x64musl, arm64mac]
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: native-${{ matrix.target }}
+          path: assets
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: assets/*.tar.gz
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: assets/*.tar.gz
+          sbom-path: assets/${{ inputs.release_version }}-${{ matrix.target }}.tar.gz.spdx.json
+      - name: Export attestation bundles
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for archive in "$GITHUB_WORKSPACE"/assets/*.tar.gz; do
+            work="$(mktemp -d)"
+            (cd "$work" && gh attestation download "$archive" --repo "$GITHUB_REPOSITORY")
+            files=("$work"/*.jsonl)
+            test "${#files[@]}" -eq 1
+            cp "${files[0]}" "$archive.intoto.jsonl"
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: attested-native-${{ matrix.target }}
+          path: assets/*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    needs: [build, attest]
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      LIBRARY_RELEASE: ${{ inputs.release_version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: attested-native-*
+          merge-multiple: true
+          path: assets
+      - name: Record pins for the platform follow-up
+        run: python scripts/native_libraries.py lock --directory assets --release "$LIBRARY_RELEASE" > assets/native-libraries.lock.json
+      - name: Publish immutable library release without changing latest platform
+        run: |
+          set -euo pipefail
+          # Existing tags are never moved and existing releases are never overwritten.
+          refs="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$LIBRARY_RELEASE")"
+          test "$(jq --arg tag "refs/tags/$LIBRARY_RELEASE" '[.[] | select(.ref == $tag)] | length' <<< "$refs")" -eq 0
+          gh release create "$LIBRARY_RELEASE" assets/* --target "$GITHUB_SHA" --latest=false --title "$LIBRARY_RELEASE" --notes 'Independent native libraries. Excludes libhost.a. Verify archive SHA-256 and workflow attestation before use. Adopt the attached lock file in a reviewed platform PR.'

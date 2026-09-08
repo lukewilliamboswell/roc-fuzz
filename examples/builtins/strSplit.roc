@@ -1,11 +1,13 @@
-app [target] { pf: platform "../../platform/main.roc" }
+app [target] { pf: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.0-rc1/9k2cfuAWoBfcRBRiVbriXFf1dHktoRBbieifYN7NmTHc.tar.zst", roc: "nightly-2026-09-05-b195f5b" }
 
 import pf.Fuzz
 
 import pf.Arbitrary
 
-main : List(U8) -> U8
-main = |data| {
+## Allocation invariant: `Str.split_on` stays within a linear budget based on
+## the number of input bytes and therefore possible parts.
+main! : List(U8) => U8
+main! = |data| {
 	first = Arbitrary.new(data)
 	{ value: string, state: second } = first.arbitrary_str()
 	{ value: delimiter, state: choices } = second.arbitrary_str()
@@ -14,14 +16,15 @@ main = |data| {
 	tmp1 = if retain1 string else ""
 	tmp2 = if retain2 delimiter else ""
 
-	parts = string.split_on(delimiter)
+	limit = 2 * string.count_utf8_bytes() + 4
+	parts = Fuzz.expect_allocs_at_most!(limit, |{}| string.split_on(delimiter))
 	if Str.join_with(parts, delimiter) != string {
 		crash "split string did not rejoin to the original"
 	}
 	(tmp1.count_utf8_bytes() + tmp2.count_utf8_bytes()).to_u8_wrap()
 }
 
-target = Fuzz.from_bytes({
+target = Fuzz.from_bytes!({
 	name: "strSplit",
-	test: main,
+	test!: main!,
 })

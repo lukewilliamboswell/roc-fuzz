@@ -7,9 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       nightly_validation:
-        description: "Validate a nightly candidate without publishing or deploying"
+        description: Validate a nightly candidate without publication
         type: boolean
-        required: false
         default: false
 
 permissions:
@@ -20,38 +19,55 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  self-contained-runner:
+  published-examples:
+    name: Public downloads (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-22.04, macos-26]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.13"
+      - name: Install the examples' declared compiler
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          roc_bin_dir="$(python scripts/install_roc.py --tag-file examples/stack/main.roc --install-dir "$RUNNER_TEMP/roc")"
+          echo "$roc_bin_dir" >> "$GITHUB_PATH"
+      - name: Test committed URLs from a fresh cache
+        run: python scripts/test.py --operation all --max-total-time 1 --verbose
+
+  self-contained-runner:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform-target: x64musl
+          - os: macos-26
+            platform-target: arm64mac
     runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout roc-fuzz
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Read pinned Roc nightly
-        id: roc-version
-        run: |
-          set -euo pipefail
-          tag="$(sed -n '1p' .roc-version)"
-          if [ -z "$tag" ] || [ "$(wc -l < .roc-version)" -ne 1 ]; then
-            echo ".roc-version must contain exactly one nightly tag" >&2
-            exit 1
-          fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-
-      - name: Install pinned Roc nightly
-        uses: roc-lang/setup-roc@cbe782d6f165b89c87d99f50a59ac4f5f73b4427
-        with:
-          version: nightly-new-compiler
-          nightly-tag: ${{ steps.roc-version.outputs.tag }}
-
       - name: Install Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
+
+      - name: Install checksum-pinned Roc nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          roc_bin_dir="$(python3 scripts/install_roc.py --install-dir "$RUNNER_TEMP/roc-nightly")"
+          echo "$roc_bin_dir" >> "$GITHUB_PATH"
 
       - name: Install Zig
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
@@ -64,8 +80,17 @@ jobs:
           zig version
           python --version
 
-      - name: Validate target sources
-        run: python scripts/test.py --operation validate --verbose
+      - name: Validate supply-chain metadata
+        run: python scripts/check_supply_chain.py
+
+      - name: Test examples against the working-tree platform package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # Bootstrap only: switch to release when the first native-library lock is adopted.
+        run: python scripts/test_local.py --libraries source --platform-target ${{ matrix.platform-target }} --operation all --max-total-time 1 --verbose
+
+      - name: Test release tooling
+        run: python -m unittest discover -s tests -p 'test_*.py'
 
       - name: Generate and validate API documentation
         env:
@@ -74,26 +99,17 @@ jobs:
           roc docs --output=.test-cache/docs platform/main.roc
           python scripts/check_docs.py .test-cache/docs
 
-      - name: Build every self-contained target
-        run: python scripts/test.py --operation build --verbose
-
-      - name: Smoke-test libFuzzer and failure artifacts
-        run: python scripts/test.py --operation fuzz --max-total-time 1 --verbose
-
-  ci-required:
+  required:
     name: CI required
     if: always()
-    needs: [self-contained-runner]
+    needs: [self-contained-runner, published-examples]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:
-      - name: Require every validation job to pass
+      - name: Require every CI matrix job
         env:
-          RESULTS: ${{ toJSON(needs) }}
+          MATRIX_RESULT: ${{ needs.self-contained-runner.result }}
+          PUBLIC_RESULT: ${{ needs.published-examples.result }}
         run: |
-          python3 - <<'PYTHON'
-          import json, os
-          results = json.loads(os.environ["RESULTS"])
-          if not results or any(job["result"] != "success" for job in results.values()):
-              raise SystemExit("Required validation did not pass")
-          PYTHON
+          test "$MATRIX_RESULT" = success
+          test "$PUBLIC_RESULT" = success

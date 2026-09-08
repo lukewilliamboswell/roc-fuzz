@@ -19,27 +19,50 @@ require only:
 
 - a Roc compiler containing
   [roc-lang/roc#10657](https://github.com/roc-lang/roc/pull/10657);
-- Python 3.10 or newer.
+- Python 3.12 or newer.
 
-The prebuilt inputs under `platform/targets/x64musl` and
-`platform/targets/arm64mac` are versioned so users and CI do not need a native
-toolchain to consume the platform. Only maintainers intentionally regenerating
-those inputs additionally need Zig 0.16.0, `ar`, and network access to the
-checksum-pinned libFuzzer source.
+Native libraries have an independent release cycle; `libhost.a` is built with
+each platform update. Source development requires Zig 0.16.0 and GitHub CLI for
+library attestation verification. The builder uses `zig ar`.
 
-## Regenerate platform inputs
+Exact compiler versions live in the platform and application header `roc`
+fields. The shared updater changes only those pins, preserving published URLs.
+The installer verifies archives against SHA-256 digests returned by GitHub for
+the exact upstream release. These digests are no longer committed beside a
+duplicate `.roc-version`; independently recorded digests can be supplied using
+`install_roc.py --checksums-file`.
 
-Regenerate the vendored inputs with:
+## Generate platform inputs
+
+Generate the current host's ignored inputs with:
 
 ```sh
 python3 scripts/build_platform.py
 ```
 
-The build regenerates `x86_64-linux-musl` and `aarch64-macos.11.0`. It compiles
-the thin Zig host, the checksum-pinned `libfuzzer-sys` 0.4.5 source, and the
-needed Zig runtime inputs. It rewrites one `SHA256SUMS` manifest per target.
-Use `--target x64musl` or `--target arm64mac` to regenerate just one target.
-Review and commit the archives and manifests as one change.
+Pass `--target x64musl` or `--target arm64mac` explicitly in automation. The default
+restores the archive in `native-libraries.lock.json`, verifies its digest and
+producing workflow's attestation, builds the current host, and writes local
+`SHA256SUMS`. Never commit generated archives, objects, or manifests.
+
+During initial bootstrap, the lock intentionally has no published release.
+Use `--libraries source` explicitly with `build_platform.py`, `test_local.py`, or
+`run.py` until adopting the first release. This compiles pinned libFuzzer and Zig
+runtimes locally. CI's temporary source-build flags must be removed in the same
+reviewed change that adopts the published lock.
+
+The `Native libraries` workflow packages each target without `libhost.a`, tests
+the archive with a fresh host, and signs provenance and an SPDX SBOM when
+explicitly publishing from the default branch. Tags use `native-libs-vX.Y.Z`
+and never become GitHub's latest platform release. Release new libraries for
+changes to library sources, runtimes/toolchains, flags, targets, security fixes,
+or the macOS adapter compiled into `libfuzzer.a`. The workflow emits the archive
+pins and source identity as a lock-file release asset for review. The macOS
+coverage shim stays with `libhost.a`.
+
+Before adopting a native-library release, review its `native-libraries.lock.json`
+asset, source revision, archive digests, and workflow attestations. The workflow's
+default manual run is validation-only; publication must be explicitly requested.
 
 The fully static build excludes `FuzzerInterceptors.cpp`. Its wrappers locate
 libc functions through `dlsym`, which is not usable in the static musl
@@ -77,14 +100,18 @@ Use the compiler under development through `ROC`:
 
 ```sh
 export ROC=/path/to/roc
-python3 scripts/test.py --operation validate --verbose
-python3 scripts/test.py --operation build --verbose
-python3 scripts/test.py --operation seed
-python3 scripts/test.py --operation fuzz --max-total-time 2
+python3 scripts/test_local.py --operation validate --verbose
+python3 scripts/test_local.py --operation build --verbose
+python3 scripts/test_local.py --operation seed
+python3 scripts/test_local.py --operation fuzz --max-total-time 2
 ```
 
-Validation checks the exact example inventory, Roc formatting and types.
-Building creates every self-contained executable and verifies a static x86-64
+`test_local.py` prepares the current host inputs, packages the working-tree
+platform, serves it from an ephemeral localhost port, and asks `test.py` to use
+temporary rewritten copies of every example. Checked-in example declarations
+remain pinned to a published release, while local and CI runs exercise
+unreleased platform changes. Validation checks the exact example inventory, Roc formatting and types.
+After generating the current host inputs, building creates every self-contained executable and verifies a static x86-64
 ELF on Linux or an arm64 Mach-O with system-only dynamic dependencies on macOS.
 Seed validation renders and replays each deterministic input. The fuzz
 operation runs short campaigns and verifies that an intentional Roc failure is
@@ -107,6 +134,32 @@ both a concrete reason and a full GitHub issue URL. The driver rejects
 unexplained skips; skipping a prerequisite also requires skipping its dependent
 stages.
 
+CI has two explicit lanes: public downloads use committed URLs on fresh runners,
+and development tests use the working-tree bundle. Both run on every PR and
+manual/nightly dispatch; there is no change classifier or migration exception.
+The release workflow additionally tests the exact candidate archives.
+`nightly_validation: true` never publishes or deploys.
+
+Every target asserts on allocation behaviour as well as on results. A property
+can check what an operation computes but not what it costs, so a builtin that
+stops mutating a uniquely owned value in place and starts copying it still
+returns the right answer and no content property notices. Pin the cost with
+`Fuzz.expect_allocs_at_most!` or `Fuzz.expect_allocs_at_least!`, and build the target with `Fuzz.target_with!` or
+`Fuzz.from_bytes!` so the property may perform effects. The `check` stage
+requires one of those assertion helpers; raw counter reads, measurements, and
+leak-only checks do not satisfy the policy. A target that genuinely cannot
+assert on cost belongs in
+`ALLOCATION_ASSERTION_EXEMPT` in `scripts/test.py` with a concrete reason.
+
+Assert on a difference between two counter reads, never on a raw value: the
+counter is process-wide and libFuzzer reuses one process across millions of
+inputs. Only assert zero for a value that is uniquely owned and pre-sized,
+because copy-on-write allocation is correct when a value is aliased.
+
+Separately, the runner checks after every input that the target freed
+everything it allocated, and fails the input otherwise. Pass
+`--no-detect-leaks` to a run to turn that off.
+
 The former byte-oriented builtin targets live under `examples/builtins/` and
 use `Fuzz.from_bytes`. This keeps their existing properties in the regression
 matrix. Top-level examples are an end-user gallery and should prefer
@@ -116,15 +169,16 @@ driver enforces this so editor tooling can discover the project naturally.
 
 ## Release bundle
 
-Create a Roc platform bundle from the vendored target inputs with:
+Create a Roc platform bundle after generating both target input sets with:
 
 ```sh
 python3 scripts/bundle.py --output-dir dist
 ```
 
-`bundle.py` verifies the pinned Roc version and every vendored input checksum,
-then includes the prebuilt archives and license notices in `roc bundle`.
-It does not regenerate native inputs. Test the resulting bundle from an
+`bundle.py` verifies the pinned Roc version and every generated input checksum,
+then includes the archives and license notices in `roc bundle`. Production
+release jobs build both hosts on native hosted runners before bundling.
+Test the resulting bundle from an
 external target with:
 
 ```sh
@@ -143,9 +197,39 @@ mode. A real release:
 4. publishes the bundle and docs archive in a GitHub release; and
 5. deploys the versioned docs to Pages and updates the root redirect.
 
-The bump check is intentionally `warn` while there is no previous release.
-Change it to `require` after the first release establishes a compatible bundle
-baseline.
+The bump check requires a version increment from the previous platform release.
+The release policy explicitly permits exact-nightly bootstrap on `trunk`; no
+stable compiler compatibility or maintenance branch is implied.
+
+To unblock a source PR before stable bootstrap, dispatch `Release` on that branch
+with `release_candidate=true`, a new `X.Y.Z-rcN` version, and the full source SHA
+in `expected_sha`. Both target bundles must pass before the workflow attests and
+publishes the RC. Only this explicit RC path permits source-built libraries.
+It preserves the latest stable release and Pages, and does not create a
+default-branch URL follow-up. Verify the published archive and adopt its URL in
+the originating PR. Stable releases still require the independent library lock.
+
+URL follow-ups are a maintainer task, not another release workflow:
+
+1. Download the published archive, compare its digest with the tested artifact,
+   and verify its attestation with `gh attestation verify --repo
+   lukewilliamboswell/roc-fuzz --signer-workflow
+   lukewilliamboswell/roc-fuzz/.github/workflows/release.yml <archive>`.
+2. Update the example and README platform URLs without changing compiler pins.
+   Commit with a verified signature and open a reviewed PR.
+3. Require current-head CI (including Linux/macOS public-download tests) before
+   merging. If workflows do not start automatically, dispatch CI on that branch
+   with `nightly_validation=true` and check that branch protection accepts it.
+
+If new examples need unpublished APIs, use a tested RC and adopt its URL before
+merging. The nightly updater remains pin-only and must not repair release URLs.
+Inspect partial publication before recovery; never replace existing tags or
+assets or rebuild an already-published release from a moving branch.
+Preserve the run's exact tested artifacts and inspect the tag SHA and uploaded
+digests before recovery; do not blindly rerun a publishing job.
+
+After an interrupted URL follow-up, resume the existing reviewed PR and rerun
+validation on its current head; do not create a duplicate PR or republish assets.
 
 ## Design constraints
 

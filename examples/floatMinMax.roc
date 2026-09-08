@@ -1,4 +1,4 @@
-app [target] { fuzz: platform "../platform/main.roc" }
+app [target] { fuzz: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.0-rc1/9k2cfuAWoBfcRBRiVbriXFf1dHktoRBbieifYN7NmTHc.tar.zst", roc: "nightly-2026-09-05-b195f5b" }
 
 import fuzz.Fuzz
 
@@ -18,14 +18,19 @@ Input := { left : F64, right : F64 }.{
 ## anything, including itself, so those inputs are rejected rather than tested.
 ## Every other value `Fuzz.f64` produces is fair game, including the infinities,
 ## both zeros, and the subnormals.
-test : Input -> Fuzz.Outcome
-test = |input| {
+##
+## Allocation invariant: comparing two `F64` values is a pure numeric
+## operation, so `F64.min`/`F64.max` must not allocate.
+test! : Input => Fuzz.Outcome
+test! = |input| {
 	if F64.is_nan(input.left) or F64.is_nan(input.right) {
 		return Fuzz.reject
 	}
 
-	smaller = F64.min(input.left, input.right)
-	larger = F64.max(input.left, input.right)
+	{ smaller, larger } = Fuzz.expect_allocs_at_most!(
+		0,
+		|{}| { smaller: F64.min(input.left, input.right), larger: F64.max(input.left, input.right) },
+	)
 
 	if smaller > larger {
 		crash "min returned a value above max"
@@ -42,8 +47,9 @@ test = |input| {
 	Fuzz.keep
 }
 
-target = Fuzz.target({
+target = Fuzz.target_with!({
 	name: "floatMinMax",
-	test,
+	generator: Input.generator_for(Fuzz.FuzzEncoding.Default),
+	test!,
 	show: |input| Str.inspect(input),
 })

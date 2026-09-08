@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const abi = @import("roc_platform_abi.zig");
+const ci_report = @import("ci_report.zig");
 
 comptime {
     // Replace the RSS-ratcheting malloc from zig's bundled libc; see c_malloc.zig.
@@ -22,12 +23,15 @@ var memory_limit_arg: [128]u8 = undefined;
 var timeout_arg: [128]u8 = undefined;
 var dictionary_arg: [2048]u8 = undefined;
 var seed_arg: [128]u8 = undefined;
+var artifact_prefix_arg: [4096]u8 = undefined;
 var sanitizer_crash_state: u8 = 0;
 var sanitizer_death_callback: ?*const fn () callconv(.c) void = null;
 var executable_name: []const u8 = "TARGET";
 var current_input_ptr: ?[*]const u8 = null;
 var current_input_len: usize = 0;
 var friendly_run_active = false;
+var leak_detection_enabled = true;
+var artifact_directory: []const u8 = ".roc-fuzz";
 
 fn hostAlloc(_: *abi.RocHost, length: usize, alignment: usize) callconv(.c) ?*anyopaque {
     return roc_alloc(length, alignment);
@@ -79,13 +83,36 @@ fn allocImpl(length: usize, alignment: usize) ?*anyopaque {
     return @ptrFromInt(@intFromPtr(base_bytes) + header_len);
 }
 
+/// Allocation counters served to the running Roc target. `Fuzz.alloc_count!`
+/// and `Fuzz.live_alloc_count!` read these, so a target can assert how many
+/// allocations a region performed and whether that region left anything
+/// outstanding.
+///
+/// `g_alloc_count` counts every `roc_alloc` and `roc_realloc` served, matching
+/// the roc test platform's `Host.alloc_count!`. `g_live_alloc_count` is the
+/// number of allocations still outstanding: a realloc replaces one block with
+/// another and so leaves the balance unchanged, which is why the reallocation
+/// path frees through the uncounted `deallocImpl` rather than `roc_dealloc`.
+var g_alloc_count: u64 = 0;
+var g_live_alloc_count: u64 = 0;
+
+fn deallocImpl(ptr: *anyopaque, alignment: usize) void {
+    const header_len = @max(alignment, @alignOf(usize));
+    std.c.free(@ptrFromInt(@intFromPtr(ptr) - header_len));
+}
+
 pub export fn roc_alloc(length: usize, alignment: usize) callconv(.c) ?*anyopaque {
-    return allocImpl(length, alignment);
+    const ptr = allocImpl(length, alignment);
+    if (ptr != null) {
+        g_alloc_count += 1;
+        g_live_alloc_count += 1;
+    }
+    return ptr;
 }
 
 pub export fn roc_dealloc(ptr: *anyopaque, alignment: usize) callconv(.c) void {
-    const header_len = @max(alignment, @alignOf(usize));
-    std.c.free(@ptrFromInt(@intFromPtr(ptr) - header_len));
+    if (g_live_alloc_count > 0) g_live_alloc_count -= 1;
+    deallocImpl(ptr, alignment);
 }
 
 pub export fn roc_realloc(ptr: *anyopaque, new_length: usize, alignment: usize) callconv(.c) ?*anyopaque {
@@ -93,10 +120,27 @@ pub export fn roc_realloc(ptr: *anyopaque, new_length: usize, alignment: usize) 
     const old_size_ptr: *const usize = @ptrFromInt(@intFromPtr(ptr) - @sizeOf(usize));
     const old_length = old_size_ptr.* - header_len;
     const new_ptr = allocImpl(new_length, alignment) orelse return null;
+    g_alloc_count += 1;
     const copy_len = @min(old_length, new_length);
     @memcpy(@as([*]u8, @ptrCast(new_ptr))[0..copy_len], @as([*]const u8, @ptrCast(ptr))[0..copy_len]);
-    roc_dealloc(ptr, alignment);
+    deallocImpl(ptr, alignment);
     return new_ptr;
+}
+
+/// Fuzz.alloc_count! (hosted): () => U64 involves no refcounted values, so
+/// under the hosted C ABI it takes no parameters.
+fn hostedAllocCount() callconv(.c) u64 {
+    return g_alloc_count;
+}
+
+/// Fuzz.live_alloc_count! (hosted): () => U64.
+fn hostedLiveAllocCount() callconv(.c) u64 {
+    return g_live_alloc_count;
+}
+
+comptime {
+    @export(&hostedAllocCount, .{ .name = "roc_fuzz_alloc_count", .visibility = .hidden });
+    @export(&hostedLiveAllocCount, .{ .name = "roc_fuzz_live_alloc_count", .visibility = .hidden });
 }
 
 pub export fn roc_dbg(bytes: [*]const u8, len: usize) callconv(.c) void {
@@ -141,8 +185,8 @@ fn printFailureSuggestions() void {
     var digest: [20]u8 = undefined;
     std.crypto.hash.Sha1.hash(input, &digest, .{});
     const digest_hex = std.fmt.bytesToHex(digest, .lower);
-    var artifact_buffer: [64]u8 = undefined;
-    const artifact = std.fmt.bufPrint(&artifact_buffer, ".roc-fuzz/crash-{s}", .{&digest_hex}) catch return;
+    var artifact_buffer: [4096]u8 = undefined;
+    const artifact = std.fmt.bufPrint(&artifact_buffer, "{s}/crash-{s}", .{ artifact_directory, &digest_hex }) catch return;
 
     writeErr("\nNext steps:\n  ");
     writeErr(executable_name);
@@ -210,6 +254,7 @@ fn printHelp() void {
         \\
         \\USAGE:
         \\  TARGET run [CORPUS] [OPTION...]       fuzz with libFuzzer
+        \\  TARGET ci REPORT_DIR [CORPUS] [OPTION...] supervise a run and write CI evidence
         \\  TARGET show INPUT                    render the generated typed value
         \\  TARGET replay INPUT                  run one saved input
         \\  TARGET minimize INPUT OUTPUT         minimize a reproducing failure
@@ -225,7 +270,15 @@ fn printHelp() void {
         \\  --timeout=SECONDS       bound one target call
         \\  --dictionary=FILE       load useful input tokens
         \\  --seed=NUMBER           make a bounded run reproducible
+        \\  --artifact-dir=DIR      save failures under DIR
+        \\  --no-detect-leaks       allow an input to leave allocations unfreed
         \\  --print-final-stats     print libFuzzer's final counters
+        \\
+        \\CI provenance options:
+        \\  --source-revision=VALUE identify the downstream source revision
+        \\  --roc-version=VALUE     identify the Roc compiler
+        \\  --platform-release=VALUE identify the roc-fuzz release
+        \\  --platform-sha256=HEX   identify the release bundle digest
         \\
         \\Use TARGET raw -help=1 for native libFuzzer flags.
         \\
@@ -258,11 +311,33 @@ fn pushTranslatedArg(count: *usize, buffer: []u8, native_prefix: []const u8, val
     pushArg(count, translated.ptr);
 }
 
-fn pushCommonFuzzArgs(count: *usize) void {
-    _ = std.c.mkdir(".roc-fuzz", 0o755);
-    _ = std.c.mkdir(".roc-fuzz/corpus", 0o755);
-    pushArg(count, mutableLiteral("-artifact_prefix=.roc-fuzz/"));
+fn pushCommonFuzzArgs(count: *usize, directory: []const u8) void {
+    std.Io.Threaded.global_single_threaded.allocator = std.heap.c_allocator;
+    std.Io.Dir.createDirPath(.cwd(), std.Io.Threaded.global_single_threaded.io(), directory) catch {
+        writeErr("could not create artifact directory\n");
+        std.c._exit(2);
+    };
+    const separator = if (std.mem.endsWith(u8, directory, "/")) "" else "/";
+    const artifact_prefix = std.fmt.bufPrintZ(&artifact_prefix_arg, "-artifact_prefix={s}{s}", .{ directory, separator }) catch {
+        writeErr("artifact directory path is too long\n");
+        std.c._exit(2);
+    };
+    pushArg(count, artifact_prefix.ptr);
     pushArg(count, mutableLiteral("-create_missing_dirs=1"));
+}
+
+fn ciCommand(original_count: usize, original: [*][*:0]u8) noreturn {
+    const name = abi.roc_fuzz_name();
+    var name_buffer: [1024]u8 = undefined;
+    const bytes = name.asSlice();
+    if (bytes.len > name_buffer.len) {
+        name.decref(&roc_host);
+        writeErr("target name is too long for CI reporting\n");
+        std.c._exit(2);
+    }
+    @memcpy(name_buffer[0..bytes.len], bytes);
+    name.decref(&roc_host);
+    ci_report.run(original_count, original, name_buffer[0..bytes.len]);
 }
 
 fn translateFriendlyArgs(argc: *c_int, argv_ptr: *[*][*:0]u8) void {
@@ -285,6 +360,7 @@ fn translateFriendlyArgs(argc: *c_int, argv_ptr: *[*][*:0]u8) void {
         }
         showCommand(original[2]);
     }
+    if (std.mem.eql(u8, command, "ci")) ciCommand(original_count, original);
 
     var count: usize = 0;
     pushArg(&count, original[0]);
@@ -292,13 +368,14 @@ fn translateFriendlyArgs(argc: *c_int, argv_ptr: *[*][*:0]u8) void {
     if (std.mem.eql(u8, command, "run")) {
         var next: usize = 2;
         var has_bound = false;
+        var using_default_corpus = false;
         if (next < original_count and !std.mem.startsWith(u8, std.mem.span(original[next]), "-")) {
             pushArg(&count, original[next]);
             next += 1;
         } else {
             pushArg(&count, mutableLiteral(".roc-fuzz/corpus"));
+            using_default_corpus = true;
         }
-        pushCommonFuzzArgs(&count);
         while (next < original_count) : (next += 1) {
             const arg = std.mem.span(original[next]);
             if (std.mem.startsWith(u8, arg, "--runs=")) {
@@ -317,6 +394,14 @@ fn translateFriendlyArgs(argc: *c_int, argv_ptr: *[*][*:0]u8) void {
                 pushTranslatedArg(&count, &dictionary_arg, "-dict=", arg[13..]);
             } else if (std.mem.startsWith(u8, arg, "--seed=")) {
                 pushTranslatedArg(&count, &seed_arg, "-seed=", arg[7..]);
+            } else if (std.mem.eql(u8, arg, "--no-detect-leaks")) {
+                leak_detection_enabled = false;
+            } else if (std.mem.startsWith(u8, arg, "--artifact-dir=")) {
+                artifact_directory = arg[15..];
+                if (artifact_directory.len == 0) {
+                    writeErr("--artifact-dir must not be empty\n");
+                    std.c._exit(2);
+                }
             } else if (std.mem.eql(u8, arg, "--print-final-stats")) {
                 pushArg(&count, mutableLiteral("-print_final_stats=1"));
             } else if (std.mem.eql(u8, arg, "--help")) {
@@ -329,6 +414,11 @@ fn translateFriendlyArgs(argc: *c_int, argv_ptr: *[*][*:0]u8) void {
                 std.c._exit(2);
             }
         }
+        if (using_default_corpus) {
+            _ = std.c.mkdir(".roc-fuzz", 0o755);
+            _ = std.c.mkdir(".roc-fuzz/corpus", 0o755);
+        }
+        pushCommonFuzzArgs(&count, artifact_directory);
         if (!has_bound) pushArg(&count, mutableLiteral("-max_total_time=60"));
         friendly_run_active = true;
         setTranslatedArgs(argc, argv_ptr, count);
@@ -341,7 +431,7 @@ fn translateFriendlyArgs(argc: *c_int, argv_ptr: *[*][*:0]u8) void {
             std.c._exit(2);
         }
         pushArg(&count, mutableLiteral("-runs=1"));
-        pushCommonFuzzArgs(&count);
+        pushCommonFuzzArgs(&count, ".roc-fuzz");
         pushArg(&count, original[2]);
         setTranslatedArgs(argc, argv_ptr, count);
         return;
@@ -358,7 +448,7 @@ fn translateFriendlyArgs(argc: *c_int, argv_ptr: *[*][*:0]u8) void {
         };
         pushArg(&count, mutableLiteral("-minimize_crash=1"));
         pushArg(&count, exact.ptr);
-        pushCommonFuzzArgs(&count);
+        pushCommonFuzzArgs(&count, ".roc-fuzz");
         pushArg(&count, original[2]);
         setTranslatedArgs(argc, argv_ptr, count);
         return;
@@ -402,10 +492,29 @@ pub export fn LLVMFuzzerTestOneInput(data: ?[*]const u8, size: usize) callconv(.
     const input: []const u8 = if (size == 0) &.{} else data.?[0..size];
     current_input_ptr = data;
     current_input_len = size;
+    // A completed iteration must free everything it allocated, including the
+    // input list built below. Sampling the balance here rather than inside the
+    // target keeps this honest for every target, pure ones included, without
+    // any target having to opt in.
+    const live_before = g_live_alloc_count;
     _ = abi.roc_fuzz_run(makeInput(input));
+    if (leak_detection_enabled and g_live_alloc_count > live_before) {
+        reportLeak(g_live_alloc_count - live_before);
+    }
     current_input_ptr = null;
     current_input_len = 0;
     return 0;
+}
+
+fn reportLeak(leaked: u64) void {
+    var buffer: [128]u8 = undefined;
+    const message = std.fmt.bufPrint(
+        &buffer,
+        "[roc-fuzz leak] {d} allocation(s) from this input were never freed\n",
+        .{leaked},
+    ) catch "[roc-fuzz leak] allocations from this input were never freed\n";
+    writeErr(message);
+    finishRocFailure();
 }
 
 // libFuzzer normally receives these hooks from a sanitizer runtime. Roc fuzz

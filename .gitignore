@@ -1,7 +1,7 @@
 /target
 /out
 /dist
-/.roc-fuzz
+.roc-fuzz/
 /typedTarget
 /failureArtifact
 /.test-cache
@@ -12,11 +12,8 @@ __pycache__/
 *.o
 *.a
 
-# The platform is self-contained: these prebuilt x64-musl inputs are source
-# artifacts for consumers and releases, not disposable local build output.
-!/platform/targets/
-!/platform/targets/x64musl/
-!/platform/targets/x64musl/*.o
-!/platform/targets/x64musl/*.a
-!/platform/targets/arm64mac/
-!/platform/targets/arm64mac/*.a
+# Native inputs are built locally or restored from attested native-library
+# releases. Keep the target documentation, never the payloads.
+/platform/targets/*/SHA256SUMS
+/platform/targets/*/NATIVE_LIBRARIES.json
+/examples/**/main

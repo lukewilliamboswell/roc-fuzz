@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
+import platform as host_platform
 import shlex
 import shutil
 import subprocess
@@ -106,7 +107,7 @@ def resolve_libfuzzer_source(explicit: Path | None, work: Path) -> Path:
     return validate_libfuzzer_source(source)
 
 
-def build_libfuzzer(zig: str, ar: str, source: Path, output: Path, work: Path, spec: TargetSpec) -> None:
+def build_libfuzzer(zig: str, ar: list[str], source: Path, output: Path, work: Path, spec: TargetSpec) -> None:
     objects: list[str] = []
     object_dir = work / f"{spec.roc_name}-libfuzzer-objects"
     object_dir.mkdir()
@@ -134,7 +135,7 @@ def build_libfuzzer(zig: str, ar: str, source: Path, output: Path, work: Path, s
         ])
         objects.append(str(obj))
     output.unlink(missing_ok=True)
-    run([ar, "rcs", str(output), *objects])
+    run([*ar, "rcs", str(output), *objects])
 
 
 def copy_zig_runtime(zig: str, target_dir: Path, work: Path, spec: TargetSpec) -> None:
@@ -171,7 +172,7 @@ def copy_zig_runtime(zig: str, target_dir: Path, work: Path, spec: TargetSpec) -
         shutil.copy2(source, target_dir / name)
 
 
-def build_target(zig: str, ar: str, source: Path, work: Path, spec: TargetSpec) -> None:
+def build_host(zig: str, ar: list[str], work: Path, spec: TargetSpec) -> None:
     directory = target_directory(ROOT, spec)
     directory.mkdir(parents=True, exist_ok=True)
     run([
@@ -184,23 +185,39 @@ def build_target(zig: str, ar: str, source: Path, work: Path, spec: TargetSpec) 
             zig, "cc", "-target", spec.zig_target, *cxx_target_args(spec), "-O2", "-fPIC",
             "-c", str(ROOT / "src" / "macos_sancov.c"), "-o", str(stack_depth),
         ])
-        run([ar, "rcs", str(directory / "libhost.a"), str(stack_depth)])
+        run([*ar, "rcs", str(directory / "libhost.a"), str(stack_depth)])
+
+
+def build_libraries(zig: str, ar: list[str], source: Path, work: Path, spec: TargetSpec) -> None:
+    directory = target_directory(ROOT, spec)
+    directory.mkdir(parents=True, exist_ok=True)
+    # A local rebuild must never claim the identity of previously restored binaries.
+    (directory / "NATIVE_LIBRARIES.json").unlink(missing_ok=True)
     build_libfuzzer(zig, ar, source, directory / "libfuzzer.a", work, spec)
     copy_zig_runtime(zig, directory, work, spec)
-    manifest = write_platform_manifest(ROOT, spec)
-    print(f"{spec.roc_name} platform host ready in {directory}")
-    print(f"Updated platform input checksums in {manifest}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--roc-source", type=Path, default=Path(os.environ["ROC_SOURCE"]) if "ROC_SOURCE" in os.environ else None, help="Roc source checkout used only with --regenerate-glue")
     parser.add_argument("--regenerate-glue", action="store_true")
+    parser.add_argument("--libraries", choices=("release", "source"), default="release",
+                        help="restore pinned libraries (default), or explicitly rebuild them")
+    parser.add_argument("--libraries-only", action="store_true",
+                        help="build only native libraries for the independent release workflow")
+    parser.add_argument("--host-only", action="store_true",
+                        help="build a host around already extracted candidate libraries (release CI)")
     parser.add_argument("--libfuzzer-source", type=Path, help="override the pinned libFuzzer source directory")
-    parser.add_argument("--target", choices=tuple(TARGETS_BY_NAME), action="append", help="target to regenerate (default: all)")
+    parser.add_argument("--target", choices=tuple(TARGETS_BY_NAME), action="append", help="target to generate (default: current host)")
     parser.add_argument("--zig", default=os.environ.get("ZIG", "zig"))
-    parser.add_argument("--ar", default=os.environ.get("AR", "ar"))
+    parser.add_argument("--ar", default=os.environ.get("AR"), help="archiver executable (default: `zig ar`)")
     args = parser.parse_args()
+    if args.host_only and (args.libraries_only or args.libraries != "release"):
+        parser.error("--host-only cannot be combined with source library builds")
+    if args.libraries_only and args.libraries != "source":
+        parser.error("--libraries-only requires --libraries source")
+    if args.libfuzzer_source and args.libraries != "source":
+        parser.error("--libfuzzer-source requires --libraries source")
 
     generated_glue = ROOT / "src" / "roc_platform_abi.zig"
     if args.regenerate_glue:
@@ -214,17 +231,41 @@ def main() -> None:
                 raise SystemExit(f"missing glue-generation input: {required}")
         run([str(roc), "glue", str(glue), str(ROOT / "src"), str(ROOT / "platform" / "main.roc")])
         run([args.zig, "fmt", str(generated_glue)])
-    elif not generated_glue.is_file():
+    elif not args.libraries_only and not generated_glue.is_file():
         raise SystemExit("generated Zig ABI glue is missing; use --regenerate-glue")
 
-    selected = set(args.target or TARGETS_BY_NAME)
+    if args.target:
+        selected = set(args.target)
+    else:
+        system = host_platform.system()
+        machine = host_platform.machine().lower()
+        if system == "Linux" and machine in {"x86_64", "amd64"}:
+            selected = {"x64musl"}
+        elif system == "Darwin" and machine in {"arm64", "aarch64"}:
+            selected = {"arm64mac"}
+        else:
+            raise SystemExit(
+                f"cannot infer a supported target for {system} {machine}; pass --target"
+            )
+    ar = [args.ar] if args.ar else [args.zig, "ar"]
     with tempfile.TemporaryDirectory(prefix="roc-fuzz-build-") as temp:
         work = Path(temp)
-        source = resolve_libfuzzer_source(args.libfuzzer_source, work)
+        source = resolve_libfuzzer_source(args.libfuzzer_source, work) if args.libraries == "source" else None
         for spec in TARGET_SPECS:
             if spec.roc_name in selected:
-                build_target(args.zig, args.ar, source, work, spec)
+                if source is not None:
+                    build_libraries(args.zig, ar, source, work, spec)
+                elif not args.host_only:
+                    from native_libraries import restore
+                    restore(spec)
+                if not args.libraries_only:
+                    build_host(args.zig, ar, work, spec)
+                    manifest = write_platform_manifest(ROOT, spec)
+                    print(f"Updated platform input checksums in {manifest}")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except ValueError as error:
+        raise SystemExit(str(error)) from error

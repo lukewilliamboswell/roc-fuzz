@@ -1,5 +1,7 @@
 # roc-fuzz
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/lukewilliamboswell/roc-fuzz/badge)](https://scorecard.dev/viewer/?uri=github.com/lukewilliamboswell/roc-fuzz)
+
 `roc-fuzz` is a typed, coverage-guided software-quality platform for Roc.
 It supports Linux x86-64 with musl and Apple Silicon macOS (macOS 11 or newer).
 
@@ -39,7 +41,7 @@ The application exposes `target : Target`. Its input type can provide a
 statically dispatched `generator_for` method:
 
 ```roc
-app [target] { fuzz: platform "path/to/roc-fuzz/platform/main.roc" }
+app [target] { roc: "nightly-2026-09-05-b195f5b", fuzz: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.0-rc1/9k2cfuAWoBfcRBRiVbriXFf1dHktoRBbieifYN7NmTHc.tar.zst" }
 
 import fuzz.Fuzz
 
@@ -74,6 +76,14 @@ Existing byte-oriented quality targets can migrate with `Fuzz.from_bytes`
 without changing their property immediately. New targets should prefer typed
 generators because they make the tested input domain visible in the API.
 
+A target can also assert on allocation counts rather than only on returned
+values, which catches regressions such as a builtin that starts copying a
+uniquely owned value instead of mutating it in place. This needs an
+effectful test (`Fuzz.target_with!` or `Fuzz.from_bytes!`); existing pure
+targets are unaffected. See [Assert on
+allocations](ADVANCED.md#assert-on-allocations) for the API and a worked
+example.
+
 ## Examples
 
 The end-user gallery demonstrates several common target shapes:
@@ -94,8 +104,8 @@ The focused builtin regression targets are retained under
 `Arbitrary` API and are useful for compiler and builtin validation, but are not
 the recommended starting point for application authors.
 
-[`examples/sort/`](examples/sort/) holds a dedicated suite for the `List` sorting
-builtins. Sorting is worth its own collection because a sort has properties an
+The builtin collection also holds a dedicated suite for the `List` sorting
+builtins. Sorting is worth focused coverage because a sort has properties an
 invariant check alone will not reach: it has to be stable, it has to return a
 permutation of its input, and it changes algorithm with the length of the list
 and the width of the element. The targets check each sorting API against an
@@ -107,6 +117,7 @@ organs, and comparisons that contradict themselves.
 
 ```text
 TARGET run [CORPUS] [OPTION...]
+TARGET ci REPORT_DIR [CORPUS] [OPTION...]
 TARGET show INPUT
 TARGET replay INPUT
 TARGET minimize INPUT OUTPUT
@@ -122,35 +133,41 @@ flags remain available through `raw`.
 When an explicit Roc failure is saved, the runner prints ready-to-run `show`,
 `replay`, and `minimize` commands.
 
+`ci` supervises the run in a child process and writes a versioned JSON report,
+Markdown summary, combined log, hashes, and failure artifacts. See
+[Fuzzing evidence for downstream projects](QUALITY.md) for the report contract,
+OpenSSF guidance, and a complete pull-request/daily workflow.
+
 Rejection-rate reporting remains a follow-up. `Fuzz.reject` already records the
 distinction in the typed target boundary so the runner can expose that metric.
 
 ## Develop and package
 
-Prebuilt target inputs are versioned under `platform/targets/x64musl` and
-`platform/targets/arm64mac`. Users and release jobs consume them directly, so
-building a fuzz target does not require Zig, a C++ toolchain, musl, or a local
-libFuzzer installation. Apple Silicon outputs use the system `libSystem` and
-otherwise carry their native runtime dependencies in the platform.
+Native libraries are published independently with checksums, provenance and an
+SPDX SBOM. Platform builds restore pinned libraries and build the current
+`libhost.a`, then test and attest the complete platform bundle. Bundle users do
+not need Zig, a C++ toolchain, musl, or a local libFuzzer installation.
 
-Maintainers regenerate those inputs only when updating the host or toolchain:
+A source checkout generates only its current host inputs:
 
 ```sh
 python3 scripts/build_platform.py
 ```
 
-The regeneration script verifies the checksum-pinned libFuzzer source, builds
-the Zig host adapter, copies the required Zig C++ and compiler runtimes, and
-refreshes both `SHA256SUMS` manifests. Commit the regenerated archives and
-manifests together. Release bundles verify and include those versioned inputs
-without rebuilding them.
+The script verifies the pinned library archive and workflow attestation, builds
+the Zig host adapter, and writes a local `SHA256SUMS` manifest. During initial
+bootstrap, add `--libraries source` to this command and the local test commands
+below until the first native-library release is adopted. See the
+[native-library setup](CONTRIBUTING.md#generate-platform-inputs). Generated files are ignored by Git. See
+[`SLSA_PROVENANCE.md`](SLSA_PROVENANCE.md) for release verification.
 
-Run the repository validation matrix with:
+Build and serve the working-tree platform package, rewrite temporary copies of
+the examples to its localhost URL, and run the repository validation matrix with:
 
 ```sh
-python3 scripts/test.py --operation validate
-python3 scripts/test.py --operation build
-python3 scripts/test.py --operation fuzz --max-total-time 2
+python3 scripts/test_local.py --operation validate
+python3 scripts/test_local.py --operation build
+python3 scripts/test_local.py --operation fuzz --max-total-time 2
 ```
 
 Start with the [beginner guide](GUIDE.md) for target design and the normal
