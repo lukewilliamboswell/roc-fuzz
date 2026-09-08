@@ -41,7 +41,7 @@ The application exposes `target : Target`. Its input type can provide a
 statically dispatched `generator_for` method:
 
 ```roc
-app [target] { roc: "nightly-2026-09-05-b195f5b", fuzz: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.3.0/FTcKnkDxL1ZXfKsxeLmNKZ6XKnuKDd47Gv79ThxLYSfw.tar.zst" }
+app [target] { roc: "nightly-2026-09-05-b195f5b", fuzz: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.0-rc1/9k2cfuAWoBfcRBRiVbriXFf1dHktoRBbieifYN7NmTHc.tar.zst" }
 
 import fuzz.Fuzz
 

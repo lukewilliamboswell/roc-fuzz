@@ -44,9 +44,16 @@ is bootstrapped through source tests and the release follow-up. Subsequent pin
 and published URL changes are gated. Required aggregate
 checks always run; classification failures and unexpected skips fail closed.
 
-The current examples use APIs absent from `0.3.0`, so explicitly running the
-published lane before the release follow-up will fail. That is relevant to a
-nightly compatibility claim, not a reason to block the source release workflow.
+The examples now use the published `0.4.0-rc1` bootstrap candidate, which includes
+the new platform APIs absent from `0.3.0`. The candidate was built from commit
+`1fa2b5f09d77f1e91a2df3b0a11adf8454dd2831` in
+[Release run 34202782369](https://github.com/lukewilliamboswell/roc-fuzz/actions/runs/34202782369).
+Both target consumer tests and SLSA/SPDX attestations passed. The published bundle
+is byte-identical to the tested artifact (SHA-256
+`e045382e6dcb9e04c29b14c6e63949fcb879917f328ab5c7120c5351653ba9b0`).
+The RC did not change latest stable (`0.3.0`) or deploy Pages.
+The full Linux suite also passed against the adopted public RC URLs without
+platform rewriting, retaining only the existing documented upstream skips.
 
 ## Validation and live acceptance
 
@@ -58,7 +65,9 @@ Local verification completed during implementation: Linux native archive creatio
 and extraction, full platform-bundle checks/builds/replays/fuzz campaigns (retaining
 the existing documented Dict uniqueness and F64 parsing skips), tooling unit tests,
 workflow lint, header-based compiler installation and supply-chain consistency.
-macOS runs and actual signed publication/follow-up acceptance still require CI.
+The RC also passed Linux/macOS archive tests and attested publication in CI.
+Independent native-library publication, signed follow-up and protected-branch
+acceptance still require live validation.
 
 - `Published examples required`: committed URLs with the declared compiler, on
   fresh runners without restoring dependency caches when the published contract
