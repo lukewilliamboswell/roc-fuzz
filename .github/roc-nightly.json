@@ -61,5 +61,5 @@
     "examples/stack/main.roc",
     "examples/stringSplitRoundTrip.roc"
   ],
-  "auto_merge": false
+  "auto_merge": true
 }

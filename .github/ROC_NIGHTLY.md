@@ -14,7 +14,16 @@ Dependabot proposes reviewed updates to Actions/workflow references.
 Follow the shared [integration and permissions guide](https://github.com/lukewilliamboswell/roc-automation/blob/b60d561cbd53c911b29238b30624827f8487113a/docs/integration.md)
 for the PR-creation setting, action allowlists, required checks, and first live
 GITHUB_TOKEN run. Keep default token permissions read-only. The updater never
-approves or merges PRs and receives no protection bypass.
+approves no PRs and receives no protection bypass. Automatic merging is enabled
+only for its verified, signed, pin-only nightly candidates after all configured
+validation workflows pass on the exact candidate SHA. The active `trunk` rules
+require up-to-date `CI required`, `Release required`, and `CodeQL required`
+checks. Failed or missing checks, unresolved review threads, or base/head changes
+prevent merging. Other PRs are not automatically merged by this controller.
+
+Set `auto_merge` to `false` to disable nightly merging. After changing this
+configuration on `trunk`, manually run `Update Roc nightly` to refresh and test
+the candidate against the current default branch.
 
 `automation/roc-nightly` is reserved for the bot's pin-only commits. Put manual
 compatibility changes on a separate branch. Candidate failures require diagnosis;
