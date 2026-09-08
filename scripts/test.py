@@ -33,12 +33,29 @@ class TestFailure(RuntimeError):
     pass
 
 
+def only_pin_mismatch_warnings(output: str) -> bool:
+    """Fail closed unless every reported diagnostic is a Roc pin warning."""
+    output = re.sub(r"\x1b\[[0-9;]*m", "", output)
+    headings = re.findall(r"^── ([^─\n]+) ─", output, re.MULTILINE)
+    diagnostics = [heading.strip() for heading in headings
+                   if not re.fullmatch(r"\d+ errors? and \d+ warnings?", heading.strip())]
+    summaries = re.findall(r"\b(\d+) errors? and (\d+) warnings?\b", output)
+    return (
+        bool(diagnostics)
+        and all(heading == "● roc version mismatch" for heading in diagnostics)
+        and all(int(errors) == 0 for errors, _ in summaries)
+        and (any(int(warnings) == len(diagnostics) for _, warnings in summaries)
+             or (not summaries and re.search(r"^All \(\d+\) tests passed in .+\.$", output, re.MULTILINE) is not None))
+    )
+
+
 def run(
     command: list[str],
     *,
     cwd: Path = ROOT,
     verbose: bool = False,
     capture: bool = False,
+    allow_pin_warning: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     if verbose:
         print("+", " ".join(command), flush=True)
@@ -46,9 +63,15 @@ def run(
         command,
         cwd=cwd,
         text=True,
-        stdout=subprocess.PIPE if capture else None,
-        stderr=subprocess.STDOUT if capture else None,
+        stdout=subprocess.PIPE if capture or allow_pin_warning else None,
+        stderr=subprocess.STDOUT if capture or allow_pin_warning else None,
     )
+    if allow_pin_warning and not capture and completed.stdout:
+        print(completed.stdout, end="", flush=True)
+    if (allow_pin_warning and completed.returncode == 2
+            and only_pin_mismatch_warnings(completed.stdout or "")):
+        print("Continuing compatibility tests despite the published compiler-pin warning.", flush=True)
+        return completed
     if completed.returncode != 0:
         detail = f"\n{completed.stdout}" if capture and completed.stdout else ""
         raise TestFailure(
@@ -341,13 +364,13 @@ def check_targets(roc: str, targets: list[dict[str, object]], verbose: bool, exa
     check_allocation_policy_parser()
     run([roc, "fmt", "--check", *map(str, roc_files())], verbose=verbose)
     for target in targets:
-        run([roc, "check", str(target_path(target, example_root))], verbose=verbose)
+        run([roc, "check", str(target_path(target, example_root))], verbose=verbose, allow_pin_warning=True)
     check_allocation_assertions(targets)
 
 
 def test_targets(roc: str, targets: list[dict[str, object]], verbose: bool, example_root: Path | None) -> None:
     for target in targets:
-        run([roc, "test", str(target_path(target, example_root))], verbose=verbose)
+        run([roc, "test", str(target_path(target, example_root))], verbose=verbose, allow_pin_warning=True)
 
 
 def build_target(roc: str, target: dict[str, object], verbose: bool, example_root: Path | None) -> Path:
@@ -363,6 +386,7 @@ def build_target(roc: str, target: dict[str, object], verbose: bool, example_roo
             f"--output={output}",
         ],
         verbose=verbose,
+        allow_pin_warning=True,
     )
     validate_executable(output)
     return output

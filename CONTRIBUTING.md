@@ -140,6 +140,11 @@ manual/nightly dispatch; there is no change classifier or migration exception.
 The release workflow additionally tests the exact candidate archives.
 `nightly_validation: true` never publishes or deploys.
 
+When checking, testing, or building with a newer compiler, the runner permits
+Roc's warning-only exit code only if every diagnostic is a compiler-pin mismatch.
+The warnings remain visible. Errors, other warnings, and runtime failures still
+fail validation; published URLs and downloaded compiler pins are never rewritten.
+
 Every target asserts on allocation behaviour as well as on results. A property
 can check what an operation computes but not what it costs, so a builtin that
 stops mutating a uniquely owned value in place and starts copying it still
