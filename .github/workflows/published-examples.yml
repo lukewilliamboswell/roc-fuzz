@@ -10,7 +10,21 @@ on:
 permissions:
   contents: read
 jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      required: ${{ steps.policy.outputs.required }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Determine whether published compatibility changed
+        id: policy
+        run: python3 scripts/published_examples_policy.py
   examples:
+    needs: changes
+    if: needs.changes.outputs.required == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -35,11 +49,21 @@ jobs:
         run: python scripts/test.py --operation all --max-total-time 1 --verbose
   required:
     name: Published examples required
-    needs: examples
+    needs: [changes, examples]
     if: always()
     runs-on: ubuntu-24.04
     permissions: {}
     steps:
       - env:
+          POLICY_RESULT: ${{ needs.changes.result }}
+          REQUIRED: ${{ needs.changes.outputs.required }}
           RESULT: ${{ needs.examples.result }}
-        run: test "$RESULT" = success
+        run: |
+          test "$POLICY_RESULT" = success
+          if [ "$REQUIRED" = true ]; then
+            test "$RESULT" = success
+          else
+            test "$REQUIRED" = false
+            test "$RESULT" = skipped
+            echo 'Published dependencies unchanged; source and candidate workflows validate this change.'
+          fi

@@ -22,11 +22,22 @@ compiler line or support branch is claimed.
    systems, opens a signed URL-update PR, and dispatches validation on that head.
    Review and merge after current-commit required checks pass.
 
-The existing examples use allocation APIs absent from their pinned platform
-`0.3.0`. The new published-example lane exposes this failure. Do not change its
-URLs in a compiler-only PR or substitute a local bundle to hide it. A platform
-release and reviewed URL follow-up are necessary to establish a working public
-combination. Source and candidate checks remain useful during this bootstrap.
+Platform-source changes and new examples are tested against the working-tree
+platform and exact candidate bundle. Their committed URLs are updated after
+publication by the reviewed release follow-up; pointing at the prior release
+during development does not block this source PR.
+
+Published compatibility runs for changes to existing compiler header pins or
+existing example dependency URLs, and for every manual/nightly dispatch.
+Introducing header pins is a migration, not an update to a previously declared
+compiler requirement. Likewise, moving local examples onto initial release URLs
+is bootstrapped through source tests and the release follow-up. Subsequent pin
+and published URL changes are gated. Required aggregate
+checks always run; classification failures and unexpected skips fail closed.
+
+The current examples use APIs absent from `0.3.0`, so explicitly running the
+published lane before the release follow-up will fail. That is relevant to a
+nightly compatibility claim, not a reason to block the source release workflow.
 
 ## Validation and live acceptance
 
@@ -40,7 +51,8 @@ workflow lint, header-based compiler installation and supply-chain consistency.
 macOS runs and actual signed publication/follow-up acceptance still require CI.
 
 - `Published examples required`: committed URLs with the declared compiler, on
-  fresh runners without restoring dependency caches.
+  fresh runners without restoring dependency caches when the published contract
+  changes or validation is explicitly dispatched; otherwise an explicit skip.
 - `CI required`: current source bundled and served to temporary example copies.
 - `Release required`: exact archives proposed for publication, including both
   supported targets, documentation and SBOM generation.
