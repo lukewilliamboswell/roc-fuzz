@@ -49,8 +49,7 @@ During initial bootstrap, the lock intentionally has no published release.
 Use `--libraries source` explicitly with `build_platform.py`, `test_local.py`, or
 `run.py` until adopting the first release. This compiles pinned libFuzzer and Zig
 runtimes locally. CI's temporary source-build flags must be removed in the same
-reviewed change that adopts the published lock. See the
-[rollout checklist](.github/RELEASE_ROLLOUT.md).
+reviewed change that adopts the published lock.
 
 The `Native libraries` workflow packages each target without `libhost.a`, tests
 the archive with a fresh host, and signs provenance and an SPDX SBOM when
@@ -60,6 +59,10 @@ changes to library sources, runtimes/toolchains, flags, targets, security fixes,
 or the macOS adapter compiled into `libfuzzer.a`. The workflow emits the archive
 pins and source identity as a lock-file release asset for review. The macOS
 coverage shim stays with `libhost.a`.
+
+Before adopting a native-library release, review its `native-libraries.lock.json`
+asset, source revision, archive digests, and workflow attestations. The workflow's
+default manual run is validation-only; publication must be explicitly requested.
 
 The fully static build excludes `FuzzerInterceptors.cpp`. Its wrappers locate
 libc functions through `dlsym`, which is not usable in the static musl
@@ -106,7 +109,7 @@ python3 scripts/test_local.py --operation fuzz --max-total-time 2
 `test_local.py` prepares the current host inputs, packages the working-tree
 platform, serves it from an ephemeral localhost port, and asks `test.py` to use
 temporary rewritten copies of every example. Checked-in example declarations
-remain pinned to the latest published release, while local and CI runs exercise
+remain pinned to a published release, while local and CI runs exercise
 unreleased platform changes. Validation checks the exact example inventory, Roc formatting and types.
 After generating the current host inputs, building creates every self-contained executable and verifies a static x86-64
 ELF on Linux or an arm64 Mach-O with system-only dynamic dependencies on macOS.
@@ -130,6 +133,11 @@ default. A temporary exception must use a `skip` entry in `test_spec.json` with
 both a concrete reason and a full GitHub issue URL. The driver rejects
 unexplained skips; skipping a prerequisite also requires skipping its dependent
 stages.
+
+Published-example compatibility checks run when existing compiler header pins or
+published dependency URLs change, and on every manual/nightly dispatch. Source
+and candidate-bundle checks cover platform development and initial migration
+from local paths. `nightly_validation: true` never publishes or deploys.
 
 Every target asserts on allocation behaviour as well as on results. A property
 can check what an operation computes but not what it costs, so a builtin that
@@ -208,6 +216,14 @@ that branch protection accepts the PR. If an old platform lacks newly used APIs,
 publish a compatible platform and adopt its URL through the follow-up.
 Inspect partial publication before recovery; never replace existing tags or
 assets or rebuild an already-published release from a moving branch.
+Preserve the run's exact tested artifacts and inspect the tag SHA and uploaded
+digests before recovery; do not blindly rerun a publishing job.
+
+After an interrupted follow-up, dispatch `Release follow-up` with the existing
+platform version. It tests against the current default-branch head and refuses
+to replace an existing `release-followup/<version>` branch. Inspect that branch
+and its PR before manual recovery. URL updates exclude compiler pins and
+generated documentation.
 
 ## Design constraints
 

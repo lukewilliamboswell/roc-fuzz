@@ -10,7 +10,7 @@ Platform builds restore the reviewed `native-libraries.lock.json` archives,
 verify their SHA-256 digests and the native workflow's attestation at the locked
 source revision, and build fresh hosts. Cached archives are verified on reuse.
 The first library release still needs bootstrapping; CI explicitly builds from
-source until its lock is adopted. See [rollout status](.github/RELEASE_ROLLOUT.md).
+source until its lock is adopted. See [native-library setup](CONTRIBUTING.md#generate-platform-inputs).
 
 After those consumer tests pass, GitHub's attestation service creates signed
 SLSA build provenance and an SBOM attestation for the exact `.tar.zst` bundle.

@@ -158,7 +158,7 @@ The script verifies the pinned library archive and workflow attestation, builds
 the Zig host adapter, and writes a local `SHA256SUMS` manifest. During initial
 bootstrap, add `--libraries source` to this command and the local test commands
 below until the first native-library release is adopted. See the
-[rollout status](.github/RELEASE_ROLLOUT.md). Generated files are ignored by Git. See
+[native-library setup](CONTRIBUTING.md#generate-platform-inputs). Generated files are ignored by Git. See
 [`SLSA_PROVENANCE.md`](SLSA_PROVENANCE.md) for release verification.
 
 Build and serve the working-tree platform package, rewrite temporary copies of
