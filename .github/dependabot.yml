@@ -8,5 +8,9 @@ updates:
       time: "09:00"
       timezone: Australia/Melbourne
     open-pull-requests-limit: 10
+    groups:
+      codeql-action:
+        patterns:
+          - "github/codeql-action/*"
     commit-message:
       prefix: "deps(actions)"
