@@ -19,6 +19,6 @@ including `libSystem`; no Apple SDK library is redistributed.
 
 The repository's `scripts/compiler_pins.py` is vendored from
 lukewilliamboswell/roc-automation at revision
-`31f05e90fddeda335e7d9c9c0a34a8830c9d7170`.
+`e5b83ace37e0d0cb4e9fadb93cefb364f2cd6611`.
 Copyright © 2026 Luke Boswell. Licensed under the Universal Permissive License
-(UPL), Version 1.0; see the [upstream license](https://github.com/lukewilliamboswell/roc-automation/blob/31f05e90fddeda335e7d9c9c0a34a8830c9d7170/LICENSE).
+(UPL), Version 1.0; see the [upstream license](https://github.com/lukewilliamboswell/roc-automation/blob/e5b83ace37e0d0cb4e9fadb93cefb364f2cd6611/LICENSE).
