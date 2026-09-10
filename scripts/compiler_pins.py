@@ -1,6 +1,6 @@
 # Copyright © 2026 Luke Boswell. Universal Permissive License (UPL), Version 1.0.
 # Vendored from lukewilliamboswell/roc-automation, revision
-# b60d561cbd53c911b29238b30624827f8487113a, actions/nightly/compiler_pins.py.
+# 19c8c1a3f780d648b85678bd31cf735d3584eb01, actions/nightly/compiler_pins.py.
 """Narrow source-preserving reader for compiler pins in Roc root headers.
 
 This is not a Roc parser: the consumer compiler remains the grammar authority.
