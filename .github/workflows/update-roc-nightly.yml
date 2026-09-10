@@ -14,4 +14,4 @@ jobs:
       pull-requests: write
       actions: write
       statuses: write
-    uses: lukewilliamboswell/roc-automation/.github/workflows/update-roc-nightly.yml@31f05e90fddeda335e7d9c9c0a34a8830c9d7170 # 31f05e9
+    uses: lukewilliamboswell/roc-automation/.github/workflows/update-roc-nightly.yml@e5b83ace37e0d0cb4e9fadb93cefb364f2cd6611 # e5b83ac
