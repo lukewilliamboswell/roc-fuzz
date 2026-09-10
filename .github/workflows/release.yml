@@ -54,7 +54,7 @@ jobs:
 
       - name: Check compiler release policy
         if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && !inputs.release_candidate
-        uses: lukewilliamboswell/roc-automation/actions/check-release@b60d561cbd53c911b29238b30624827f8487113a # b60d561
+        uses: lukewilliamboswell/roc-automation/actions/check-release@19c8c1a3f780d648b85678bd31cf735d3584eb01 # 19c8c1a
         with:
           version: ${{ inputs.release_version }}
           compiler-root: platform/main.roc
