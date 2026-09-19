@@ -6,7 +6,7 @@ platform "roc-fuzz"
 		target : Target
 	}
 	exposes [Arbitrary, Fuzz, Target]
-	packages { roc: "nightly-2026-09-18-1d982dc" }
+	packages { roc: "nightly-2026-09-19-d025939" }
 	provides {
 		"roc_fuzz_name": name_for_host,
 		"roc_fuzz_run": run_for_host!,
