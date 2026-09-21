@@ -79,6 +79,8 @@ jobs:
         uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
         with:
           version: stable-and-nightly
+          stable-tag: nightly-2026-09-18-1d982dc
+          nightly-tag: nightly-2026-09-19-d025939
       - name: Build and package libraries without libhost
         env:
           ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
@@ -170,6 +172,8 @@ jobs:
         uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
         with:
           version: stable-and-nightly
+          stable-tag: nightly-2026-09-18-1d982dc
+          nightly-tag: nightly-2026-09-19-d025939
       - name: Record pins for the platform follow-up
         env:
           ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
