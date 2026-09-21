@@ -5,7 +5,7 @@ app [main!] {
 	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst",
 	arg_path: "https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
-	roc: "nightly-2026-09-19-d025939",
+	roc: "nightly-2026-09-10-a670e34",
 }
 
 import cli.OsStr
@@ -24,12 +24,12 @@ main! = |raw_args| {
 		Exit => return Ok({})
 	}
 	bundle = Path.absolute!(bundle_path)?
-	roc_stable = Script.roc_stable!()?
-	filename = smoke_test!(bundle, roc_stable)?
+	roc_nightly = Script.roc_nightly!()?
+	filename = smoke_test!(bundle, roc_nightly)?
 	Script.pass!("Bundle smoke test passed: ${filename}")
 }
 
-smoke_test! = |bundle, roc_stable| {
+smoke_test! = |bundle, roc_nightly| {
 	if !Path.is_file!(bundle)? or !Script.ends_with(Path.display(bundle), ".tar.zst") {
 		return Err(ExpectedBundle(Path.display(bundle)))
 	}
@@ -39,7 +39,7 @@ smoke_test! = |bundle, roc_stable| {
 		filename,
 		Path.read_bytes!(bundle)?,
 		|server| {
-			child = roc_stable.cmd([
+			child = roc_nightly.cmd([
 				"scripts/test_targets.roc",
 				"--",
 				"--operation",

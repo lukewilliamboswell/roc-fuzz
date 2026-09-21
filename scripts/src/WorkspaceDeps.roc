@@ -13,6 +13,7 @@ RawWorkspaceDeps : {
 	package_urls : PackageUrls,
 	repository : Str,
 	roc_automation : RocAutomationDependency,
+	roc_stable : Str,
 	roc_nightly : Str,
 	schema : U64,
 	setup_roc_revision : Str,
@@ -30,6 +31,7 @@ WorkspaceDeps := {
 	package_urls : PackageUrls,
 	repository : Identity.Repository,
 	roc_automation : RocAutomationDependency,
+	roc_stable : Str,
 	roc_nightly : Str,
 	schema : U64,
 	setup_roc_revision : Identity.GitRevision,
@@ -69,6 +71,7 @@ WorkspaceDeps := {
 				package_urls: decoded.package_urls,
 				repository,
 				roc_automation: decoded.roc_automation,
+				roc_stable: decoded.roc_stable,
 				roc_nightly: decoded.roc_nightly,
 				schema: decoded.schema,
 				setup_roc_revision: setup_revision,
@@ -83,6 +86,9 @@ WorkspaceDeps := {
 		}
 		if !Version.nightly(self.roc_nightly) {
 			return Err(InvalidWorkspaceRocNightly(self.roc_nightly))
+		}
+		if !Version.nightly(self.roc_stable) {
+			return Err(InvalidWorkspaceRocStable(self.roc_stable))
 		}
 		if !Version.semantic(self.zig_version) {
 			return Err(InvalidWorkspaceZigVersion(self.zig_version))
@@ -103,6 +109,7 @@ WorkspaceDeps := {
 			("basic_cli", self.package_urls.basic_cli),
 			("ascii", self.package_urls.ascii),
 			("ansi", self.package_urls.ansi),
+			("arg_path", self.package_urls.arg_path),
 			("weaver", self.package_urls.weaver),
 		] {
 			if !starts_with(url, "https://github.com/") or !ends_with(url, ".tar.zst") {
