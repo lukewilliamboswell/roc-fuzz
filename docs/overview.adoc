@@ -1,190 +1,178 @@
-= Background and context
+= Why fuzz a Roc application?
 
-`roc-fuzz` is a typed, coverage-guided software-quality platform for
-Roc. It supports Linux x86-64 with musl and Apple Silicon macOS (macOS
-11 or newer).
+Suppose a decoder passes every example you wrote, but one unusual combination
+of lengths and Unicode text still makes it fail. Adding more example tests helps
+only when you can imagine the troublesome input in advance.
 
-A target builds directly into a self-contained executable:
+Fuzzing repeatedly runs part of your application with varied inputs. It watches
+which inputs reach new behavior and uses those discoveries to guide the search.
+You describe what valid inputs look like and what must always be true. roc-fuzz
+does the repetitive search and saves any input that exposes a failure.
 
-[source,sh]
-----
-roc build --fuzz my_target_app.roc
-./my_target_app --help
-./my_target_app run
-----
+== What a fuzz target is
 
-The executable contains the Roc target, the upstream libFuzzer engine,
-and the small Roc ABI/command adapter. A normal run needs no Cargo
-project, external harness, or second linking step. It is bounded to 60
-seconds by default and keeps its corpus under `.roc-fuzz/`.
+A *fuzz target* is a small Roc application that connects roc-fuzz to one
+behavior in your code. It contains three essential ideas:
 
-.From typed target to a reproducible failure
+* a *generator* that creates the Roc values to try;
+* an *operation* that calls the application code you want to exercise; and
+* a *property* that decides whether the result is acceptable.
+
+.Target anatomy
 [mermaid]
 ....
 flowchart LR
-    Target[Typed Roc target] --> Build[roc build --fuzz]
-    Build --> Runner[Self-contained runner]
-    Runner -->|run| Corpus[Coverage corpus]
-    Runner -->|failure| Artifact[Raw reproducing input]
-    Artifact --> Show[show typed value]
-    Artifact --> Replay[replay failure]
-    Artifact --> Minimize[minimize input]
+    Generator["Generator<br/>What values should be tried?"]
+    Operation["Application operation<br/>What code should run?"]
+    Property["Property<br/>What must always be true?"]
+    Generator --> Target[Fuzz target]
+    Operation --> Target
+    Property --> Target
 ....
 
-== The target model
+The target is necessary because roc-fuzz cannot infer what correctness means for
+your application. It can explore inputs and notice crashes, hangs, leaks, and
+new behavior in the compiled program, but only you can state application rules such as:
 
-The application exposes `target : Target`. Its input type can provide a
-statically dispatched `generator_for` method:
+* encoding and then decoding returns the original value;
+* pushing an item and then popping returns that item and the original stack;
+* normalizing an already normalized value changes nothing;
+* two independent implementations produce the same result; or
+* arbitrary input may return an ordinary error but must never crash.
 
-[source,roc]
+A target is development and test code. It is separate from the application you
+ship, and it normally imports the module it exercises. Start with one operation
+and one property per target so failures remain easy to understand.
+
+== How fuzzing complements tests
+
+Unit tests and fuzzing answer different questions and work best together.
+
+[cols="1,2,2",options="header"]
+|===
+|Approach |What it does well |What it leaves to you
+
+|Unit tests
+|Check named examples and preserve known regressions quickly and deterministically.
+|You must choose every example.
+
+|A hand-written random loop
+|Tries more values than a short example list.
+|You must build generation, search strategy, repeatability, failure storage, and
+diagnostic tools.
+
+|roc-fuzz
+|Uses execution feedback to explore, retains useful inputs, and saves failures
+that can be shown, replayed, and minimized.
+|You must define meaningful generators and properties; a weak property can miss
+real bugs.
+|===
+
+After roc-fuzz finds a bug, fix the code and keep the minimized case as a normal
+regression test. The unit test prevents that exact bug from returning. Future
+fuzzing continues searching for cases nobody has named yet.
+
+== What “typed” and “coverage-guided” mean
+
+*Typed* means the test receives ordinary Roc values rather than making every
+target decode an arbitrary byte array itself. A generator can produce a `U64`,
+a `Str`, or a record such as
+`{ delimiter : Str, value : Str }`. You choose the useful ranges and shapes.
+roc-fuzz does not automatically know your application's domain rules.
+
+*Coverage-guided* describes how the search chooses where to spend effort.
+roc-fuzz observes which parts of the compiled program each input reaches. When
+an input reaches behavior not seen before, it retains that input and creates
+further variations from it. This feedback makes the search more purposeful than
+independent random samples.
+
+.Coverage-guided search and failure workflow
+[mermaid]
+....
+flowchart LR
+    Generate[Generate a typed value] --> Run[Run application code]
+    Run --> Check{Property holds?}
+    Check -->|yes| Observe{New behavior reached?}
+    Observe -->|yes| Corpus[Keep the useful input]
+    Observe -->|no| Generate
+    Corpus --> Vary[Create nearby variations]
+    Vary --> Generate
+    Check -->|no| Save[Save a reproducing input]
+    Save --> Inspect[Show, replay, and minimize]
+    Inspect --> Regression[Fix the bug and add a regression test]
+....
+
+The retained useful inputs form a *corpus*. A later run can reuse that corpus to
+resume from behavior already discovered. Coverage here is search feedback, not
+a percentage and not proof that the program is correct.
+
+roc-fuzz embeds a mature native fuzzing engine in the executable built by Roc.
+Normal users interact with roc-fuzz commands and Roc values; knowledge of that
+engine is needed only for the expert escape hatch described later.
+
+== What roc-fuzz provides
+
+For a Roc application author, the platform supplies:
+
+* typed generators for common Roc values and tools for combining them;
+* coverage feedback that directs the search toward new behavior;
+* a bounded local runner with sensible defaults;
+* saved inputs for crashes, failed properties, hangs, memory limits, and leaks;
+* commands to render a saved input as a Roc value, reproduce it, and minimize it;
+* a persistent corpus that makes later runs build on earlier discoveries; and
+* a supervised CI mode that records configuration, logs, hashes, and failures.
+
+A target builds into one self-contained executable:
+
+[source,sh]
 ----
-app [target] { roc: "nightly-2026-09-05-b195f5b", fuzz: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.0-rc1/9k2cfuAWoBfcRBRiVbriXFf1dHktoRBbieifYN7NmTHc.tar.zst" }
-
-import fuzz.Fuzz
-
-Input := { bytes : List(U8), radix : U8 }.{
-    generator_for : Fuzz.FuzzEncoding -> Fuzz.Generator(Input)
-    generator_for = |_| {
-        {
-            bytes: Fuzz.bytes,
-            radix: Fuzz.u8_in(2, 36),
-        }.Fuzz
-    }
-}
-
-test : Input -> Fuzz.Outcome
-test = |input| {
-    if List.is_empty(input.bytes) Fuzz.reject else Fuzz.keep
-}
-
-target = Fuzz.target({
-    name: "typed-target",
-    test,
-    show: |input| Str.inspect(input),
-})
-----
-
-The `.Fuzz` record builder combines any number of field generators
-through `Fuzz.map2`. `Fuzz.target` resolves `Input.generator_for` at
-compile time, following the same static-dispatch pattern as
-`Json.parser_for`. For local structural inputs, `Fuzz.target_with`
-accepts an explicit generator.
-
-Existing byte-oriented quality targets can migrate with
-`Fuzz.from_bytes` without changing their property immediately. New
-targets should prefer typed generators because they make the tested
-input domain visible in the API.
-
-A target can also assert on allocation counts rather than only on
-returned values, which catches regressions such as a builtin that starts
-copying a uniquely owned value instead of mutating it in place. This
-needs an effectful test (`Fuzz.target_with!` or `Fuzz.from_bytes!`);
-existing pure targets are unaffected. See
-xref:advanced.adoc#assert-on-allocations[Assert on allocations] for the
-API and a worked example.
-
-== Examples
-
-The end-user gallery demonstrates several common target shapes:
-
-* https://github.com/lukewilliamboswell/roc-fuzz/blob/trunk/examples/stringSplitRoundTrip.roc[`stringSplitRoundTrip.roc`]
-uses static generator dispatch and a record builder for a round-trip
-property.
-* https://github.com/lukewilliamboswell/roc-fuzz/blob/trunk/examples/jsonRoundTrip.roc[`jsonRoundTrip.roc`] uses an explicit
-generator for a single value.
-* https://github.com/lukewilliamboswell/roc-fuzz/blob/trunk/examples/parserRobustness.roc[`parserRobustness.roc`] treats both
-successful and failed parses as ordinary outcomes while looking for
-crashes and hangs.
-* https://github.com/lukewilliamboswell/roc-fuzz/blob/trunk/examples/listConcatLength.roc[`listConcatLength.roc`] checks an
-invariant on generated collections.
-* https://github.com/lukewilliamboswell/roc-fuzz/blob/trunk/examples/stack/main.roc[`stack/main.roc`] targets code in a
-separate Roc module and shows the required `main.roc` layout for a
-multi-file example.
-
-The focused builtin regression targets are retained under
-https://github.com/lukewilliamboswell/roc-fuzz/tree/trunk/examples/builtins[`examples/builtins/`]. They intentionally use
-the lower-level `Arbitrary` API and are useful for compiler and builtin
-validation, but are not the recommended starting point for application
-authors.
-
-The https://github.com/lukewilliamboswell/roc-fuzz/blob/trunk/examples/builtins/setOps/main.roc[`setOps`] and
-https://github.com/lukewilliamboswell/roc-fuzz/blob/trunk/examples/builtins/setCollisions/main.roc[`setCollisions`] targets
-use typed operation sequences and a
-https://github.com/lukewilliamboswell/roc-fuzz/blob/trunk/tests/set-model/README.md[shared list model] to check Set storage,
-iteration, folds, algebra, collisions, and shared heap values.
-
-The builtin collection also holds a dedicated suite for the `List`
-sorting builtins. Sorting is worth focused coverage because a sort has
-properties an invariant check alone will not reach: it has to be stable,
-it has to return a permutation of its input, and it changes algorithm
-with the length of the list and the width of the element. The targets
-check each sorting API against an independent stable insertion sort,
-cover refcounted and oversized elements, aliased and sliced lists,
-structured input shapes such as sawtooths and pipe organs, and
-comparisons that contradict themselves.
-
-== Runner commands
-
-[source,text]
-----
-TARGET run [CORPUS] [OPTION...]
-TARGET ci REPORT_DIR [CORPUS] [OPTION...]
-TARGET show INPUT
-TARGET replay INPUT
-TARGET minimize INPUT OUTPUT
-TARGET reduce-corpus INPUT OUTPUT
-TARGET raw [LIBFUZZER_ARG...]
+roc build --fuzz fuzz/stack/main.roc --output=stack-fuzz
+./stack-fuzz run
 ----
 
-Friendly run options include `--time`, `--runs`, `--max-input-size`,
-`--memory-limit`, `--timeout`, `--dictionary`, and `--seed`. Use
-`--time=0` for an intentionally unbounded campaign. Low-level libFuzzer
-flags remain available through `raw`.
+The normal workflow needs no separate native project or fuzzing tool
+installation.
 
-When an explicit Roc failure is saved, the runner prints ready-to-run
-`show`, `replay`, and `minimize` commands.
+== Choose a good first target
 
-`ci` supervises the run in a child process and writes a versioned JSON
-report, Markdown summary, combined log, hashes, and failure artifacts.
-See xref:quality.adoc[Fuzzing evidence for downstream projects] for the
-report contract, coverage limits, and a complete pull-request/daily
-workflow.
+Good first targets are fast, deterministic operations over in-memory values with
+a rule that is easy to state.
 
-Rejection-rate reporting remains a follow-up. `Fuzz.reject` already
-records the distinction in the typed target boundary so the runner can
-expose that metric.
+[cols="2,2,2",options="header"]
+|===
+|Application behavior |Possible property |Why it fits
 
-== Support, feedback, and releases
+|Parser or decoder
+|Every input returns a value or an ordinary error without crashing or hanging.
+|Large input space and clear acceptable outcomes.
 
-Use https://github.com/lukewilliamboswell/roc-fuzz/issues[GitHub issues]
-for reproducible bugs and enhancement requests. Include the roc-fuzz release,
-Roc compiler version, operating system and architecture, target source or a
-minimal reproduction, and the relevant command output. Proposed changes use
-pull requests and follow the xref:development.adoc[contributor guide].
+|Encoder and decoder
+|Decoding an encoded value returns the original value.
+|Strong round-trip property.
 
-Suspected vulnerabilities follow the
-https://github.com/lukewilliamboswell/roc-fuzz/blob/trunk/SECURITY.md[private
-security reporting process] and must not be disclosed in a public issue.
-Published bundles, PDF manuals, documentation archives, checksums, provenance,
-and human-readable release notes are available from
-https://github.com/lukewilliamboswell/roc-fuzz/releases[GitHub Releases].
+|Collection or state transition
+|An operation preserves membership, length, ordering, or an independent model.
+|Many combinations can exercise edge cases.
 
-== Origins and acknowledgments
+|Canonicalization or normalization
+|Applying the operation twice gives the same result as once.
+|Simple idempotence property.
 
-The foundational and exploratory work for roc-fuzz was created by
-https://github.com/bhansconnect[Brendan Hansknecht]. Brendan established
-the original Roc fuzzing integration, arbitrary input machinery,
-quality-target suite, and the early
-https://github.com/lukewilliamboswell/roc-fuzz/blob/trunk/trophy-case/README.md[trophy
-case] demonstrating the bugs this approach could find.
+|Two implementations of one rule
+|Both produce the same result.
+|Each implementation acts as an oracle for the other.
+|===
 
-The platform in this repository extends Brendan's experiment into a more
-idiomatic modern Roc workflow: typed generators, statically dispatched
-`generator_for` methods, record builders, and a self-contained
-executable built directly with `roc build --fuzz`. This work would not
-exist without the foundation he developed.
+A target is a poor fit when one input performs slow network, filesystem, UI, or
+database work; depends on nondeterministic external state; can legitimately run
+without a practical time or memory bound; or deliberately terminates the
+process for ordinary invalid input. Prefer unit, integration, end-to-end, or
+benchmark tests for those jobs.
 
-Continue with the xref:getting-started.adoc[beginner guide] for target design
-and the normal workflow. The xref:advanced.adoc[advanced guide] covers campaign
-tuning, corpora, and runtime details. Repository development and release work
-is covered in xref:development.adoc[Developing roc-fuzz].
+Fuzzing consumes CPU time and stores a corpus and failure artifacts. More time
+can explore more behavior, but a clean run means only that no failure was found
+during that search. It never proves the absence of bugs.
+
+roc-fuzz currently supports Linux x86-64 with musl and Apple Silicon macOS 11 or
+newer. Continue with xref:getting-started.adoc[Fuzz your first function] to build
+a target against a small application module and work through a failure.

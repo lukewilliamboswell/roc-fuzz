@@ -1,4 +1,4 @@
-= roc-fuzz: Typed coverage-guided fuzzing for Roc
+= The roc-fuzz manual
 :doctype: book
 :author: The roc-fuzz contributors
 :revnumber: {docs-version}
@@ -11,9 +11,9 @@
 :source-highlighter: rouge
 
 [.lead]
-roc-fuzz packages a typed Roc target and libFuzzer into one self-contained
-executable. This manual covers target design, failure investigation, sustained
-campaigns, CI evidence, release verification, and development of the platform.
+roc-fuzz helps Roc application authors find inputs they did not think to test.
+You describe values to try and a rule that must always hold; roc-fuzz explores,
+saves any failure, and gives you commands to inspect, reproduce, and minimize it.
 
 ifdef::backend-html5[]
 link:api/index.html[Browse the generated API reference] ·
@@ -22,11 +22,16 @@ endif::[]
 
 .How to use this manual
 ****
-New target author:: Start with <<fuzzing-your-first-roc-target>>.
-Experienced fuzzing user:: Continue with <<advanced-fuzzing>> for generator
-dispatch, allocation assertions, corpora, tuning, and raw libFuzzer options.
-Downstream maintainer:: Read <<fuzzing-evidence-for-downstream-projects>> for
-the report contract and bounded GitHub Actions pattern.
+New to fuzzing:: Start with <<why-fuzz-a-roc-application>> to learn what a fuzz
+target is, how guided search differs from random input, and when fuzzing fits.
+Ready to try it:: Follow <<fuzz-your-first-function>> to test a small Roc module
+and work through a saved failure.
+Longer campaign:: Continue with <<run-and-maintain-fuzzing-campaigns>> for
+bounds, corpora, status output, and failure diagnosis.
+Expert user:: Read <<understand-roc-fuzz-internals-and-expert-features>> for the
+runtime model, allocation assertions, generator dispatch, and raw engine options.
+Downstream maintainer:: Read <<add-fuzzing-to-ci>> for a bounded GitHub Actions
+pattern and its report contract.
 Release verifier:: Read <<release-bundle-provenance>>.
 Platform contributor:: Read <<contributing-to-roc-fuzz>> for toolchains,
 validation, packaging, and release behavior.
@@ -36,10 +41,16 @@ include::overview.adoc[leveloffset=+1]
 
 include::getting-started.adoc[leveloffset=+1]
 
-include::advanced.adoc[leveloffset=+1]
+include::target-design.adoc[leveloffset=+1]
+
+include::campaigns.adoc[leveloffset=+1]
 
 include::quality.adoc[leveloffset=+1]
 
 include::provenance.adoc[leveloffset=+1]
 
+include::internals.adoc[leveloffset=+1]
+
 include::development.adoc[leveloffset=+1]
+
+include::project-information.adoc[leveloffset=+1]

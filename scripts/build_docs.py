@@ -13,7 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 AUTOMATION_REPOSITORY = "https://github.com/lukewilliamboswell/roc-automation.git"
-AUTOMATION_REVISION = "b15d4a59ec84347da153e47543579d8679129ad7"
+AUTOMATION_REVISION = "e9283a32805f4ce26f6f79f718d429b53df589d7"
 
 
 def run(*command: str, cwd: Path = ROOT) -> None:

@@ -1,294 +1,248 @@
-= Fuzzing your first Roc target
+= Fuzz your first function
 
-Fuzzing runs one small test many times with automatically varied inputs.
-Unlike a unit test, you do not choose every example. You describe the
-values to try and the rule that must always hold; roc-fuzz searches for
-a value that breaks that rule.
+This tutorial adds a fuzz target beside a small Roc module, runs it, inspects a
+failure, fixes the bug, and preserves the lesson as a regression test. You do
+not need prior fuzzing experience or knowledge of the embedded engine.
 
-`roc build --fuzz` packages the target and fuzzing engine into one
-executable. You use that executable to run the search and inspect any
-failures it finds.
+The example uses a stack because its rule is easy to state: after pushing an
+item, popping must return that item and the original stack. The demo keeps the
+application module beside its target only to make the tutorial self-contained;
+a real target normally imports an existing module from the application.
 
-This page covers the normal workflow. See xref:advanced.adoc[Advanced
-fuzzing] when you need to tune libFuzzer, manage a long-lived corpus, or
-understand the in-process execution model.
+== Create the application module
 
-== Obtain roc-fuzz
-
-Install the Roc compiler named by the application header, then use an immutable
-roc-fuzz platform URL from the
-https://github.com/lukewilliamboswell/roc-fuzz/releases[GitHub release] you have
-selected. Each release identifies its supported compiler and includes the
-platform bundle, checksums, provenance, PDF manual, and archived HTML site.
-
-The complete target below contains a released platform URL in its `app` header.
-`roc build --fuzz` downloads that immutable bundle through Roc's normal package
-mechanism; there is no separate roc-fuzz executable or installer. For a new
-project, replace the example URL only when selecting a different published
-release, and keep the compiler declared by the target compatible with it.
-
-== The target API
-
-A fuzz target has four parts:
-
-[cols=",",options="header",]
-|===
-|Part |Purpose
-|`Input.generator_for` |Tells roc-fuzz how to generate the target's
-typed input.
-
-|`test` |Calls the code under test and checks a property.
-
-|`show` |Renders a saved typed input for a person to read.
-
-|`name` |Identifies the target in command output.
-|===
-
-This follows the same pattern as `Json.parser_for`. `Json.parse` asks
-its result type for the parser that understands that type; `Fuzz.target`
-asks its input type for the generator that creates that type. Roc
-chooses the specific method at compile time.
-
-The test returns one of these outcomes:
-
-* `Fuzz.keep` means the input was useful and completed normally.
-* `Fuzz.reject` means the input was outside the useful domain of this
-target.
-* `crash` or a failed `expect` means the fuzzer found a failure.
-
-roc-fuzz is best suited to small, fast library operations that accept
-in-memory values: parsers, encoders and decoders, string and collection
-operations, compression, and protocol transformations are good examples.
-It is less useful when one input is slow, can consume unbounded memory,
-may not terminate, or is expected to crash on invalid data. The
-xref:advanced.adoc#understand-the-in-process-model[advanced fit guide]
-explains these limits.
-
-Given the same raw fuzzer input, an unchanged pure Roc generator
-produces the same typed value and the unchanged test produces the same
-result. Keep the matching executable when exact historical reproduction
-matters.
-
-== Write a small target
-
-Start with one operation and one clear property. This target checks that
-splitting and rejoining a string does not change it:
+Create `fuzz/stack/Stack.roc`:
 
 [source,roc]
 ----
-app [target] { fuzz: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.3.0/FTcKnkDxL1ZXfKsxeLmNKZ6XKnuKDd47Gv79ThxLYSfw.tar.zst" }
+Stack := [].{
+    push : List(a), a -> List(a)
+    push = |items, item| List.append(items, item)
+
+    pop : List(a) -> Try({ value : a, rest : List(a) }, [Empty])
+    pop = |items|
+        match items {
+            [first, .. as rest] => Ok({ value: first, rest })
+            [] => Err(Empty)
+        }
+}
+----
+
+This version contains a plausible implementation mistake: `push` appends the
+new item to the end, while `pop` removes an item from the front. A test using
+only an empty stack would pass, so the defect is easy to overlook.
+
+The fuzz target is a separate development application that imports this module;
+the shipped application does not need to depend on roc-fuzz.
+
+== Write the target
+
+Create `fuzz/stack/main.roc`:
+
+[source,roc]
+----
+app [target] { fuzz: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.0-rc1/9k2cfuAWoBfcRBRiVbriXFf1dHktoRBbieifYN7NmTHc.tar.zst", roc: "nightly-2026-09-19-d025939" }
 
 import fuzz.Fuzz
+import Stack
 
-Input := { delimiter : Str, value : Str }.{
-    generator_for : Fuzz.FuzzEncoding -> Fuzz.Generator(Input)
-    generator_for = |_| {
-        {
-            value: Fuzz.str,
-            delimiter: Fuzz.str,
-        }.Fuzz
+test : List(U8) -> Fuzz.Outcome
+test = |initial| {
+    item = 0
+    pushed = Stack.push(initial, item)
+
+    match Stack.pop(pushed) {
+        Ok({ value, rest }) if value == item and rest == initial => Fuzz.keep
+        Ok(_) => crash "pop did not undo push"
+        Err(Empty) => crash "the stack was empty after push"
     }
 }
 
-test : Input -> Fuzz.Outcome
-test = |input| {
-    parts = input.value.split_on(input.delimiter)
-    rejoined = Str.join_with(parts, input.delimiter)
-
-    if rejoined == input.value {
-        Fuzz.keep
-    } else {
-        crash "split parts did not rejoin to the original string"
-    }
-}
-
-target = Fuzz.target({
-    name: "split-round-trip",
+target = Fuzz.target_with({
+    name: "stack-push-pop",
+    generator: Fuzz.list(Fuzz.u8, 8),
     test,
-    show: |input| Str.inspect(input),
+    show: |initial| Str.inspect(initial),
 })
 ----
 
-`generator_for` is an ordinary method associated with `Input`. This lets
-the input type keep its generation rules alongside its definition and
-makes them reusable across targets. There is no dynamic lookup at
-runtime.
+The target connects the three ideas from the previous chapter:
 
-For a one-off structural input that should not define a named type,
-`Fuzz.target_with` accepts an explicit generator. The
-xref:advanced.adoc#understand-generator-dispatch[advanced dispatch guide]
-explains both forms.
+[cols="1,2",options="header"]
+|===
+|Part |Role in this target
 
-=== Build record generators
+|Generator
+|`Fuzz.list(Fuzz.u8, 8)` supplies lists containing up to eight `U8` values.
 
-Roc's record-builder syntax makes generators for records read like the
-records they produce:
+|Application operation
+|The test calls `Stack.push` and `Stack.pop`.
+
+|Property
+|After pushing `0`, the popped value must be `0` and the remaining stack must
+equal the generated `initial` value.
+|===
+
+`Fuzz.keep` means the generated case completed normally and satisfied the
+property. `crash` means roc-fuzz must save the case as a failure. `show` tells
+roc-fuzz how to render the generated value for a person.
+
+The application header selects an immutable roc-fuzz release and its compatible
+Roc compiler. For another project, select a release from
+https://github.com/lukewilliamboswell/roc-fuzz/releases[GitHub Releases] and use
+the compiler documented with that release. Roc obtains the platform through its
+normal package mechanism; there is no separate roc-fuzz installer.
+
+== Build and find the bug
+
+Build a self-contained fuzzing executable:
+
+[source,sh]
+----
+roc build --fuzz fuzz/stack/main.roc --output=stack-fuzz
+----
+
+Start with the bounded default run:
+
+[source,sh]
+----
+./stack-fuzz run
+----
+
+roc-fuzz generates initial stacks and repeatedly runs the property. An empty
+stack passes even with the bug, while a non-empty stack can expose the mismatch
+between the two ends. The exact status lines and saved hash vary, but the end of
+the output includes commands shaped like these:
+
+[source,console]
+----
+Next steps:
+  ./stack-fuzz show .roc-fuzz/crash-<hash>
+  ./stack-fuzz replay .roc-fuzz/crash-<hash>
+  ./stack-fuzz minimize .roc-fuzz/crash-<hash> .roc-fuzz/minimized-crash
+----
+
+The saved file contains the reproducible input used by the generator. It is an
+implementation format for roc-fuzz, so inspect it with `show` instead of opening
+it as text:
+
+[source,sh]
+----
+./stack-fuzz show .roc-fuzz/crash-<hash>
+----
+
+For this target, `show` prints the generated initial stack. Reproduce the failure
+in a fresh process:
+
+[source,sh]
+----
+./stack-fuzz replay .roc-fuzz/crash-<hash>
+----
+
+Then ask roc-fuzz for a smaller reproducing input:
+
+[source,sh]
+----
+./stack-fuzz minimize \
+  .roc-fuzz/crash-<hash> .roc-fuzz/minimized-crash
+./stack-fuzz show .roc-fuzz/minimized-crash
+./stack-fuzz replay .roc-fuzz/minimized-crash
+----
+
+Minimization is most useful for structured or long inputs, but using the same
+workflow here establishes the habit.
+
+== Fix and preserve the failure
+
+The two stack operations disagree about which end is the top. Fix `push` in
+`Stack.roc`:
 
 [source,roc]
 ----
-{
-    value: Fuzz.str,
-    delimiter: Fuzz.str,
-    max_parts: Fuzz.u8_in(1, 20),
-}.Fuzz
+push : List(a), a -> List(a)
+push = |items, item| List.prepend(items, item)
 ----
 
-Each field contains a generator rather than a finished value. The
-`.Fuzz` suffix combines them using `Fuzz.map2` and returns one generator
-for the whole record. With two fields, the first example is equivalent
-to:
+Rebuild the executable and replay the minimized input. It should now complete
+without a failed property:
+
+[source,sh]
+----
+roc build --fuzz fuzz/stack/main.roc --output=stack-fuzz
+./stack-fuzz replay .roc-fuzz/minimized-crash
+./stack-fuzz run
+----
+
+Append a normal regression test using the minimized non-empty stack to
+`Stack.roc`:
 
 [source,roc]
 ----
-Fuzz.map2(
-    Fuzz.str,
-    Fuzz.str,
-    |value, delimiter| { value, delimiter },
-)
+expect {
+    initial : List(U8)
+    initial = [1]
+
+    match Stack.pop(Stack.push(initial, 0)) {
+        Ok({ value, rest }) => value == 0 and rest == initial
+        Err(Empty) => Bool.False
+    }
+}
 ----
 
-For larger records, the builder chains `map2` automatically. Record
-builders are ordinary Roc syntax, not a fuzzing special case; any
-nominal type with a compatible `map2` method can use the same pattern.
+Run it with the rest of the module's tests:
 
-=== Choose a useful property
+[source,sh]
+----
+roc test fuzz/stack/Stack.roc
+----
 
-The fuzzer can find only failures your test knows how to recognize.
-Strong properties include:
+Use the actual value printed by `show` if minimization found a different
+one-element list. The regression test protects this known case on every test
+run; the fuzz target continues exploring other values and future implementation
+changes.
+
+A bounded run that finds no failure is still a successful run. It means the
+property held for the cases explored during that run, not that the operation is
+proved correct.
+
+== Understand a normal run
+
+By default, `run` stops after 60 seconds, keeps useful inputs under
+`.roc-fuzz/corpus`, and saves failures under `.roc-fuzz/`. The corpus is a set
+of inputs that reached behavior worth revisiting; later runs reuse it and
+continue searching from those discoveries.
+
+During a clean run, `NEW` means the engine retained an input that reached new
+behavior and `DONE` means the configured bound was reached. The
+xref:campaigns.adoc#tune-a-run[campaign status glossary] explains the remaining
+fields and tuning options.
+
+== Design the next target
+
+Choose one fast application operation and one rule that should hold for every
+input. Common property shapes include:
 
 * *Round trip:* decoding an encoded value returns the original value.
-* *Inverse:* an operation followed by its inverse returns the starting
-value.
-* *Idempotence:* normalizing twice gives the same result as normalizing
-once.
-* *Invariant:* an operation preserves ordering, length, membership, or
-another rule of the data structure.
-* *Differential:* two independent implementations produce the same
-result.
-* *Robustness:* arbitrary input may return success or an ordinary error,
-but must not crash or hang.
+* *Inverse:* an operation followed by its inverse returns the starting value.
+* *Idempotence:* normalizing twice gives the same result as normalizing once.
+* *Invariant:* an operation preserves ordering, length, membership, or another
+rule of the data structure.
+* *Differential:* two independent implementations produce the same result.
+* *Robustness:* arbitrary input may return success or an ordinary error, but
+must not crash or hang.
 
-Keep unrelated properties or formats in separate targets. A narrow
-target is usually faster and its failures are easier to understand.
+Generate useful values directly. If a parser accepts bytes of any shape, arbitrary
+bytes may be appropriate. If an operation requires a bounded port number or a
+non-empty list, express that rule in the generator so most search effort reaches
+the behavior you care about. Use `Fuzz.reject` only when a generated case lies
+outside the property; do not use `crash` to reject an ordinary invalid input.
 
-All of these are content-based: they check what an operation returns,
-not what it costs. An allocation regression, such as a builtin that
-stops mutating a uniquely owned value in place and starts copying it,
-still returns the correct answer, so none of the properties above will
-catch it. See xref:advanced.adoc#assert-on-allocations[Assert on
-allocations] for a property that checks cost instead.
+Keep unrelated operations and properties in separate targets. A practical first
+set might include one target per parser, encoder/decoder pair, state transition,
+or important business invariant. There is no need to fuzz every function.
 
-=== Handle invalid input deliberately
-
-Malformed input is not automatically a bug. For a parser robustness
-target, both `Ok` and `Err` may be normal and should usually return
-`Fuzz.keep`; a crash or hang is the failure.
-
-Use `Fuzz.reject` only when a value is outside the property you are
-testing. Do not use `crash` or `expect` to validate generated input
-because the runner correctly treats them as failures.
-
-Prefer generating useful values directly instead of rejecting most
-inputs. Range generators such as `Fuzz.u8_in`, bounded lists, and
-generators composed with `Fuzz.map`, `Fuzz.map2`, or a record builder
-keep the search focused.
-
-Float targets get this focus from `Fuzz.f32` and `Fuzz.f64`, which spend
-about half of their values on `NaN`, the infinities, both zeros, the
-subnormals, and the boundary magnitudes instead of leaving each target
-to assemble those cases from raw bits. Use `Fuzz.f32_in` or
-`Fuzz.f64_in` when a property holds only for finite values within a
-known range.
-
-== Build and run
-
-Build the target as a self-contained executable:
-
-[source,sh]
-----
-roc build --fuzz split_round_trip.roc
-----
-
-The first run needs no tuning:
-
-[source,sh]
-----
-./split_round_trip run
-----
-
-`run` uses `.roc-fuzz/corpus` by default and saves failures under
-`.roc-fuzz/`. It stops after 60 seconds by default, so a first
-invocation does not unexpectedly run forever. Use `--runs=10000` for an
-iteration bound, `--time=300` for a longer campaign, or `--time=0` for
-an intentionally unbounded run. Discoveries already written to the
-corpus remain available for the next run.
-
-While it runs, `NEW` means the fuzzer found an input that explores new
-behavior. `cov` reports coverage growth and `exec/s` reports how many
-inputs run each second. See xref:advanced.adoc#tune-a-run[Tuning a run]
-for limits and a complete explanation of the status fields.
-
-== Investigate a failure
-
-A failure normally leaves a raw input such as `.roc-fuzz/crash-<hash>`,
-`.roc-fuzz/timeout-<hash>`, or `.roc-fuzz/oom-<hash>`.
-
-For a Roc `crash` or failed `expect`, the runner prints the exact
-`show`, `replay`, and `minimize` commands immediately after saving the
-artifact.
-
-Render its typed value:
-
-[source,sh]
-----
-./split_round_trip show .roc-fuzz/crash-<hash>
-----
-
-Reproduce it in a fresh process:
-
-[source,sh]
-----
-./split_round_trip replay .roc-fuzz/crash-<hash>
-----
-
-Then minimize it and inspect the smaller result:
-
-[source,sh]
-----
-./split_round_trip minimize \
-  .roc-fuzz/crash-<hash> .roc-fuzz/minimized-crash
-./split_round_trip replay .roc-fuzz/minimized-crash
-./split_round_trip show .roc-fuzz/minimized-crash
-----
-
-Keep the raw minimized file as a regression case after fixing the bug.
-`replay` and `show` consume the raw fuzzer file, not the text printed by
-`show`.
-
-If a failure does not reproduce, continue with
-xref:advanced.adoc#diagnose-an-unstable-failure[Diagnosing an unstable
-failure].
-
-== Everyday command reference
-
-Run `TARGET --help` to see the commands for a built target.
-
-[cols=",",options="header",]
-|===
-|Command |Use it to
-|`TARGET run [CORPUS] [OPTION...]` |Search for failures, optionally
-using a specific corpus.
-
-|`TARGET show INPUT` |Render the typed value represented by a raw input
-file.
-
-|`TARGET replay INPUT` |Run one saved input in a fresh process.
-
-|`TARGET minimize INPUT OUTPUT` |Make a reproducing failure smaller.
-
-|`TARGET reduce-corpus INPUT OUTPUT` |Copy a coverage-preserving subset
-into a new corpus.
-|===
-
-The xref:advanced.adoc#use-the-libfuzzer-interface[`raw` command and
-low-level libFuzzer options] are intended for advanced use.
+The xref:campaigns.adoc[campaign guide] explains corpora, tuning, and unstable
+failures. The xref:internals.adoc[expert guide] covers generator dispatch,
+allocation assertions, and the low-level engine interface. Run `TARGET --help`
+for the command summary and browse the link:api/index.html[generated API
+reference] for generator, combinator, and target signatures.

@@ -27,10 +27,13 @@ class DocumentationToolingTests(unittest.TestCase):
             [
                 "overview.adoc",
                 "getting-started.adoc",
-                "advanced.adoc",
+                "target-design.adoc",
+                "campaigns.adoc",
                 "quality.adoc",
                 "provenance.adoc",
+                "internals.adoc",
                 "development.adoc",
+                "project-information.adoc",
             ],
         )
         sources = "\n".join(path.read_text(encoding="utf-8") for path in (ROOT / "docs").glob("*.adoc"))

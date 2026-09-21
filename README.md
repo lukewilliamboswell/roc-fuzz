@@ -2,42 +2,54 @@
 
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/lukewilliamboswell/roc-fuzz/badge)](https://scorecard.dev/viewer/?uri=github.com/lukewilliamboswell/roc-fuzz)
 
-`roc-fuzz` is a typed, coverage-guided software-quality platform for Roc. It
-supports Linux x86-64 with musl and Apple Silicon macOS 11 or newer.
+`roc-fuzz` helps Roc application authors find inputs they did not think to test.
+You write a small fuzz target that generates ordinary Roc values, calls one
+part of your application, and checks a rule that must always hold. roc-fuzz
+then explores variations, saves any failure, and lets you inspect, reproduce,
+and minimize it.
 
-A target builds directly into a self-contained executable containing the Roc
-application, libFuzzer, and the command adapter:
+Unit tests remain the right tool for named examples and known regressions.
+Fuzzing complements them when the input space is too large to enumerate: it
+uses feedback from the compiled program to retain inputs that reach new behavior
+and explore nearby cases. This is especially useful for parsers, codecs,
+normalizers, collections, state transitions, and other fast in-memory code with
+a clear property.
+
+The platform supports Linux x86-64 with musl and Apple Silicon macOS 11 or newer.
+
+A target builds directly into a self-contained executable:
 
 ```sh
 roc build --fuzz my_target_app.roc
 ./my_target_app run
 ```
 
-Targets describe typed input generation and the property that every generated
-value must satisfy:
+For example, the core of this target generates `U64` values and checks that JSON
+encoding and decoding always returns the original value; the
+[first-target tutorial](docs/getting-started.adoc) includes a complete app
+header and runnable files:
 
 ```roc
 import fuzz.Fuzz
 
-Input := { bytes : List(U8), radix : U8 }.{
-	generator_for : Fuzz.FuzzEncoding -> Fuzz.Generator(Input)
-	generator_for = |_| {
-		{
-			bytes: Fuzz.bytes,
-			radix: Fuzz.u8_in(2, 36),
-		}.Fuzz
+test : U64 -> Fuzz.Outcome
+test = |value| {
+	encoded = Json.to_str(value)
+	decoded : Try(U64, _)
+	decoded = Json.parse(encoded)
+
+	match decoded {
+		Ok(round_tripped) if round_tripped == value => Fuzz.keep
+		Ok(_) => crash "JSON round trip changed the value"
+		Err(_) => crash "JSON output could not be parsed"
 	}
 }
 
-test : Input -> Fuzz.Outcome
-test = |input| {
-	if List.is_empty(input.bytes) Fuzz.reject else Fuzz.keep
-}
-
-target = Fuzz.target({
-	name: "typed-target",
+target = Fuzz.target_with({
+	name: "json-u64-round-trip",
+	generator: Fuzz.u64,
 	test,
-	show: |input| Str.inspect(input),
+	show: |value| Str.inspect(value),
 })
 ```
 

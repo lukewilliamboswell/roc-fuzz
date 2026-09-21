@@ -1,4 +1,14 @@
-= Fuzzing evidence for downstream projects
+= Add fuzzing to CI
+
+A short fuzz run on every pull request can catch easy failures early, while a
+longer scheduled run explores more cases without delaying ordinary development.
+Keep normal unit and regression tests in both paths: fuzzing searches for new
+failures but does not replace known examples.
+
+The `ci` command runs one compiled target with explicit bounds and retains the
+information needed to investigate a failure. The complete workflow later in
+this chapter shows how a downstream project can run several targets and upload
+their results even when one fails.
 
 Every executable built with roc-fuzz contains its own supervised CI
 runner. It can preserve a bounded campaign's configuration, provenance,
@@ -31,7 +41,7 @@ corpus. It receives:
 link:roc-fuzz-ci-report.schema.json[`roc-fuzz-ci/v1`];
 * `summary.md`, suitable for a CI job summary;
 * `run.log`, containing combined stdout and stderr; and
-* `failures/`, containing libFuzzer's reproducing inputs.
+* `failures/`, containing the runner's reproducing inputs.
 
 The JSON manifest gives every corpus and failure file a size and SHA-256
 digest. The target executable and log are also hashed. Provenance fields
@@ -170,7 +180,7 @@ These artifacts provide reviewable evidence that dynamic analysis ran with
 explicit bounds and assertions, and that findings were retained. They do not
 measure source coverage.
 
-libFuzzer's `cov` and `ft` values are search-feedback counts from LLVM
+The runner's `cov` and `ft` values are search-feedback counts from LLVM
 SanitizerCoverage. They have no source denominator and are not statement
 or branch percentages. Do not report them as either kind of percentage.
 

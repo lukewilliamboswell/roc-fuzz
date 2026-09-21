@@ -1,0 +1,30 @@
+= Project information
+
+== Support, feedback, and releases
+
+Use https://github.com/lukewilliamboswell/roc-fuzz/issues[GitHub issues] for
+reproducible bugs and enhancement requests. Include the roc-fuzz release, Roc
+compiler version, operating system and architecture, target source or a minimal
+reproduction, and the relevant command output. Proposed changes use pull
+requests and follow the xref:development.adoc[contributor guide].
+
+Suspected vulnerabilities follow the
+https://github.com/lukewilliamboswell/roc-fuzz/blob/trunk/SECURITY.md[private
+security reporting process] and must not be disclosed in a public issue.
+Published bundles, PDF manuals, documentation archives, checksums, provenance,
+and human-readable release notes are available from
+https://github.com/lukewilliamboswell/roc-fuzz/releases[GitHub Releases].
+
+== Origins and acknowledgments
+
+The foundational and exploratory work for roc-fuzz was created by
+https://github.com/bhansconnect[Brendan Hansknecht]. Brendan established the
+original Roc fuzzing integration, arbitrary input machinery, quality-target
+suite, and the early
+https://github.com/lukewilliamboswell/roc-fuzz/blob/trunk/trophy-case/README.md[trophy
+case] demonstrating the bugs this approach could find.
+
+The platform in this repository extends Brendan's experiment into a modern Roc
+workflow with typed generators, reusable target construction, and a
+self-contained executable built directly with `roc build --fuzz`. This work
+would not exist without the foundation he developed.
