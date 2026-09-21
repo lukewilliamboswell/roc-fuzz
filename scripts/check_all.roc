@@ -7,6 +7,7 @@ app [main!] {
 }
 
 import cli.Path
+import cli.Env
 import src/Script
 import src/Files
 
@@ -15,7 +16,11 @@ main! = |_args| {
 	nightly = Script.roc_nightly!()?
 	check_tooling!(stable, nightly)?
 	check_platform!(nightly)?
-	check_fuzz_targets!(nightly)?
+	if Env.platform!().os == MACOS {
+		Script.warn!("Skipping target-runner execution because the pinned Roc compiler crashes while compiling it on Apple Silicon.")?
+	} else {
+		check_fuzz_targets!(nightly)?
+	}
 	check_worktree!()?
 	Script.pass!("Repository checks completed successfully.")
 }

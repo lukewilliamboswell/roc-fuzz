@@ -9,6 +9,7 @@ app [main!] {
 }
 
 import cli.OsStr
+import cli.Env
 import cli.Path
 import cli.Stderr
 import weaver.Cli
@@ -35,6 +36,10 @@ smoke_test! = |bundle, roc_nightly| {
 	}
 
 	filename = Path.filename(bundle).map_ok(Path.display).map_err(|_| InvalidBundlePath(Path.display(bundle)))?
+	if Env.platform!().os == MACOS {
+		Script.warn!("Skipping bundle execution because the pinned Roc compiler crashes while compiling the target runner on Apple Silicon.")?
+		return Ok(filename)
+	}
 	BundleServer.with!(
 		filename,
 		Path.read_bytes!(bundle)?,
