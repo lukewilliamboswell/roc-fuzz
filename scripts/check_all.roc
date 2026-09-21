@@ -38,12 +38,12 @@ check_tooling! = |stable, nightly| {
 check_platform! = |nightly| {
 	Script.info!("CHECK", "Formatting and type-checking the platform with the pinned nightly")?
 	nightly.run!(["fmt", "--check", "platform", "examples"])?
-	nightly.run!(["check", "platform/main.roc", "--no-cache"])
+	nightly.run!(["check", "platform/main.roc"])
 }
 
 check_fuzz_targets! = |nightly| {
 	Script.info!("CHECK", "Type-checking every fuzz target in tests/targets.json")?
-	nightly.run!(["-j1", "scripts/test_targets.roc", "--", "--operation", "check"])
+	nightly.run!(["--opt=interpreter", "scripts/test_targets.roc", "--", "--operation", "check"])
 }
 
 check_worktree! = || {

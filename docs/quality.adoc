@@ -129,7 +129,7 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: |
           mkdir -p ".roc-fuzz/bin" ".roc-fuzz/corpus/$TARGET"
-          roc build --fuzz "fuzz/$TARGET.roc" --output=".roc-fuzz/bin/$TARGET" --no-cache
+          roc build --fuzz "fuzz/$TARGET.roc" --output=".roc-fuzz/bin/$TARGET"
           if test -d "fuzz/corpus/$TARGET"; then
             cp -R "fuzz/corpus/$TARGET/." ".roc-fuzz/corpus/$TARGET/"
           fi

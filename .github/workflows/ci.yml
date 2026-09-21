@@ -40,7 +40,7 @@ jobs:
           ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
           ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
         run: >-
-          "$ROC_NIGHTLY" -j1 scripts/test_targets.roc --
+          "$ROC_NIGHTLY" --opt=interpreter scripts/test_targets.roc --
           --operation all --max-total-time 1 --verbose
 
   self-contained-runner:

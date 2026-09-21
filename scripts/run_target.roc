@@ -90,7 +90,7 @@ build_and_run! = |temporary, source_path, server, args, nightly| {
 	Path.create_all!(".test-cache/run")?
 	executable : Path
 	executable = ".test-cache/run/${Files.stem(Path.display(app_name))}"
-	child = nightly.cmd(["build", "--fuzz", Path.to_os_str(local_app), OsStr.from_str("--output=${Path.display(executable)}"), "--no-cache"]).stdout(Capture).stderr(Capture).spawn!().map_err(|err| TargetBuildSpawnFailed(err))?
+	child = nightly.cmd(["build", "--fuzz", Path.to_os_str(local_app), OsStr.from_str("--output=${Path.display(executable)}")]).stdout(Capture).stderr(Capture).spawn!().map_err(|err| TargetBuildSpawnFailed(err))?
 	output = server.serve_child!(child)?
 	match output.status {
 		Exited(0) => {}

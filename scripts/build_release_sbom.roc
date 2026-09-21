@@ -18,6 +18,7 @@ import src/Integrity
 import src/Project
 import src/ReleaseCandidate
 import src/Script
+import src/Version
 import src/WeaverCli
 import src/WorkspaceDeps
 
@@ -37,7 +38,7 @@ main! = |raw_args| {
 		Ok(path) => Path.absolute!(path)?
 		Err(NoValue) => Path.utf8("${Path.display(bundle)}.spdx.json")
 	}
-	document = generate!(bundle, ReleaseCandidate.to_str(options.release_version), options.native_manifests, options.library_manifests, WorkspaceDeps.current)?
+	document = generate!(bundle, options.release_version, options.native_manifests, options.library_manifests, WorkspaceDeps.current)?
 	Path.write_utf8!(output, document)?
 	Script.pass!("SPDX release SBOM written to ${Path.display(output)}")
 }
@@ -49,7 +50,7 @@ cli_parser = Cli.assert_valid(
 			library_manifests: Opt.list({ short: "", long: "library-manifest", help: "Native library release manifest; repeat as needed.", type: "path", parser: CliValues.path }),
 			native_manifests: Opt.list({ short: "", long: "native-manifest", help: "TARGET=PATH checksum manifest; repeat for both targets.", type: "manifest", parser: parse_native_manifest }),
 			output: Opt.maybe({ short: "o", long: "output", help: "Output SPDX JSON path; defaults beside the bundle.", type: "path", parser: CliValues.path }),
-			release_version: Opt.single({ short: "", long: "release-version", help: "Release-candidate version, for example 1.2.3-rc4.", type: "version", default: NoDefault, parser: parse_release_version }),
+			release_version: Opt.single({ short: "", long: "release-version", help: "Release version, for example 1.2.3 or 1.2.3-rc4.", type: "version", default: NoDefault, parser: parse_release_version }),
 		}.Cli,
 		{
 			name: "build-release-sbom",
@@ -71,15 +72,15 @@ parse_native_manifest = |argument|
 		Err(_) => Err(InvalidUtf8)
 	}
 
-parse_release_version : _ -> Try(ReleaseCandidate, [InvalidNumStr, InvalidValue(Str), InvalidUtf8])
+parse_release_version : _ -> Try(Str, [InvalidNumStr, InvalidValue(Str), InvalidUtf8])
 parse_release_version = |argument|
 	match CliValues.text(argument) {
-		Ok(value) => match ReleaseCandidate.parse(value) {
-			Ok(version) => Ok(version)
-			Err(_) => Err(InvalidValue("expected a release candidate such as 1.2.3-rc4"))
-		}
+		Ok(value) if valid_release_version(value) => Ok(value)
+		Ok(_) => Err(InvalidValue("expected a release version such as 1.2.3 or 1.2.3-rc4"))
 		Err(_) => Err(InvalidUtf8)
 	}
+
+valid_release_version = |value| Version.semantic(value) or (ReleaseCandidate.parse(value) |> Try.is_ok)
 
 generate! = |bundle, release, native_manifests, library_manifest_paths, dependencies| {
 	if !Path.is_file!(bundle)? or !Script.ends_with(Path.display(bundle), ".tar.zst") {
@@ -229,3 +230,6 @@ render_package = |item| {
 
 expect native_license("libfuzzer.a") == "Apache-2.0 WITH LLVM-exception"
 expect safe_identifier("x/y a") == "x-y-a"
+expect valid_release_version("999.999.999")
+expect valid_release_version("1.2.3-rc4")
+expect !valid_release_version("1.2")

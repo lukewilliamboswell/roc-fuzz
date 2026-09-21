@@ -1,4 +1,4 @@
-#!/usr/bin/env -S roc-nightly -j1
+#!/usr/bin/env -S roc-nightly --opt=interpreter
 app [main!] {
 	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.23.0-rc1/3hT3SoHZ6qbEsa9qVFLUW3547U5LeoNd1KbpqLpz4r1i.tar.zst",
 	ascii: "https://github.com/Hasnep/roc-ascii/releases/download/v0.5.0/5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H.tar.zst",
@@ -160,14 +160,14 @@ run_operation! = |operation, max_total_time, verbose, roc_nightly, selected|
 check_targets! = |roc_nightly, selected| {
 	roc_nightly.run!(["fmt", "--check", "platform", "examples"])?
 	for item in selected {
-		run_allow_pin_warning!(roc_nightly, ["check", Path.to_os_str(item.path), "--no-cache"])?
+		run_allow_pin_warning!(roc_nightly, ["check", Path.to_os_str(item.path)])?
 	}
 	Ok({})
 }
 
 test_targets! = |roc_nightly, selected| {
 	for item in selected {
-		run_allow_pin_warning!(roc_nightly, ["test", Path.to_os_str(item.path), "--no-cache"])?
+		run_allow_pin_warning!(roc_nightly, ["test", Path.to_os_str(item.path)])?
 	}
 	Ok({})
 }
