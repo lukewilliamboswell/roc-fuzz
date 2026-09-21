@@ -43,6 +43,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install stable tooling Roc and latest nightly
+        id: roc
+        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
+        with:
+          version: stable-and-nightly
+
       - name: Validate release request
         id: validate
         uses: roc-lang/release-package/actions/validate-release@d2560ead9f724bfaabfbc8134b8895e120171064 # main
@@ -75,9 +81,11 @@ jobs:
         env:
           RELEASE_VERSION: ${{ inputs.release_version }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
         run: |
-          python3 scripts/validate_release_candidate.py
-          python3 scripts/check_supply_chain.py
+          scripts/validate_release_candidate.roc
+          scripts/check_supply_chain.roc
 
   native-inputs:
     name: Generate native inputs (${{ matrix.platform_target }})
@@ -99,20 +107,27 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - name: Read workspace dependencies
+        id: dependencies
+        run: echo "zig-version=$(jq -r .zig_version scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Install stable tooling Roc and latest nightly
+        id: roc
+        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
         with:
-          python-version: "3.13"
+          version: stable-and-nightly
 
       - name: Install Zig
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
         with:
-          version: "0.16.0"
+          version: ${{ steps.dependencies.outputs.zig-version }}
 
       - name: Generate and checksum native inputs
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python scripts/build_platform.py --target ${{ matrix.platform_target }} --libraries source
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
+        run: scripts/build_platform.roc -- --target ${{ matrix.platform_target }} --libraries source
         # Bootstrap only: switch to release when adopting the first published library lock.
 
       - name: Upload native inputs
@@ -138,17 +153,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - name: Install stable tooling Roc and latest nightly
+        id: roc
+        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
         with:
-          python-version: "3.13"
-
-      - name: Install checksum-pinned Roc nightly
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          roc_bin_dir="$(python3 scripts/install_roc.py --install-dir "$RUNNER_TEMP/roc-nightly")"
-          echo "$roc_bin_dir" >> "$GITHUB_PATH"
+          version: stable-and-nightly
 
       - name: Download x64-musl inputs
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -164,16 +173,21 @@ jobs:
 
       - name: Bundle platform
         if: github.event_name != 'workflow_dispatch' || inputs.nightly_validation || inputs.release_candidate
-        run: python scripts/bundle.py --output-dir dist
+        env: &roc-environment
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
+        run: scripts/build_bundle.roc -- --output-dir dist
 
       - name: Require released libraries and bundle for publication
         if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && !inputs.release_candidate
+        env: *roc-environment
         run: |
-          python scripts/native_libraries.py check
-          python scripts/bundle.py --output-dir dist
+          scripts/check_native_libraries.roc
+          scripts/build_bundle.roc -- --output-dir dist
 
       - name: Validate candidate release bundle
-        run: python scripts/test_bundle.py dist/*.tar.zst
+        env: *roc-environment
+        run: scripts/test_bundle.roc -- dist/*.tar.zst
 
       - name: Resolve previous release
         if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation
@@ -245,17 +259,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Install Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - name: Install stable tooling Roc and latest nightly
+        id: roc
+        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
         with:
-          python-version: "3.13"
-
-      - name: Install checksum-pinned Roc nightly
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          roc_bin_dir="$(python3 scripts/install_roc.py --install-dir "$RUNNER_TEMP/roc-nightly")"
-          echo "$roc_bin_dir" >> "$GITHUB_PATH"
+          version: stable-and-nightly
 
       - name: Download release bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -264,9 +272,12 @@ jobs:
           path: .release/test-bundles
 
       - name: Test release bundle
+        env:
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
         uses: roc-lang/release-package/actions/test-bundle@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
-          test_bundle_command: python scripts/test_bundle.py
+          test_bundle_command: scripts/test_bundle.roc --
           bundle_path: .release/test-bundles/${{ matrix.artifact_file }}
           bundle_name: ${{ matrix.bundle_name }}
           release_version: ${{ needs.release-info.outputs.release_version }}
@@ -283,10 +294,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - name: Install stable tooling Roc and latest nightly
+        id: roc
+        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
         with:
-          python-version: "3.13"
+          version: stable-and-nightly
 
       - name: Download release bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -303,6 +315,8 @@ jobs:
       - name: Generate and validate SPDX 2.3 metadata
         env:
           RELEASE_VERSION: ${{ needs.release-info.outputs.release_version }}
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
         run: |
           mkdir -p .release/sbom
           library_args=()
@@ -310,7 +324,7 @@ jobs:
             if test -f "$manifest"; then library_args+=(--library-manifest "$manifest"); fi
           done
           for bundle in .release/bundles/*.tar.zst; do
-            python scripts/generate_sbom.py \
+            scripts/build_release_sbom.roc -- \
               --bundle "$bundle" \
               --release-version "$RELEASE_VERSION" \
               "${library_args[@]}" \
@@ -338,33 +352,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Install Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - name: Install stable tooling Roc and latest nightly
+        id: roc
+        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
         with:
-          python-version: "3.13"
-
-      - name: Install checksum-pinned Roc nightly
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          roc_bin_dir="$(python3 scripts/install_roc.py --install-dir "$RUNNER_TEMP/roc-nightly")"
-          echo "$roc_bin_dir" >> "$GITHUB_PATH"
+          version: stable-and-nightly
 
       - id: docs
         name: Build versioned HTML, PDF, and API documentation
-        uses: lukewilliamboswell/roc-automation/actions/build-docs@a0ce42bfc8cd7dd1d167c0db0a770fca1118951d # a0ce42b
+        uses: lukewilliamboswell/roc-automation/actions/build-docs@a2b4d8abc967952b59fc751345efd144cbc0fbfc # a2b4d8a
         with:
           pdf-filename: roc-fuzz.pdf
           docs-version: ${{ needs.release-info.outputs.release_version || 'unreleased' }}
           api-entrypoint: platform/main.roc
+          roc-command: ${{ steps.roc.outputs.nightly-executable }}
 
       - name: Audit and archive release documentation
         env:
           DOCS_VERSION: ${{ needs.release-info.outputs.release_version || 'unreleased' }}
           SITE: ${{ steps.docs.outputs.site-directory }}
           PDF: ${{ steps.docs.outputs.pdf-path }}
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
         run: |
-          python3 scripts/check_docs.py "$SITE/api"
+          scripts/check_docs.roc -- "$SITE/api"
           mkdir -p release-docs
           cp "$PDF" "release-docs/roc-fuzz-$DOCS_VERSION.pdf"
           (cd "$SITE" && zip -qr "$GITHUB_WORKSPACE/release-docs/roc-fuzz-docs-$DOCS_VERSION.zip" .)
@@ -462,6 +473,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install stable tooling Roc and latest nightly
+        id: roc
+        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
+        with:
+          version: stable-and-nightly
+
       - name: Download release bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -517,9 +534,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ inputs.release_version }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
         run: |
           set -euo pipefail
-          python3 scripts/validate_release_candidate.py
+          scripts/validate_release_candidate.roc
           # gh release create refuses an existing release; refuse an existing tag too.
           refs="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$RELEASE_VERSION")"
           test "$(jq --arg tag "refs/tags/$RELEASE_VERSION" '[.[] | select(.ref == $tag)] | length' <<< "$refs")" -eq 0

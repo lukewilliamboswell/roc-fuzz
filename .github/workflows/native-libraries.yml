@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       release_version:
-        description: "Independent library tag (native-libs-vX.Y.Z)"
-        required: true
-        default: native-libs-v1.0.0
+        description: "Independent library tag; blank uses workspace configuration"
+        required: false
+        default: ""
         type: string
       publish:
         description: "Publish the exact tested archives from the default branch"
@@ -15,9 +15,9 @@ on:
   pull_request:
     paths:
       - .github/workflows/native-libraries.yml
-      - scripts/build_platform.py
-      - scripts/native_libraries.py
-      - scripts/platform_inputs.py
+      - scripts/*.roc
+      - scripts/src/**
+      - scripts/workspace-deps.json
       - src/macos_fuzzer_ext_functions.cpp
       - THIRD_PARTY_LICENSES.md
 
@@ -28,6 +28,8 @@ concurrency:
 
 jobs:
   build:
+    outputs:
+      library-release: ${{ steps.dependencies.outputs.library-release }}
     permissions:
       contents: read
     strategy:
@@ -39,12 +41,24 @@ jobs:
           - os: macos-26
             target: arm64mac
     runs-on: ${{ matrix.os }}
-    env:
-      LIBRARY_RELEASE: ${{ inputs.release_version || 'native-libs-v1.0.0' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+      - name: Read workspace dependencies
+        id: dependencies
+        env:
+          REQUESTED_RELEASE: ${{ inputs.release_version }}
+        run: |
+          echo "zig-version=$(jq -r .zig_version scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+          if [ -n "$REQUESTED_RELEASE" ]; then
+            echo "LIBRARY_RELEASE=$REQUESTED_RELEASE" >> "$GITHUB_ENV"
+            echo "library-release=$REQUESTED_RELEASE" >> "$GITHUB_OUTPUT"
+          else
+            release=$(jq -r .native_release_default scripts/workspace-deps.json)
+            echo "LIBRARY_RELEASE=$release" >> "$GITHUB_ENV"
+            echo "library-release=$release" >> "$GITHUB_OUTPUT"
+          fi
       - name: Validate request before installing build tools
         env:
           PUBLISH: ${{ inputs.publish || false }}
@@ -55,31 +69,33 @@ jobs:
           if [ "$PUBLISH" = true ]; then
             test "$GITHUB_REF" = "refs/heads/$DEFAULT_BRANCH"
           fi
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
-        with:
-          python-version: "3.13"
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
         with:
-          version: "0.16.0"
+          version: ${{ steps.dependencies.outputs.zig-version }}
           use-cache: false
-      - name: Install pinned Roc
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          roc_bin_dir="$(python scripts/install_roc.py --install-dir "$RUNNER_TEMP/roc")"
-          echo "$roc_bin_dir" >> "$GITHUB_PATH"
+      - name: Install stable tooling Roc and latest nightly
+        id: roc
+        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
+        with:
+          version: stable-and-nightly
       - name: Build and package libraries without libhost
+        env:
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
         run: |
-          python scripts/build_platform.py --target ${{ matrix.target }} --libraries source --libraries-only
-          python scripts/native_libraries.py pack --target ${{ matrix.target }} --release "$LIBRARY_RELEASE"
+          scripts/build_platform.roc -- --target ${{ matrix.target }} --libraries source --libraries-only
+          scripts/pack_native_libraries.roc -- --target ${{ matrix.target }} --release "$LIBRARY_RELEASE"
       - name: Extract and test the exact candidate archive
+        env:
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
         run: |
-          python scripts/native_libraries.py extract --target ${{ matrix.target }} --archive "dist/native/$LIBRARY_RELEASE-${{ matrix.target }}.tar.gz" --directory "$RUNNER_TEMP/extracted"
+          scripts/extract_native_libraries.roc -- --target ${{ matrix.target }} --archive "dist/native/$LIBRARY_RELEASE-${{ matrix.target }}.tar.gz" --directory "$RUNNER_TEMP/extracted"
           # Copy only the validated library inventory; build a fresh host around it.
-          python -c 'import shutil, sys; sys.path.insert(0, "scripts"); from native_libraries import library_names; from platform_inputs import TARGETS_BY_NAME; from pathlib import Path; spec = TARGETS_BY_NAME[sys.argv[1]]; [shutil.copy2(Path(sys.argv[2])/n, Path("platform/targets")/spec.roc_name/n) for n in library_names(spec)]' '${{ matrix.target }}' "$RUNNER_TEMP/extracted"
-          python scripts/build_platform.py --target ${{ matrix.target }} --host-only
-          python scripts/bundle.py --target ${{ matrix.target }} --output-dir "$RUNNER_TEMP/bundle"
-          python scripts/test_bundle.py "$RUNNER_TEMP"/bundle/*.tar.zst
+          find "$RUNNER_TEMP/extracted" -maxdepth 1 -type f \( -name '*.a' -o -name 'crt1.o' \) -exec cp {} "platform/targets/${{ matrix.target }}/" \;
+          scripts/build_platform.roc -- --target ${{ matrix.target }} --host-only
+          scripts/build_bundle.roc -- --target ${{ matrix.target }} --output-dir "$RUNNER_TEMP/bundle"
+          scripts/test_bundle.roc -- "$RUNNER_TEMP"/bundle/*.tar.zst
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: native-${{ matrix.target }}
@@ -110,7 +126,7 @@ jobs:
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: assets/*.tar.gz
-          sbom-path: assets/${{ inputs.release_version }}-${{ matrix.target }}.tar.gz.spdx.json
+          sbom-path: assets/${{ needs.build.outputs.library-release }}-${{ matrix.target }}.tar.gz.spdx.json
       - name: Export attestation bundles
         env:
           GH_TOKEN: ${{ github.token }}
@@ -138,7 +154,7 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
-      LIBRARY_RELEASE: ${{ inputs.release_version }}
+      LIBRARY_RELEASE: ${{ needs.build.outputs.library-release }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -148,8 +164,16 @@ jobs:
           pattern: attested-native-*
           merge-multiple: true
           path: assets
+      - name: Install stable tooling Roc and latest nightly
+        id: roc
+        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
+        with:
+          version: stable-and-nightly
       - name: Record pins for the platform follow-up
-        run: python scripts/native_libraries.py lock --directory assets --release "$LIBRARY_RELEASE" > assets/native-libraries.lock.json
+        env:
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
+        run: scripts/lock_native_libraries.roc -- --directory assets --release "$LIBRARY_RELEASE" --output assets/native-libraries.lock.json
       - name: Publish immutable library release without changing latest platform
         run: |
           set -euo pipefail

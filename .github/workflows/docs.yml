@@ -23,28 +23,26 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - name: Install stable tooling Roc and latest nightly
+        id: roc
+        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
         with:
-          python-version: "3.13"
-
-      - name: Install checksum-pinned Roc nightly
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          roc_bin_dir="$(python3 scripts/install_roc.py --install-dir "$RUNNER_TEMP/roc-nightly")"
-          echo "$roc_bin_dir" >> "$GITHUB_PATH"
+          version: stable-and-nightly
 
       - id: docs
         name: Build HTML, PDF, and API documentation
-        uses: lukewilliamboswell/roc-automation/actions/build-docs@a0ce42bfc8cd7dd1d167c0db0a770fca1118951d # a0ce42b
+        uses: lukewilliamboswell/roc-automation/actions/build-docs@a2b4d8abc967952b59fc751345efd144cbc0fbfc # a2b4d8a
         with:
           pdf-filename: roc-fuzz.pdf
           docs-version: trunk
           api-entrypoint: platform/main.roc
+          roc-command: ${{ steps.roc.outputs.nightly-executable }}
 
       - name: Audit the generated API reference
-        run: python3 scripts/check_docs.py "${{ steps.docs.outputs.site-directory }}/api"
+        env:
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
+        run: scripts/check_docs.roc -- "${{ steps.docs.outputs.site-directory }}/api"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5

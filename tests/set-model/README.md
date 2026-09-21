@@ -33,14 +33,14 @@ lists in each retained representative. `setOps` uses ordinary U8 hashing.
 Build and replay deterministic seeds with the compiler under test:
 
 ```sh
-ROC=/path/to/roc python3 scripts/test.py --operation seed \
+ROC_NIGHTLY=/path/to/roc scripts/test_targets.roc -- --operation seed \
   --target setOps --target setCollisions
 ```
 
 Run five minutes per target (the test driver runs targets sequentially):
 
 ```sh
-ROC=/path/to/roc python3 scripts/test.py --operation fuzz \
+ROC_NIGHTLY=/path/to/roc scripts/test_targets.roc -- --operation fuzz \
   --target setOps --target setCollisions --max-total-time 300
 ```
 

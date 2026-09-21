@@ -9,7 +9,7 @@ or libFuzzer; the generated files themselves are not stored in Git.
 Regenerate them from the repository root with:
 
 ```sh
-python3 scripts/build_platform.py --target arm64mac
+scripts/build_platform.roc -- --target arm64mac
 ```
 
 The default verifies released library digests and attestations, then builds the

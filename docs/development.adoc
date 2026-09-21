@@ -17,20 +17,18 @@ translates the friendly runner commands.
 Normal documentation, Roc source validation, target builds, and
 packaging require only:
 
-* the Roc compiler selected by the platform and application headers;
-* Python 3.12 or newer.
+* stable Roc for the repository's typed tooling; and
+* the nightly Roc compiler selected by the platform and application headers.
 
 Native libraries have an independent release cycle; `libhost.a` is built
 with each platform update. Source development requires Zig 0.16.0. The builder
 uses `zig ar`.
 
-Exact compiler versions live in the platform and application header
-`roc` fields. The shared updater changes only those pins, preserving
-published URLs. The installer verifies archives against SHA-256 digests
-returned by GitHub for the exact upstream release. These digests are no
-longer committed beside a duplicate `.roc-version`; independently
-recorded digests can be supplied using
-`install_roc.py --checksums-file`.
+Exact project compiler versions live in the platform and application header
+`roc` fields. The shared updater changes only those pins, preserving published
+URLs. Repository scripts use `ROC_STABLE` and `ROC_NIGHTLY` when set, then fall
+back to the `roc-stable` and `roc-nightly` commands installed by
+`lukewilliamboswell/setup-roc`.
 
 == Generate platform inputs
 
@@ -38,7 +36,7 @@ Generate the current host's ignored inputs with:
 
 [source,sh]
 ----
-python3 scripts/build_platform.py
+scripts/build_platform.roc
 ----
 
 Pass `--target x64musl` or `--target arm64mac` explicitly in automation.
@@ -49,8 +47,8 @@ attestation service during routine restoration. Never commit generated archives,
 objects, or manifests.
 
 During initial bootstrap, the lock intentionally has no published
-release. Use `--libraries source` explicitly with `build_platform.py`,
-`test_local.py`, or `run.py` until adopting the first release. This
+release. Use `--libraries source` explicitly with `build_platform.roc`
+or `run_target.roc` until adopting the first release. This
 compiles pinned libFuzzer and Zig runtimes locally. CI's temporary
 source-build flags must be removed in the same reviewed change that
 adopts the published lock.
@@ -96,9 +94,8 @@ Regenerate glue only when the Roc natural ABI changes:
 
 [source,sh]
 ----
-export ROC_SOURCE="$PWD/../roc-worktrees/roc-fuzz-sancov"
-export ROC="$ROC_SOURCE/zig-out/bin/roc"
-python3 scripts/build_platform.py --regenerate-glue
+export ROC_NIGHTLY="$HOME/roc_nightly-linux_x86_64-2026-09-19-d025939/roc"
+scripts/build_platform.roc -- --regenerate-glue
 ----
 
 Review the generated Zig diff and rebuild every example after
@@ -111,20 +108,20 @@ the narrowest useful layer. Changes to public behavior also update the relevant
 examples, interface documentation, or report schema. A pull request should
 explain the behavior changed and the validation performed.
 
-Use the compiler under development through `ROC`:
+Use the compiler under development through `ROC_NIGHTLY`:
 
 [source,sh]
 ----
-export ROC=/path/to/roc
-python3 scripts/test_local.py --operation validate --verbose
-python3 scripts/test_local.py --operation build --verbose
-python3 scripts/test_local.py --operation seed
-python3 scripts/test_local.py --operation fuzz --max-total-time 2
+export ROC_NIGHTLY=/path/to/roc
+scripts/test_targets.roc -- --operation check --verbose
+scripts/test_targets.roc -- --operation build --verbose
+scripts/test_targets.roc -- --operation seed
+scripts/test_targets.roc -- --operation fuzz --max-total-time 2
 ----
 
-`test_local.py` prepares the current host inputs, packages the
-working-tree platform, serves it from an ephemeral localhost port, and
-asks `test.py` to use temporary rewritten copies of every example.
+`check_all.roc` prepares the current host inputs and validates the working-tree
+platform and every example. `test_targets.roc` provides the focused operations
+shown above.
 Checked-in example declarations remain pinned to a published release,
 while local and CI runs exercise unreleased platform changes. Validation
 checks the exact example inventory, Roc formatting and types. After
@@ -139,7 +136,7 @@ Build the HTML manual, PDF, and generated API reference with:
 
 [source,sh]
 ----
-python3 scripts/build_docs.py
+scripts/build_docs.roc
 ----
 
 The command fetches the immutable shared renderer from `roc-automation`, uses
@@ -151,7 +148,7 @@ same build and audit.
 
 Every example runs the `check`, `test`, `build`, `seed`, and `fuzz`
 stages by default. A temporary exception must use a `skip` entry in
-`test_spec.json` with both a concrete reason and a full GitHub issue
+`tests/targets.json` with both a concrete reason and a full GitHub issue
 URL. The driver rejects unexplained skips; skipping a prerequisite also
 requires skipping its dependent stages.
 
@@ -178,7 +175,7 @@ notices. Pin the cost with `Fuzz.expect_allocs_at_most!` or
 effects. The `check` stage requires one of those assertion helpers; raw
 counter reads, measurements, and leak-only checks do not satisfy the
 policy. A target that genuinely cannot assert on cost belongs in
-`ALLOCATION_ASSERTION_EXEMPT` in `scripts/test.py` with a concrete
+the allocation-assertion exemptions in `scripts/test_targets.roc` with a concrete
 reason.
 
 Assert on a difference between two counter reads, never on a raw value:
@@ -206,18 +203,18 @@ with:
 
 [source,sh]
 ----
-python3 scripts/bundle.py --output-dir dist
+scripts/build_bundle.roc -- --output-dir dist
 ----
 
-`bundle.py` verifies the pinned Roc version and every generated input
-checksum, then includes the archives and license notices in
+`build_bundle.roc` verifies every generated input checksum, then includes the
+archives and license notices in
 `roc bundle`. Production release jobs build both hosts on native hosted
 runners before bundling. Test the resulting bundle from an external
 target with:
 
 [source,sh]
 ----
-python3 scripts/test_bundle.py dist/<bundle>.tar.zst
+scripts/test_bundle.roc -- dist/<bundle>.tar.zst
 ----
 
 Production releases use the `Release` workflow. From the repository's

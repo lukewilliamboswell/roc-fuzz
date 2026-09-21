@@ -6,8 +6,6 @@
 /failureArtifact
 /.test-cache
 /.docs-out
-__pycache__/
-*.pyc
 *.ll
 *.bc
 *.o

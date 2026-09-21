@@ -112,7 +112,7 @@ jobs:
           test -n "$pin"
           printf 'ROC_NIGHTLY_TAG=%s\n' "$pin" >> "$GITHUB_ENV"
 
-      - uses: roc-lang/setup-roc@cbe782d6f165b89c87d99f50a59ac4f5f73b4427
+      - uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
         with:
           version: nightly-new-compiler
           nightly-tag: ${{ env.ROC_NIGHTLY_TAG }}

@@ -14,8 +14,9 @@ examples or interface documentation when behavior changes. Follow
 Build the manual and generated API reference locally with:
 
 ```sh
-python3 scripts/build_docs.py
+scripts/build_docs.roc
 ```
 
-The command requires Docker and the Roc compiler selected by `ROC` or available
-as `roc` on `PATH`.
+The command requires Docker, `roc-stable` for repository tooling, and
+`roc-nightly` for project sources. Set `ROC_STABLE` and `ROC_NIGHTLY` to use
+explicit compiler paths.
