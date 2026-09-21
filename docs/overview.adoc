@@ -1,4 +1,4 @@
-= What roc-fuzz provides
+= Background and context
 
 `roc-fuzz` is a typed, coverage-guided software-quality platform for
 Roc. It supports Linux x86-64 with musl and Apple Silicon macOS (macOS
@@ -18,22 +18,7 @@ and the small Roc ABI/command adapter. A normal run needs no Cargo
 project, external harness, or second linking step. It is bounded to 60
 seconds by default and keeps its corpus under `.roc-fuzz/`.
 
-== Origins and acknowledgments
-
-The foundational and exploratory work for roc-fuzz was created by
-https://github.com/bhansconnect[Brendan Hansknecht]. Brendan established
-the original Roc fuzzing integration, arbitrary input machinery,
-quality-target suite, and the early
-https://github.com/lukewilliamboswell/roc-fuzz/blob/trunk/trophy-case/README.md[trophy
-case] demonstrating the bugs this approach could find.
-
-The platform in this repository extends Brendan's experiment into a more
-idiomatic modern Roc workflow: typed generators, statically dispatched
-`generator_for` methods, record builders, and a self-contained
-executable built directly with `roc build --fuzz`. This work would not
-exist without the foundation he developed.
-
-== Define a typed target
+== The target model
 
 The application exposes `target : Target`. Its input type can provide a
 statically dispatched `generator_for` method:
@@ -155,6 +140,21 @@ workflow.
 Rejection-rate reporting remains a follow-up. `Fuzz.reject` already
 records the distinction in the typed target boundary so the runner can
 expose that metric.
+
+== Origins and acknowledgments
+
+The foundational and exploratory work for roc-fuzz was created by
+https://github.com/bhansconnect[Brendan Hansknecht]. Brendan established
+the original Roc fuzzing integration, arbitrary input machinery,
+quality-target suite, and the early
+https://github.com/lukewilliamboswell/roc-fuzz/blob/trunk/trophy-case/README.md[trophy
+case] demonstrating the bugs this approach could find.
+
+The platform in this repository extends Brendan's experiment into a more
+idiomatic modern Roc workflow: typed generators, statically dispatched
+`generator_for` methods, record builders, and a self-contained
+executable built directly with `roc build --fuzz`. This work would not
+exist without the foundation he developed.
 
 Continue with the xref:getting-started.adoc[beginner guide] for target design
 and the normal workflow. The xref:advanced.adoc[advanced guide] covers campaign
