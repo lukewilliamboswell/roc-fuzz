@@ -164,24 +164,18 @@ while the scheduled workflow gives each target fifteen minutes. Keep
 normal unit and regression tests on every change as well; a fuzz corpus
 is not a correctness oracle by itself.
 
-== OpenSSF evidence and coverage limits
+== Coverage limits
 
-These artifacts provide reviewable evidence that a FLOSS
-dynamic-analysis tool ran with explicit bounds and assertions, and that
-findings were retained. They can support a project's self-assessment for
-the OpenSSF Best Practices dynamic analysis criteria. OpenSSF Scorecard
-recognition is a separate source-level detection concern; roc-fuzz
-support must be added upstream to Scorecard.
+These artifacts provide reviewable evidence that dynamic analysis ran with
+explicit bounds and assertions, and that findings were retained. They do not
+measure source coverage.
 
 libFuzzer's `cov` and `ft` values are search-feedback counts from LLVM
 SanitizerCoverage. They have no source denominator and are not statement
-or branch percentages. Do not use them to claim the Best Practices
-Silver 80% statement threshold or Gold 90% statement/80% branch
-thresholds.
+or branch percentages. Do not report them as either kind of percentage.
 
 True Roc source coverage requires the Roc compiler to emit LLVM profile
 instrumentation and coverage mappings, link the matching profile
-runtime, and preserve stable source paths. Until that compiler work
-ships, the appropriate badge response is that no FLOSS source-coverage
-measurement tool currently exists for pure Roc code, with this
-limitation linked as the justification.
+runtime, and preserve stable source paths. Until that compiler work ships,
+roc-fuzz can report search progress and retained evidence but cannot provide a
+Roc source-coverage percentage.

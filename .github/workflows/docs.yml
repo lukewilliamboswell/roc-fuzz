@@ -37,7 +37,7 @@ jobs:
 
       - id: docs
         name: Build HTML, PDF, and API documentation
-        uses: lukewilliamboswell/roc-automation/actions/build-docs@a2b4d8abc967952b59fc751345efd144cbc0fbfc # a2b4d8a
+        uses: lukewilliamboswell/roc-automation/actions/build-docs@b15d4a59ec84347da153e47543579d8679129ad7 # b15d4a5
         with:
           pdf-filename: roc-fuzz.pdf
           docs-version: trunk

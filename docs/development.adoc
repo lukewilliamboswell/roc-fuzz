@@ -105,6 +105,11 @@ regeneration.
 
 == Validation
 
+Every bug fix and significant new behavior should include an automated test at
+the narrowest useful layer. Changes to public behavior also update the relevant
+examples, interface documentation, or report schema. A pull request should
+explain the behavior changed and the validation performed.
+
 Use the compiler under development through `ROC`:
 
 [source,sh]

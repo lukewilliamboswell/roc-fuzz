@@ -13,6 +13,20 @@ This page covers the normal workflow. See xref:advanced.adoc[Advanced
 fuzzing] when you need to tune libFuzzer, manage a long-lived corpus, or
 understand the in-process execution model.
 
+== Obtain roc-fuzz
+
+Install the Roc compiler named by the application header, then use an immutable
+roc-fuzz platform URL from the
+https://github.com/lukewilliamboswell/roc-fuzz/releases[GitHub release] you have
+selected. Each release identifies its supported compiler and includes the
+platform bundle, checksums, provenance, PDF manual, and archived HTML site.
+
+The complete target below contains a released platform URL in its `app` header.
+`roc build --fuzz` downloads that immutable bundle through Roc's normal package
+mechanism; there is no separate roc-fuzz executable or installer. For a new
+project, replace the example URL only when selecting a different published
+release, and keep the compiler declared by the target compatible with it.
+
 == The target API
 
 A fuzz target has four parts:
