@@ -35,12 +35,13 @@ smoke_test! = |bundle, roc_nightly| {
 	}
 
 	filename = Path.filename(bundle).map_ok(Path.display).map_err(|_| InvalidBundlePath(Path.display(bundle)))?
+	roc_app_opt = Script.roc_app_opt!()
 	BundleServer.with!(
 		filename,
 		Path.read_bytes!(bundle)?,
 		|server| {
 			child = roc_nightly.cmd([
-				"--opt=dev",
+				roc_app_opt,
 				"scripts/test_targets.roc",
 				"--",
 				"--operation",

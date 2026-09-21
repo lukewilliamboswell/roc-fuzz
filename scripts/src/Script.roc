@@ -29,6 +29,7 @@ Script := [].{
 
 	roc_stable! = || command_from_env!("ROC_STABLE", "roc-stable")
 	roc_nightly! = || command_from_env!("ROC_NIGHTLY", "roc-nightly")
+	roc_app_opt! = || if Env.platform!().os == MACOS "--opt=speed" else "--opt=dev"
 
 	env_str! = |name|
 		Env.var_str!(name).map_err(|err| EnvironmentInputError(OsStr.display(name), err))
