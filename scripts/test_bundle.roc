@@ -40,7 +40,7 @@ smoke_test! = |bundle, roc_nightly| {
 		Path.read_bytes!(bundle)?,
 		|server| {
 			child = roc_nightly.cmd([
-				"--opt=speed",
+				"-j1",
 				"scripts/test_targets.roc",
 				"--",
 				"--operation",

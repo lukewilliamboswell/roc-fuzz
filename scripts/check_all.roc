@@ -43,7 +43,7 @@ check_platform! = |nightly| {
 
 check_fuzz_targets! = |nightly| {
 	Script.info!("CHECK", "Type-checking every fuzz target in tests/targets.json")?
-	nightly.run!(["--opt=speed", "scripts/test_targets.roc", "--", "--operation", "check"])
+	nightly.run!(["-j1", "scripts/test_targets.roc", "--", "--operation", "check"])
 }
 
 check_worktree! = || {
