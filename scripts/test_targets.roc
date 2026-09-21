@@ -1,4 +1,4 @@
-#!/usr/bin/env -S roc-nightly --opt=interpreter
+#!/usr/bin/env -S roc-nightly --opt=dev
 app [main!] {
 	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.23.0-rc1/3hT3SoHZ6qbEsa9qVFLUW3547U5LeoNd1KbpqLpz4r1i.tar.zst",
 	ascii: "https://github.com/Hasnep/roc-ascii/releases/download/v0.5.0/5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H.tar.zst",
@@ -11,7 +11,6 @@ app [main!] {
 import cli.Env
 import cli.OsStr
 import cli.Path
-import cli.Url
 import weaver.Cli
 import weaver.Opt
 import src/CliValues
@@ -26,6 +25,26 @@ RawCase : { expected_failure : Bool, name : Str, path : Str, seed_hex : Str, ski
 
 TestCase := { expected_failure : Bool, name : Str, path : Path, seed : List(U8), skip_fuzz : Bool, skip_seed : Bool }.{}
 
+PlatformUrl :: Str.{
+	parse = |value| {
+		remainder = if Script.starts_with(value, "http://") {
+			value.to_utf8().drop_first(7)
+		} else if Script.starts_with(value, "https://") {
+			value.to_utf8().drop_first(8)
+		} else {
+			return Err(InvalidPlatformUrl(value))
+		}
+		authority = Str.from_utf8_lossy(remainder).split_on("/").first().map_err(|_| InvalidPlatformUrl(value))?
+		if authority.is_empty() or value.contains(" ") {
+			Err(InvalidPlatformUrl(value))
+		} else {
+			Ok(PlatformUrl.(value))
+		}
+	}
+
+	to_str = |PlatformUrl.(value)| value
+}
+
 main! = |raw_args| {
 	cli_options = match WeaverCli.parse!(cli_parser, raw_args)? {
 		Run(parsed) => parsed
@@ -37,7 +56,7 @@ main! = |raw_args| {
 	match cli_options.platform_url {
 		Ok(url) => Env.with_temp_dir!(
 			|temporary| {
-				local = prepare_platform_tests!(temporary, selected, Url.to_str(url))?
+				local = prepare_platform_tests!(temporary, selected, url.to_str())?
 				run_operation!(cli_options.operation, cli_options.max_total_time, cli_options.verbose, roc_nightly, local)
 			},
 		)
@@ -78,8 +97,8 @@ operation_from_str = |value|
 		other => Err(UnknownOperation(other))
 	}
 
-parse_url : _ -> Try(Url, [InvalidNumStr, InvalidValue(Str), InvalidUtf8])
-parse_url = |argument| CliValues.parse(argument, Url.parse, "expected an absolute HTTP or HTTPS URL")
+parse_url : _ -> Try(PlatformUrl, [InvalidNumStr, InvalidValue(Str), InvalidUtf8])
+parse_url = |argument| CliValues.parse(argument, PlatformUrl.parse, "expected an absolute HTTP or HTTPS URL")
 
 load_inventory! = |path| {
 	raw : { cases : List(RawCase) }
