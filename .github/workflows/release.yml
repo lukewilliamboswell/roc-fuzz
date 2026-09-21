@@ -352,7 +352,7 @@ jobs:
 
       - id: docs
         name: Build versioned HTML, PDF, and API documentation
-        uses: lukewilliamboswell/roc-automation/actions/build-docs@b432f89a4338e4f685a8301f4f0be489bfe049e4 # b432f89
+        uses: lukewilliamboswell/roc-automation/actions/build-docs@a0ce42bfc8cd7dd1d167c0db0a770fca1118951d # a0ce42b
         with:
           pdf-filename: roc-fuzz.pdf
           docs-version: ${{ needs.release-info.outputs.release_version || 'unreleased' }}
