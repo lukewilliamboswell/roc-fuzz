@@ -242,7 +242,7 @@ set might include one target per parser, encoder/decoder pair, state transition,
 or important business invariant. There is no need to fuzz every function.
 
 The xref:campaigns.adoc[campaign guide] explains corpora, tuning, and unstable
-failures. The xref:internals.adoc[expert guide] covers generator dispatch,
+failures. The xref:internals.adoc[advanced guide] covers generator dispatch,
 allocation assertions, and the low-level engine interface. Run `TARGET --help`
 for the command summary and browse the link:api/index.html[generated API
 reference] for generator, combinator, and target signatures.

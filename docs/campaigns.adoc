@@ -2,7 +2,7 @@
 
 After the first target works, use these goal-oriented guides to choose bounds,
 interpret status output, retain useful inputs, investigate unstable failures,
-and prepare longer searches. The xref:internals.adoc[expert guide] covers the
+and prepare longer searches. The xref:internals.adoc[advanced guide] covers the
 embedded engine and target implementation details.
 
 == Tune a run
@@ -230,5 +230,5 @@ not this seed alone.
 The `ci` command also accepts provenance fields including `--source-revision`,
 `--roc-version`, `--platform-release`, and `--platform-sha256`. See
 xref:quality.adoc[Add fuzzing to CI] for their use and the report layout. The
-xref:internals.adoc#use-the-libfuzzer-interface[raw engine command] is an expert
-escape hatch rather than part of the normal interface.
+xref:internals.adoc#use-the-libfuzzer-interface[raw engine command] is an
+advanced escape hatch rather than part of the normal interface.

@@ -109,7 +109,7 @@ target = Fuzz.target({
 ----
 
 Both forms produce the same kind of typed target. The
-xref:internals.adoc#understand-generator-dispatch[expert explanation] describes
+xref:internals.adoc#understand-generator-dispatch[advanced explanation] describes
 how Roc resolves `generator_for`; using the pattern does not require knowing its
 implementation.
 

@@ -1,4 +1,4 @@
-= Understand roc-fuzz internals and expert features
+= Understand roc-fuzz internals and advanced features
 
 This chapter explains the runtime model, reusable generator dispatch,
 allocation assertions, and the low-level libFuzzer escape hatch. Application

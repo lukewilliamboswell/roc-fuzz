@@ -8,9 +8,11 @@ attaches signed provenance, an SPDX SBOM, exported attestations and
 checksums to `native-libs-vX.Y.Z` releases.
 
 Platform builds restore the reviewed `native-libraries.lock.json`
-archives, verify their SHA-256 digests and the native workflow's
-attestation at the locked source revision, and build fresh hosts. Cached
-archives are verified on reuse. The first library release still needs
+archives, verify their SHA-256 digests, validate their locked release and source
+identity, and build fresh hosts. The reviewed content hash is the trust anchor,
+so routine restores do not contact GitHub's attestation service. Cached archives
+are verified on reuse. The native workflow's attestation is checked when a new
+lock is reviewed and adopted. The first library release still needs
 bootstrapping; CI explicitly builds from source until its lock is
 adopted. See
 xref:development.adoc#generate-platform-inputs[native-library setup].

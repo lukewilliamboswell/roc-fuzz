@@ -19,7 +19,6 @@ from generate_sbom import native_license, native_version, package
 
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY = "lukewilliamboswell/roc-fuzz"
-WORKFLOW = "native-libraries.yml"
 LOCK = ROOT / "native-libraries.lock.json"
 VERSION_PATTERN = re.compile(r"native-libs-v[0-9]+\.[0-9]+\.[0-9]+")
 METADATA = {"SHA256SUMS", "build.json", "LICENSE", "THIRD_PARTY_LICENSES.md"}
@@ -89,13 +88,8 @@ def restore(spec: TargetSpec) -> None:
             downloaded.replace(archive)
     if digest(archive) != entry["sha256"]:
         raise ValueError("cached native-library archive checksum mismatch")
-    # Verify cached archives too; a cache entry is never a source of trust.
-    subprocess.run([
-        "gh", "attestation", "verify", str(archive), "--repo", REPOSITORY,
-        "--signer-workflow", f"{REPOSITORY}/.github/workflows/{WORKFLOW}",
-        "--source-digest", lock["source_revision"],
-        "--deny-self-hosted-runners",
-    ], check=True)
+    # The reviewed lock's content digest is the trust anchor for routine builds.
+    # Attestation is checked when that lock is adopted, not on every restore.
     with tempfile.TemporaryDirectory(prefix="roc-fuzz-native-") as temporary:
         staging = Path(temporary)
         metadata = extract(archive, staging, spec)

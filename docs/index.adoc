@@ -28,7 +28,7 @@ Ready to try it:: Follow <<fuzz-your-first-function>> to test a small Roc module
 and work through a saved failure.
 Longer campaign:: Continue with <<run-and-maintain-fuzzing-campaigns>> for
 bounds, corpora, status output, and failure diagnosis.
-Expert user:: Read <<understand-roc-fuzz-internals-and-expert-features>> for the
+Advanced use:: Read <<understand-roc-fuzz-internals-and-advanced-features>> for the
 runtime model, allocation assertions, generator dispatch, and raw engine options.
 Downstream maintainer:: Read <<add-fuzzing-to-ci>> for a bounded GitHub Actions
 pattern and its report contract.

@@ -79,7 +79,7 @@ class NativeLibrariesTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not bootstrapped"):
             native.read_lock(lock)
 
-    def test_restore_checks_cached_digest_before_attestation_or_install(self):
+    def test_restore_checks_cached_digest_before_install(self):
         entry = {"archive": "test.tar.gz", "sha256": "a" * 64}
         archive = self.root / ".test-cache/native-libraries" / entry["sha256"] / entry["archive"]
         archive.parent.mkdir(parents=True)
@@ -94,21 +94,7 @@ class NativeLibrariesTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "lacks released-library provenance"):
                 native.require_release_inputs()
 
-    def test_failed_attestation_never_installs(self):
-        archive = self.archive()
-        checksum = digest(archive)
-        cached = self.root / ".test-cache/native-libraries" / checksum / archive.name
-        cached.parent.mkdir(parents=True)
-        cached.write_bytes(archive.read_bytes())
-        lock = {"source_revision": "b" * 40, "targets": {"x64musl": {"archive": archive.name, "sha256": checksum}}}
-        with patch.object(native, "ROOT", self.root), patch.object(native, "read_lock", return_value=lock), patch.object(native.subprocess, "run", side_effect=RuntimeError("untrusted signer")) as run:
-            with self.assertRaisesRegex(RuntimeError, "untrusted"):
-                native.restore(self.spec)
-            self.assertIn("--signer-workflow", run.call_args.args[0])
-            self.assertIn("--source-digest", run.call_args.args[0])
-            self.assertFalse((self.root / "platform").exists())
-
-    def test_verified_restore_preserves_host_and_records_provenance(self):
+    def test_content_pinned_restore_preserves_host_without_attestation_service(self):
         metadata = {"target": self.spec.roc_name, "zig_target": self.spec.zig_target,
                     "release": "native-libs-v1.0.0", "source_revision": "b" * 40}
         archive = self.archive({"build.json": json.dumps(metadata).encode()})
@@ -122,7 +108,7 @@ class NativeLibrariesTests(unittest.TestCase):
         (directory / "libhost.a").write_bytes(b"current host")
         with patch.object(native, "ROOT", self.root), patch.object(native, "read_lock", return_value=lock), patch.object(native.subprocess, "run") as run:
             native.restore(self.spec)
-            run.assert_called_once()
+            run.assert_not_called()
         self.assertEqual((directory / "libhost.a").read_bytes(), b"current host")
         self.assertEqual((directory / "libfuzzer.a").read_bytes(), b"libfuzzer.a")
         provenance = json.loads((directory / "NATIVE_LIBRARIES.json").read_text())
