@@ -17,8 +17,7 @@ translates the friendly runner commands.
 Normal documentation, Roc source validation, target builds, and
 packaging require only:
 
-* a Roc compiler containing
-https://github.com/roc-lang/roc/pull/10657[roc-lang/roc#10657];
+* the Roc compiler selected by the platform and application headers;
 * Python 3.12 or newer.
 
 Native libraries have an independent release cycle; `libhost.a` is built

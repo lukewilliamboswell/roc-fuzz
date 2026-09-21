@@ -18,9 +18,6 @@ and the small Roc ABI/command adapter. A normal run needs no Cargo
 project, external harness, or second linking step. It is bounded to 60
 seconds by default and keeps its corpus under `.roc-fuzz/`.
 
-This platform requires the compiler coverage implementation from
-https://github.com/roc-lang/roc/pull/10657[roc-lang/roc#10657].
-
 == Origins and acknowledgments
 
 The foundational and exploratory work for roc-fuzz was created by
