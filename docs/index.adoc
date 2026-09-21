@@ -20,8 +20,8 @@ link:api/index.html[Browse the generated API reference] ·
 link:roc-fuzz.pdf[Download the standalone PDF manual].
 endif::[]
 
-== Choose a path
-
+.How to use this manual
+****
 New target author:: Start with <<fuzzing-your-first-roc-target>>.
 Experienced fuzzing user:: Continue with <<advanced-fuzzing>> for generator
 dispatch, allocation assertions, corpora, tuning, and raw libFuzzer options.
@@ -30,6 +30,7 @@ the report contract and bounded GitHub Actions pattern.
 Release verifier:: Read <<release-bundle-provenance>>.
 Platform contributor:: Read <<contributing-to-roc-fuzz>> for toolchains,
 validation, packaging, and release behavior.
+****
 
 include::overview.adoc[leveloffset=+1]
 
