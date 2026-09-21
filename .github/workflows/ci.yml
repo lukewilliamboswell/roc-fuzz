@@ -14,6 +14,9 @@ on:
 permissions:
   contents: read
 
+env:
+  RUST_MIN_STACK: 16777216
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -39,11 +42,9 @@ jobs:
         env:
           ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
           ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
-        run: |
-          roc_opt=dev
-          if test "$RUNNER_OS" = macOS; then roc_opt=speed; fi
-          "$ROC_NIGHTLY" "--opt=$roc_opt" scripts/test_targets.roc -- \
-            --operation all --max-total-time 1 --verbose
+        run: >-
+          "$ROC_NIGHTLY" --opt=dev scripts/test_targets.roc --
+          --operation all --max-total-time 1 --verbose
 
   self-contained-runner:
     strategy:

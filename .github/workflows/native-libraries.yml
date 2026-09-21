@@ -22,6 +22,10 @@ on:
       - THIRD_PARTY_LICENSES.md
 
 permissions: {}
+
+env:
+  RUST_MIN_STACK: 16777216
+
 concurrency:
   group: native-libraries-${{ github.ref }}
   cancel-in-progress: false
