@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "repository": "lukewilliamboswell/roc-fuzz",
-  "roc_stable": "nightly-2026-09-10-a670e34",
+  "roc_stable": "nightly-2026-09-18-1d982dc",
   "roc_nightly": "nightly-2026-09-19-d025939",
   "setup_roc_revision": "89a8a2945bd107f27b160096b3af7f52d2d78369",
   "package_urls": {

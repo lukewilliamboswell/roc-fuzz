@@ -4,7 +4,7 @@ app [main!] {
 	ascii: "https://github.com/Hasnep/roc-ascii/releases/download/v0.5.0/5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H.tar.zst",
 	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
-	roc: "nightly-2026-09-10-a670e34",
+	roc: "nightly-2026-09-18-1d982dc",
 }
 
 import cli.Path
@@ -43,7 +43,7 @@ validate_script_headers! = |root, dependencies| {
 	scripts = Files.direct_files!(Path.join(root, "scripts"))?.keep_if(|path| Path.ext(path).map_ok(Path.display) == Ok("roc"))
 	for path in scripts {
 		source = Path.read_utf8!(path)?
-		tooling_roc = if Script.ends_with(Path.display(path), "scripts/test_targets.roc") dependencies.roc_nightly else dependencies.roc_stable
+		tooling_roc = dependencies.roc_stable
 		for (label, identity) in [
 			("cli: platform", dependencies.package_urls.basic_cli),
 			("ascii:", dependencies.package_urls.ascii),

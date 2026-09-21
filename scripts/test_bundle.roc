@@ -5,11 +5,10 @@ app [main!] {
 	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst",
 	arg_path: "https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
-	roc: "nightly-2026-09-10-a670e34",
+	roc: "nightly-2026-09-18-1d982dc",
 }
 
 import cli.OsStr
-import cli.Env
 import cli.Path
 import cli.Stderr
 import weaver.Cli
@@ -25,26 +24,22 @@ main! = |raw_args| {
 		Exit => return Ok({})
 	}
 	bundle = Path.absolute!(bundle_path)?
-	roc_nightly = Script.roc_nightly!()?
-	filename = smoke_test!(bundle, roc_nightly)?
+	roc_stable = Script.roc_stable!()?
+	filename = smoke_test!(bundle, roc_stable)?
 	Script.pass!("Bundle smoke test passed: ${filename}")
 }
 
-smoke_test! = |bundle, roc_nightly| {
+smoke_test! = |bundle, roc_stable| {
 	if !Path.is_file!(bundle)? or !Script.ends_with(Path.display(bundle), ".tar.zst") {
 		return Err(ExpectedBundle(Path.display(bundle)))
 	}
 
 	filename = Path.filename(bundle).map_ok(Path.display).map_err(|_| InvalidBundlePath(Path.display(bundle)))?
-	if Env.platform!().os == MACOS {
-		Script.warn!("Skipping bundle execution because the pinned Roc compiler crashes while compiling the target runner on Apple Silicon.")?
-		return Ok(filename)
-	}
 	BundleServer.with!(
 		filename,
 		Path.read_bytes!(bundle)?,
 		|server| {
-			child = roc_nightly.cmd([
+			child = roc_stable.cmd([
 				"--opt=dev",
 				"scripts/test_targets.roc",
 				"--",

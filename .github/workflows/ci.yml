@@ -36,19 +36,12 @@ jobs:
         with:
           version: stable-and-nightly
       - name: Test committed URLs from a fresh cache
-        if: runner.os != 'macOS'
         env:
           ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
           ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
         run: >-
-          "$ROC_NIGHTLY" --opt=dev scripts/test_targets.roc --
+          "$ROC_STABLE" --opt=dev scripts/test_targets.roc --
           --operation all --max-total-time 1 --verbose
-
-      - name: Type-check the target runner on macOS
-        if: runner.os == 'macOS'
-        env:
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
-        run: "$ROC_NIGHTLY" check scripts/test_targets.roc
 
   self-contained-runner:
     strategy:
