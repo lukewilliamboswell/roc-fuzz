@@ -1,0 +1,44 @@
+= roc-fuzz: Typed coverage-guided fuzzing for Roc
+:doctype: book
+:author: The roc-fuzz contributors
+:revnumber: {docs-version}
+:revremark: Linux x86-64 with musl and Apple Silicon macOS
+:toc: left
+:toclevels: 3
+:sectnums:
+:sectanchors:
+:icons: font
+:source-highlighter: rouge
+
+[.lead]
+roc-fuzz packages a typed Roc target and libFuzzer into one self-contained
+executable. This manual covers target design, failure investigation, sustained
+campaigns, CI evidence, release verification, and development of the platform.
+
+ifdef::backend-html5[]
+link:api/index.html[Browse the generated API reference] ·
+link:roc-fuzz.pdf[Download the standalone PDF manual].
+endif::[]
+
+== Choose a path
+
+New target author:: Start with <<fuzzing-your-first-roc-target>>.
+Experienced fuzzing user:: Continue with <<advanced-fuzzing>> for generator
+dispatch, allocation assertions, corpora, tuning, and raw libFuzzer options.
+Downstream maintainer:: Read <<fuzzing-evidence-for-downstream-projects>> for
+the report contract and bounded GitHub Actions pattern.
+Release verifier:: Read <<release-bundle-provenance>>.
+Platform contributor:: Read <<contributing-to-roc-fuzz>> for toolchains,
+validation, packaging, and release behavior.
+
+include::overview.adoc[leveloffset=+1]
+
+include::getting-started.adoc[leveloffset=+1]
+
+include::advanced.adoc[leveloffset=+1]
+
+include::quality.adoc[leveloffset=+1]
+
+include::provenance.adoc[leveloffset=+1]
+
+include::development.adoc[leveloffset=+1]

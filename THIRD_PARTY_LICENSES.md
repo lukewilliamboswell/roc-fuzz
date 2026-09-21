@@ -22,3 +22,9 @@ lukewilliamboswell/roc-automation at revision
 `e5b83ace37e0d0cb4e9fadb93cefb364f2cd6611`.
 Copyright © 2026 Luke Boswell. Licensed under the Universal Permissive License
 (UPL), Version 1.0; see the [upstream license](https://github.com/lukewilliamboswell/roc-automation/blob/e5b83ace37e0d0cb4e9fadb93cefb364f2cd6611/LICENSE).
+
+The generated HTML and PDF documentation uses the shared documentation action
+from roc-automation at revision
+`a2b4d8abc967952b59fc751345efd144cbc0fbfc`. Its Space Grotesk and Plus
+Jakarta Sans fonts are licensed under the SIL Open Font License 1.1. Generated
+sites retain both complete font license texts beside the redistributed files.

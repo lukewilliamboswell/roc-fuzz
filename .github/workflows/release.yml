@@ -36,7 +36,6 @@ jobs:
       contents: read
     outputs:
       release_version: ${{ steps.validate.outputs.release_version }}
-      docs_version: ${{ steps.validate.outputs.docs_version }}
 
     steps:
       - name: Checkout
@@ -329,7 +328,7 @@ jobs:
           retention-days: 7
 
   build-docs:
-    name: Build API docs archive
+    name: Build release manual and API docs
     needs: release-info
     runs-on: ubuntu-24.04
     permissions:
@@ -351,38 +350,30 @@ jobs:
           roc_bin_dir="$(python3 scripts/install_roc.py --install-dir "$RUNNER_TEMP/roc-nightly")"
           echo "$roc_bin_dir" >> "$GITHUB_PATH"
 
-      - name: Create docs staging tree
-        run: mkdir -p docs-site
-
-      - name: Snapshot docs staging tree
-        uses: roc-lang/release-package/actions/docs-snapshot@d2560ead9f724bfaabfbc8134b8895e120171064 # main
+      - id: docs
+        name: Build versioned HTML, PDF, and API documentation
+        uses: lukewilliamboswell/roc-automation/actions/build-docs@a2b4d8abc967952b59fc751345efd144cbc0fbfc # a2b4d8a
         with:
-          docs_root: docs-site
+          pdf-filename: roc-fuzz.pdf
+          docs-version: ${{ needs.release-info.outputs.release_version || 'unreleased' }}
+          api-entrypoint: platform/main.roc
 
-      - name: Generate documented API
+      - name: Audit and archive release documentation
         env:
-          DOCS_VERSION: ${{ needs.release-info.outputs.docs_version }}
-          ROC_DOCS_URL_ROOT: /${{ github.event.repository.name }}/${{ needs.release-info.outputs.docs_version }}
+          DOCS_VERSION: ${{ needs.release-info.outputs.release_version || 'unreleased' }}
+          SITE: ${{ steps.docs.outputs.site-directory }}
+          PDF: ${{ steps.docs.outputs.pdf-path }}
         run: |
-          roc docs --output="docs-site/$DOCS_VERSION" platform/main.roc
-          python3 scripts/check_docs.py "docs-site/$DOCS_VERSION"
+          python3 scripts/check_docs.py "$SITE/api"
+          mkdir -p release-docs
+          cp "$PDF" "release-docs/roc-fuzz-$DOCS_VERSION.pdf"
+          (cd "$SITE" && zip -qr "$GITHUB_WORKSPACE/release-docs/roc-fuzz-docs-$DOCS_VERSION.zip" .)
 
-      - name: Validate versioned docs
-        uses: roc-lang/release-package/actions/docs-validate@d2560ead9f724bfaabfbc8134b8895e120171064 # main
-        with:
-          docs_root: docs-site
-          docs_version: ${{ needs.release-info.outputs.docs_version }}
-
-      - name: Archive versioned docs
-        env:
-          DOCS_VERSION: ${{ needs.release-info.outputs.docs_version }}
-        run: tar -czf docs.tar.gz -C docs-site "$DOCS_VERSION"
-
-      - name: Upload docs archive
+      - name: Upload release documentation
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: platform-docs
-          path: docs.tar.gz
+          path: release-docs/*
           if-no-files-found: error
           retention-days: 7
 
@@ -483,10 +474,11 @@ jobs:
           name: release-metadata
           path: .release
 
-      - name: Download docs archive
+      - name: Download release documentation
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: platform-docs
+          path: .release/docs
 
       - name: Download release supply-chain assets
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -499,7 +491,7 @@ jobs:
         run: |
           {
             echo 'paths<<EOF'
-            echo 'docs.tar.gz'
+            find .release/docs -maxdepth 1 -type f -print | sort
             find .release/supply-chain -maxdepth 1 -type f -print | sort
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
@@ -508,7 +500,7 @@ jobs:
         uses: roc-lang/release-package/actions/make-release-notes@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
           release_version: ${{ needs.release-info.outputs.release_version }}
-          docs_url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/${{ needs.release-info.outputs.docs_version }}/
+          docs_url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
           github_token: ${{ github.token }}
 
       - name: Publish release
@@ -531,7 +523,7 @@ jobs:
           # gh release create refuses an existing release; refuse an existing tag too.
           refs="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$RELEASE_VERSION")"
           test "$(jq --arg tag "refs/tags/$RELEASE_VERSION" '[.[] | select(.ref == $tag)] | length' <<< "$refs")" -eq 0
-          gh release create "$RELEASE_VERSION" .release/bundles/*.tar.zst .release/supply-chain/* docs.tar.gz --target "$GITHUB_SHA" --prerelease --latest=false --title "$RELEASE_VERSION" --notes "Release candidate built and tested from $GITHUB_SHA. Includes source-built bootstrap native libraries and signed platform provenance/SBOM. The independent native-library release is still required for stable publication. API docs are included as docs.tar.gz; stable Pages are unchanged."
+          gh release create "$RELEASE_VERSION" .release/bundles/*.tar.zst .release/supply-chain/* .release/docs/* --target "$GITHUB_SHA" --prerelease --latest=false --title "$RELEASE_VERSION" --notes "Release candidate built and tested from $GITHUB_SHA. Includes source-built bootstrap native libraries, signed platform provenance/SBOM, and versioned PDF/HTML documentation. The independent native-library release is still required for stable publication; Pages continues to track trunk."
 
   required:
     name: Release required
@@ -555,16 +547,3 @@ jobs:
           test "$TEST_BUNDLES" = success
           test "$BUILD_DOCS" = success
           test "$GENERATE_SBOM" = success
-
-  publish-docs:
-    name: Publish versioned API docs
-    needs: [release-info, publish-release]
-    if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && !inputs.release_candidate
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    uses: ./.github/workflows/deploy-docs.yml
-    with:
-      docs_artifact: platform-docs
-      docs_version: ${{ needs.release-info.outputs.docs_version }}

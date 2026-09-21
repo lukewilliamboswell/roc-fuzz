@@ -41,5 +41,5 @@ compliance or change repository settings.
 The updater preserves published platform URLs. Both published and local-source
 checks run for every candidate, and `nightly_validation: true` suppresses all
 publication, release follow-ups and deployment. See
-[release instructions](../CONTRIBUTING.md#release-bundle) for publication and
+[release instructions](../docs/development.adoc#release-bundle) for publication and
 release-candidate bootstrap.
