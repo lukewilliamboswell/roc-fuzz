@@ -39,7 +39,7 @@ jobs:
         env:
           ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
           ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
-        run: scripts/test_targets.roc -- --operation all --max-total-time 1 --verbose
+        run: "$ROC_NIGHTLY" --opt=interpreter scripts/test_targets.roc -- --operation all --max-total-time 1 --verbose
 
   self-contained-runner:
     strategy:
