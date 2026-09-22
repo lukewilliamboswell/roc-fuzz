@@ -50,7 +50,8 @@ jobs:
         if: runner.os == 'macOS'
         env:
           ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-        run: "$ROC_STABLE" check scripts/test_targets.roc
+        run: |
+          "$ROC_STABLE" check scripts/test_targets.roc
 
   self-contained-runner:
     strategy:
