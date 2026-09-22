@@ -1,6 +1,7 @@
 # roc-fuzz
 
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/lukewilliamboswell/roc-fuzz/badge)](https://scorecard.dev/viewer/?uri=github.com/lukewilliamboswell/roc-fuzz)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/14753/badge)](https://www.bestpractices.dev/projects/14753)
 
 `roc-fuzz` helps Roc application authors find inputs they did not think to test.
 You write a small fuzz target that generates ordinary Roc values, calls one
