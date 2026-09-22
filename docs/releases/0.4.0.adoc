@@ -1,0 +1,85 @@
+= roc-fuzz 0.4.0
+
+roc-fuzz 0.4.0 makes fuzzing a better fit for day-to-day Roc development. It
+adds allocation-aware properties and a purpose-built CI evidence command,
+while keeping the usual workflow small: describe typed inputs, state the
+property, and build a self-contained libFuzzer executable with `roc build
+--fuzz`.
+
+This is also the first release with a complete manual and a hardened,
+reproducible release pipeline. The platform bundle, documentation, checksums,
+SBOM, and signed provenance are published together so that a fuzz target can be
+pinned and audited later.
+
+== Use this release
+
+roc-fuzz 0.4.0 supports Linux x86-64 with musl and Apple Silicon macOS 11 or
+newer. It was built using `nightly-2026-09-19-d025939` of the Roc compiler but is
+expected to work on later compatible versions.
+
+Copy this application header into a fuzz target:
+
+[source,roc]
+----
+app [target] { fuzz: platform "{platform-url}", roc: "nightly-2026-09-19-d025939" }
+----
+
+Read or download the versioned PDF manual at {manual-url}. The online manual at
+https://lukewilliamboswell.github.io/roc-fuzz/ follows the default branch and
+may describe changes made after this release.
+
+== Allocation properties
+
+Fuzz targets can now turn memory-management and copy-on-write expectations into
+properties. `Fuzz.measure_allocs!` measures work, `expect_allocs_at_most!` and
+`expect_allocs_at_least!` pin allocation behaviour, and `expect_no_leaks!`
+checks that a region leaves no live allocations behind. Effectful
+`target_with!` and `from_bytes!` constructors let those checks run inside a
+target without making ordinary pure targets more complicated.
+
+These checks have already paid for themselves: the expanded Dict and List
+campaigns found aliasing, uniqueness, and reference-counting regressions, with
+small reproducers recorded in the repository's trophy case.
+
+== CI evidence, not just a pass or fail
+
+Every generated executable now has a `ci` command. It supervises a bounded fuzz
+run and writes a machine-readable JSON report, a job-summary Markdown file,
+logs, corpus hashes, and reproducing failures into one evidence directory. The
+report records the downstream revision, Roc version, platform release, and
+platform digest, making it much easier to answer what was tested after a CI job
+has finished.
+
+The runner also adds explicit artifact directories and optional leak-detection
+control. A new model-based Set suite and broader Dict and List sorting targets
+exercise the platform itself across Linux and macOS.
+
+== Documentation and release integrity
+
+The new manual covers the path from a first target through campaign tuning,
+corpus maintenance, failure minimization, CI integration, internals, and
+release verification. API documentation is generated from the platform source
+and ships beside both the PDF and an offline HTML archive.
+
+Release bundles are tested on every supported operating system. Each release
+also includes an SPDX SBOM and downloadable GitHub attestations for offline
+provenance verification. Native libraries are checksum-locked and released
+independently, while the Linux libFuzzer build is exercised under
+AddressSanitizer before publication.
+
+== Upgrading from 0.3.0
+
+The platform's low-level `Target.run` callback is now effectful and is named
+`run!`. Applications built through `Fuzz.target`, `Fuzz.target_with`, or
+`Fuzz.from_bytes` do not need to change for this API adjustment. Custom code
+which constructs or calls `Target` directly must rename that field or method.
+
+Saved corpus and crash files encode generator input rather than a stable public
+format. Keep the matching executable when exact historical reproduction
+matters, and start a fresh corpus when changing a target's generator changes
+how bytes are decoded.
+
+For bugs or feedback, please open an issue at
+https://github.com/lukewilliamboswell/roc-fuzz/issues. The full commit history
+since 0.3.0 is available at
+https://github.com/lukewilliamboswell/roc-fuzz/compare/0.3.0...0.4.0.

@@ -29,7 +29,7 @@ check_tooling! = |stable| {
 	Script.info!("CHECK", "Formatting, tests, and compilation for repository tooling")?
 	script_files = Files.roc_files!("scripts")?
 	stable.run!(["fmt", "--check"].concat(script_files.map(Path.to_os_str)))?
-	for test_file in ["scripts/tooling_tests.roc", "scripts/check_supply_chain.roc", "scripts/build_release_sbom.roc", "scripts/validate_release_candidate.roc"] {
+	for test_file in ["scripts/tooling_tests.roc", "scripts/check_supply_chain.roc", "scripts/build_release_sbom.roc", "scripts/validate_release_candidate.roc", "scripts/render_release_notes.roc"] {
 		stable.run!(["test", test_file])?
 	}
 	app_files = Files.direct_files!("scripts")?.keep_if(|path| Path.ext(path).map_ok(Path.display) == Ok("roc"))

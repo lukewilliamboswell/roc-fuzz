@@ -17,7 +17,8 @@ saves any failure, and gives you commands to inspect, reproduce, and minimize it
 
 ifdef::backend-html5[]
 link:api/index.html[Browse the generated API reference] ·
-link:roc-fuzz.pdf[Download the standalone PDF manual].
+link:roc-fuzz.pdf[Download the standalone PDF manual] ·
+https://github.com/lukewilliamboswell/roc-fuzz[View roc-fuzz on GitHub].
 endif::[]
 
 .How to use this manual

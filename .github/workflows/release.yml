@@ -16,7 +16,7 @@ on:
         type: boolean
         default: false
       release_version:
-        description: "Release version, for example 0.1.0 or 0.2.0-rc1"
+        description: "Release version with matching docs/releases/VERSION.adoc, for example 0.4.0 or 0.5.0-rc1"
         required: false
         type: string
   pull_request:
@@ -101,6 +101,17 @@ jobs:
         run: |
           if [ "${GITHUB_REF_TYPE:-}" != "branch" ] || [ "$GITHUB_REF_NAME" != "$DEFAULT_BRANCH" ]; then
             echo "Releases must be dispatched from the default branch: $DEFAULT_BRANCH" >&2
+            exit 1
+          fi
+
+      - name: Require matching release notes
+        if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation
+        env:
+          RELEASE_VERSION: ${{ steps.validate.outputs.release_version }}
+        run: |
+          notes="docs/releases/$RELEASE_VERSION.adoc"
+          if [ ! -s "$notes" ]; then
+            echo "Every stable or release-candidate publication requires $notes" >&2
             exit 1
           fi
 
@@ -557,6 +568,7 @@ jobs:
         uses: roc-lang/release-package/actions/make-release-notes@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
           release_version: ${{ needs.release-info.outputs.release_version }}
+          release_notes_command: scripts/render_release_notes.roc
           docs_url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
           github_token: ${{ github.token }}
 
@@ -582,7 +594,7 @@ jobs:
           # gh release create refuses an existing release; refuse an existing tag too.
           refs="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$RELEASE_VERSION")"
           test "$(jq --arg tag "refs/tags/$RELEASE_VERSION" '[.[] | select(.ref == $tag)] | length' <<< "$refs")" -eq 0
-          gh release create "$RELEASE_VERSION" .release/bundles/*.tar.zst .release/supply-chain/* .release/docs/* --target "$GITHUB_SHA" --prerelease --latest=false --title "$RELEASE_VERSION" --notes "Release candidate built and tested from $GITHUB_SHA. Includes source-built bootstrap native libraries, signed platform provenance/SBOM, and versioned PDF/HTML documentation. The independent native-library release is still required for stable publication; Pages continues to track trunk."
+          gh release create "$RELEASE_VERSION" .release/bundles/*.tar.zst .release/supply-chain/* .release/docs/* --target "$GITHUB_SHA" --prerelease --latest=false --title "$RELEASE_VERSION" --notes-file .release/release-notes.md
 
   required:
     name: Release required

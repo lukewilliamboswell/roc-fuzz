@@ -229,7 +229,19 @@ scripts/test_bundle.roc -- dist/<bundle>.tar.zst
 Production releases use the `Release` workflow. From the repository's
 *Actions* tab, run it on the default branch with an `X.Y.Z` version (or
 an `X.Y.Z-rcN` release candidate). Pull requests run the same workflow
-in dry-run mode. A real release:
+in dry-run mode. Before dispatching any publication, add a non-empty
+`docs/releases/X.Y.Z.adoc` or `docs/releases/X.Y.Z-rcN.adoc`. The first heading
+must be `= roc-fuzz VERSION`. Release notes are reviewed as documentation and
+should explain the release to users: lead with the theme, show notable features
+and compatibility changes, name the supported hosts and Roc compiler, link to
+verification material, and give upgrade or feedback guidance.
+
+Use `{platform-url}` where the copyable app header needs the content-addressed
+bundle URL and `{manual-url}` for the release's PDF. The workflow resolves both
+after packaging, translates the note's headings and source blocks to GitHub
+Markdown with `scripts/render_release_notes.roc`, and uses that result as the
+description for stable releases and release candidates. A missing or mismatched
+note stops publication. A real release:
 
 [arabic]
 . validates all sources, tests, and short fuzz campaigns;
@@ -237,7 +249,8 @@ in dry-run mode. A real release:
 external consumer;
 . generates and validates a version-stamped PDF manual and HTML site containing
 the API reference; and
-. publishes the bundle, PDF, and zipped documentation site in a GitHub release.
+. renders the matching narrative release note and publishes it with the bundle,
+PDF, zipped documentation site, SBOM, and provenance in a GitHub release.
 
 Pages is independent of a release and always tracks `trunk`. Pull requests build
 the same site without deploying it.
