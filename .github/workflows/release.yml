@@ -41,8 +41,19 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install stable tooling Roc and latest nightly
+        id: roc
+        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
+        with:
+          version: stable-and-nightly
+          stable-tag: nightly-2026-09-18-1d982dc
+          nightly-tag: nightly-2026-09-19-d025939
+
       - name: Build and run the pinned libFuzzer with AddressSanitizer
-        run: scripts/test_native_sanitizers.sh
+        env:
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+        run: |
+          "$ROC_STABLE" --opt=dev scripts/test_native_sanitizers.roc
 
   release-info:
     name: Validate release request

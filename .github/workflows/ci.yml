@@ -26,8 +26,19 @@ jobs:
       - name: Checkout roc-fuzz
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Install stable tooling Roc and latest nightly
+        id: roc
+        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
+        with:
+          version: stable-and-nightly
+          stable-tag: nightly-2026-09-18-1d982dc
+          nightly-tag: nightly-2026-09-19-d025939
+
       - name: Build and run the pinned libFuzzer with AddressSanitizer
-        run: scripts/test_native_sanitizers.sh
+        env:
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+        run: |
+          "$ROC_STABLE" --opt=dev scripts/test_native_sanitizers.roc
 
   published-examples:
     name: Public downloads (${{ matrix.os }})

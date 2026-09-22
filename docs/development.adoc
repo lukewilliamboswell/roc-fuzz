@@ -163,9 +163,10 @@ Linux CI also rebuilds the checksum-pinned libFuzzer sources with
 AddressSanitizer and runs a short native smoke campaign. This detects heap,
 stack, use-after-free, and leak errors in the embedded C++ fuzzing engine on
 every pull request, every `trunk` update, and before release publication. Run
-the same check locally with `scripts/test_native_sanitizers.sh`; it requires
-Clang, `curl`, `jq`, and `sha256sum`. The sanitizer executable is CI-only and
-does not change the static release artifacts.
+the same check locally with
+`roc-stable --opt=dev scripts/test_native_sanitizers.roc`; it requires Clang,
+`curl`, and `tar`. The sanitizer executable is CI-only and does not change the
+static release artifacts.
 
 When checking, testing, or building with a newer compiler, the runner
 permits Roc's warning-only exit code only if every diagnostic is a
