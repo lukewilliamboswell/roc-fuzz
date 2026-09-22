@@ -568,7 +568,7 @@ jobs:
         uses: roc-lang/release-package/actions/make-release-notes@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
           release_version: ${{ needs.release-info.outputs.release_version }}
-          release_notes_command: scripts/render_release_notes.sh
+          release_notes_command: scripts/render_release_notes.roc
           docs_url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
           github_token: ${{ github.token }}
 

@@ -239,9 +239,9 @@ verification material, and give upgrade or feedback guidance.
 Use `{platform-url}` where the copyable app header needs the content-addressed
 bundle URL and `{manual-url}` for the release's PDF. The workflow resolves both
 after packaging, translates the note's headings and source blocks to GitHub
-Markdown, and uses that result as the description for stable releases and
-release candidates. A missing or mismatched note stops publication. A real
-release:
+Markdown with `scripts/render_release_notes.roc`, and uses that result as the
+description for stable releases and release candidates. A missing or mismatched
+note stops publication. A real release:
 
 [arabic]
 . validates all sources, tests, and short fuzz campaigns;
