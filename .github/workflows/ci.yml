@@ -19,6 +19,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  native-sanitizers:
+    name: Native sanitizers
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout roc-fuzz
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build and run the pinned libFuzzer with AddressSanitizer
+        run: scripts/test_native_sanitizers.sh
+
   published-examples:
     name: Public downloads (${{ matrix.os }})
     strategy:
@@ -127,14 +137,16 @@ jobs:
   required:
     name: CI required
     if: always()
-    needs: [self-contained-runner, published-examples]
+    needs: [native-sanitizers, self-contained-runner, published-examples]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:
       - name: Require every CI matrix job
         env:
           MATRIX_RESULT: ${{ needs.self-contained-runner.result }}
+          SANITIZER_RESULT: ${{ needs.native-sanitizers.result }}
           PUBLIC_RESULT: ${{ needs.published-examples.result }}
         run: |
           test "$MATRIX_RESULT" = success
+          test "$SANITIZER_RESULT" = success
           test "$PUBLIC_RESULT" = success
