@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [actions, python, c-cpp]
+        language: [actions, c-cpp]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -46,10 +46,4 @@ jobs:
       - name: Require every validation job to pass
         env:
           RESULTS: ${{ toJSON(needs) }}
-        run: |
-          python3 - <<'PYTHON'
-          import json, os
-          results = json.loads(os.environ["RESULTS"])
-          if not results or any(job["result"] != "success" for job in results.values()):
-              raise SystemExit("Required validation did not pass")
-          PYTHON
+        run: jq -e 'length > 0 and all(.[]; .result == "success")' <<<"$RESULTS"

@@ -1,0 +1,140 @@
+= Design effective targets
+
+The first tutorial generated one `U8`. Application behavior usually accepts
+records, lists, strings, or domain types. Build a generator that produces values
+close to the operation's useful input domain, then keep the property focused on
+one behavior.
+
+== Start from the operation
+
+Choose a function that is fast, deterministic, and easy to call in memory. Write
+the property in one sentence before choosing a generator. If the sentence needs
+several unrelated “and” clauses, make separate targets.
+
+Examples include:
+
+* “Decoding an encoded message returns the original message.”
+* “Sorting preserves every item and produces nondecreasing order.”
+* “A parser returns `Ok` or `Err` for every string without crashing.”
+* “Applying this state transition agrees with the simple reference model.”
+
+A generator explores only the cases the property can observe. Calling an
+operation without checking its result finds crashes and resource failures, but
+cannot find an ordinary wrong answer.
+
+== Generate useful values
+
+roc-fuzz provides generators for numeric values, strings, bytes, and collections.
+Use a bounded generator when the full type includes values that are irrelevant
+or too expensive for this target:
+
+[source,roc]
+----
+port = Fuzz.u8_in(1, 255)
+name = Fuzz.str
+payload = Fuzz.list(Fuzz.u8, 1024)
+----
+
+`Fuzz.list(item_generator, maximum_length)` generates a list whose elements come
+from `item_generator`. The maximum is a test-design bound, so choose a size that
+reaches meaningful behavior without making each case slow.
+
+Use `Fuzz.map` when the domain value can be constructed from one generated value,
+and `Fuzz.map2` when it needs two:
+
+[source,roc]
+----
+non_empty_bytes = Fuzz.map(
+    Fuzz.list(Fuzz.u8, 255),
+    |rest| List.prepend(rest, 1),
+)
+
+range = Fuzz.map2(
+    Fuzz.u8,
+    Fuzz.u8,
+    |a, b| if a <= b { start: a, end: b } else { start: b, end: a },
+)
+----
+
+Constructing valid values directly gives the search more useful executions than
+generating a broad value and rejecting most cases.
+
+== Build record inputs
+
+Roc's record-builder syntax can combine a generator for each field:
+
+[source,roc]
+----
+Input := { delimiter : Str, value : Str }
+
+input_generator : Fuzz.Generator(Input)
+input_generator = {
+    delimiter: Fuzz.str,
+    value: Fuzz.str,
+}.Fuzz
+----
+
+Use the resulting generator with `Fuzz.target_with`:
+
+[source,roc]
+----
+target = Fuzz.target_with({
+    name: "split-round-trip",
+    generator: input_generator,
+    test,
+    show: |input| Str.inspect(input),
+})
+----
+
+This explicit form is a good default for a generator used by one target. When a
+named input type owns a reusable generation policy, define its `generator_for`
+method and use `Fuzz.target`:
+
+[source,roc]
+----
+Input := { delimiter : Str, value : Str }.{
+    generator_for = |_| {
+        {
+            delimiter: Fuzz.str,
+            value: Fuzz.str,
+        }.Fuzz
+    }
+}
+
+target = Fuzz.target({
+    name: "split-round-trip",
+    test,
+    show: |input| Str.inspect(input),
+})
+----
+
+Both forms produce the same kind of typed target. The
+xref:internals.adoc#understand-generator-dispatch[advanced explanation] describes
+how Roc resolves `generator_for`; using the pattern does not require knowing its
+implementation.
+
+== Handle invalid input deliberately
+
+An ordinary invalid input is not automatically a fuzzing failure. A parser may
+return `Err` for malformed text and still satisfy a robustness property. Return
+`Fuzz.keep` when the observed result is allowed.
+
+Prefer a generator that creates valid domain values. Return `Fuzz.reject` when a
+precondition is awkward to encode and the generated case is outside the property
+you are testing. Do not use `crash` or `expect` to reject such a case; those mean
+roc-fuzz found a failure worth saving.
+
+Watch the rejection rate as tooling adds support for it. If most inputs are
+rejected, redesign the generator so the campaign spends more time in the code
+that matters.
+
+== Keep saved inputs meaningful
+
+A saved file is decoded by the target's generator. Changing that generator can
+make an old file produce a different typed value. Keep generators stable when a
+corpus or failure matters, and retain the matching executable when exact
+historical reproduction is important.
+
+The link:api/index.html[generated API reference] lists all generators and
+combinators. Continue with xref:campaigns.adoc[Run and maintain fuzzing campaigns]
+when the target produces useful values and passes a short smoke run.

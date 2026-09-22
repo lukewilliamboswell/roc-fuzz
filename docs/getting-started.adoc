@@ -1,0 +1,248 @@
+= Fuzz your first function
+
+This tutorial adds a fuzz target beside a small Roc module, runs it, inspects a
+failure, fixes the bug, and preserves the lesson as a regression test. You do
+not need prior fuzzing experience or knowledge of the embedded engine.
+
+The example uses a stack because its rule is easy to state: after pushing an
+item, popping must return that item and the original stack. The demo keeps the
+application module beside its target only to make the tutorial self-contained;
+a real target normally imports an existing module from the application.
+
+== Create the application module
+
+Create `fuzz/stack/Stack.roc`:
+
+[source,roc]
+----
+Stack := [].{
+    push : List(a), a -> List(a)
+    push = |items, item| List.append(items, item)
+
+    pop : List(a) -> Try({ value : a, rest : List(a) }, [Empty])
+    pop = |items|
+        match items {
+            [first, .. as rest] => Ok({ value: first, rest })
+            [] => Err(Empty)
+        }
+}
+----
+
+This version contains a plausible implementation mistake: `push` appends the
+new item to the end, while `pop` removes an item from the front. A test using
+only an empty stack would pass, so the defect is easy to overlook.
+
+The fuzz target is a separate development application that imports this module;
+the shipped application does not need to depend on roc-fuzz.
+
+== Write the target
+
+Create `fuzz/stack/main.roc`:
+
+[source,roc]
+----
+app [target] { fuzz: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.0-rc1/9k2cfuAWoBfcRBRiVbriXFf1dHktoRBbieifYN7NmTHc.tar.zst", roc: "nightly-2026-09-19-d025939" }
+
+import fuzz.Fuzz
+import Stack
+
+test : List(U8) -> Fuzz.Outcome
+test = |initial| {
+    item = 0
+    pushed = Stack.push(initial, item)
+
+    match Stack.pop(pushed) {
+        Ok({ value, rest }) if value == item and rest == initial => Fuzz.keep
+        Ok(_) => crash "pop did not undo push"
+        Err(Empty) => crash "the stack was empty after push"
+    }
+}
+
+target = Fuzz.target_with({
+    name: "stack-push-pop",
+    generator: Fuzz.list(Fuzz.u8, 8),
+    test,
+    show: |initial| Str.inspect(initial),
+})
+----
+
+The target connects the three ideas from the previous chapter:
+
+[cols="1,2",options="header"]
+|===
+|Part |Role in this target
+
+|Generator
+|`Fuzz.list(Fuzz.u8, 8)` supplies lists containing up to eight `U8` values.
+
+|Application operation
+|The test calls `Stack.push` and `Stack.pop`.
+
+|Property
+|After pushing `0`, the popped value must be `0` and the remaining stack must
+equal the generated `initial` value.
+|===
+
+`Fuzz.keep` means the generated case completed normally and satisfied the
+property. `crash` means roc-fuzz must save the case as a failure. `show` tells
+roc-fuzz how to render the generated value for a person.
+
+The application header selects an immutable roc-fuzz release and its compatible
+Roc compiler. For another project, select a release from
+https://github.com/lukewilliamboswell/roc-fuzz/releases[GitHub Releases] and use
+the compiler documented with that release. Roc obtains the platform through its
+normal package mechanism; there is no separate roc-fuzz installer.
+
+== Build and find the bug
+
+Build a self-contained fuzzing executable:
+
+[source,sh]
+----
+roc build --fuzz fuzz/stack/main.roc --output=stack-fuzz
+----
+
+Start with the bounded default run:
+
+[source,sh]
+----
+./stack-fuzz run
+----
+
+roc-fuzz generates initial stacks and repeatedly runs the property. An empty
+stack passes even with the bug, while a non-empty stack can expose the mismatch
+between the two ends. The exact status lines and saved hash vary, but the end of
+the output includes commands shaped like these:
+
+[source,console]
+----
+Next steps:
+  ./stack-fuzz show .roc-fuzz/crash-<hash>
+  ./stack-fuzz replay .roc-fuzz/crash-<hash>
+  ./stack-fuzz minimize .roc-fuzz/crash-<hash> .roc-fuzz/minimized-crash
+----
+
+The saved file contains the reproducible input used by the generator. It is an
+implementation format for roc-fuzz, so inspect it with `show` instead of opening
+it as text:
+
+[source,sh]
+----
+./stack-fuzz show .roc-fuzz/crash-<hash>
+----
+
+For this target, `show` prints the generated initial stack. Reproduce the failure
+in a fresh process:
+
+[source,sh]
+----
+./stack-fuzz replay .roc-fuzz/crash-<hash>
+----
+
+Then ask roc-fuzz for a smaller reproducing input:
+
+[source,sh]
+----
+./stack-fuzz minimize \
+  .roc-fuzz/crash-<hash> .roc-fuzz/minimized-crash
+./stack-fuzz show .roc-fuzz/minimized-crash
+./stack-fuzz replay .roc-fuzz/minimized-crash
+----
+
+Minimization is most useful for structured or long inputs, but using the same
+workflow here establishes the habit.
+
+== Fix and preserve the failure
+
+The two stack operations disagree about which end is the top. Fix `push` in
+`Stack.roc`:
+
+[source,roc]
+----
+push : List(a), a -> List(a)
+push = |items, item| List.prepend(items, item)
+----
+
+Rebuild the executable and replay the minimized input. It should now complete
+without a failed property:
+
+[source,sh]
+----
+roc build --fuzz fuzz/stack/main.roc --output=stack-fuzz
+./stack-fuzz replay .roc-fuzz/minimized-crash
+./stack-fuzz run
+----
+
+Append a normal regression test using the minimized non-empty stack to
+`Stack.roc`:
+
+[source,roc]
+----
+expect {
+    initial : List(U8)
+    initial = [1]
+
+    match Stack.pop(Stack.push(initial, 0)) {
+        Ok({ value, rest }) => value == 0 and rest == initial
+        Err(Empty) => Bool.False
+    }
+}
+----
+
+Run it with the rest of the module's tests:
+
+[source,sh]
+----
+roc test fuzz/stack/Stack.roc
+----
+
+Use the actual value printed by `show` if minimization found a different
+one-element list. The regression test protects this known case on every test
+run; the fuzz target continues exploring other values and future implementation
+changes.
+
+A bounded run that finds no failure is still a successful run. It means the
+property held for the cases explored during that run, not that the operation is
+proved correct.
+
+== Understand a normal run
+
+By default, `run` stops after 60 seconds, keeps useful inputs under
+`.roc-fuzz/corpus`, and saves failures under `.roc-fuzz/`. The corpus is a set
+of inputs that reached behavior worth revisiting; later runs reuse it and
+continue searching from those discoveries.
+
+During a clean run, `NEW` means the engine retained an input that reached new
+behavior and `DONE` means the configured bound was reached. The
+xref:campaigns.adoc#tune-a-run[campaign status glossary] explains the remaining
+fields and tuning options.
+
+== Design the next target
+
+Choose one fast application operation and one rule that should hold for every
+input. Common property shapes include:
+
+* *Round trip:* decoding an encoded value returns the original value.
+* *Inverse:* an operation followed by its inverse returns the starting value.
+* *Idempotence:* normalizing twice gives the same result as normalizing once.
+* *Invariant:* an operation preserves ordering, length, membership, or another
+rule of the data structure.
+* *Differential:* two independent implementations produce the same result.
+* *Robustness:* arbitrary input may return success or an ordinary error, but
+must not crash or hang.
+
+Generate useful values directly. If a parser accepts bytes of any shape, arbitrary
+bytes may be appropriate. If an operation requires a bounded port number or a
+non-empty list, express that rule in the generator so most search effort reaches
+the behavior you care about. Use `Fuzz.reject` only when a generated case lies
+outside the property; do not use `crash` to reject an ordinary invalid input.
+
+Keep unrelated operations and properties in separate targets. A practical first
+set might include one target per parser, encoder/decoder pair, state transition,
+or important business invariant. There is no need to fuzz every function.
+
+The xref:campaigns.adoc[campaign guide] explains corpora, tuning, and unstable
+failures. The xref:internals.adoc[advanced guide] covers generator dispatch,
+allocation assertions, and the low-level engine interface. Run `TARGET --help`
+for the command summary and browse the link:api/index.html[generated API
+reference] for generator, combinator, and target signatures.

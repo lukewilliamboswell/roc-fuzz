@@ -1,0 +1,153 @@
+= Understand roc-fuzz internals and advanced features
+
+This chapter explains the runtime model, reusable generator dispatch,
+allocation assertions, and the low-level libFuzzer escape hatch. Application
+authors do not need this material for the normal target workflow.
+
+== Understand the in-process model
+
+The embedded libFuzzer calls a target thousands of times in the same
+process. It does not start a clean executable for every generated input.
+This is what makes it fast. Roc's purity means target calls cannot leak
+application state or background work into later calls, and determinism
+makes saved inputs reliable with the same target and generator.
+
+A reliable target still needs all of the following properties:
+
+* Invalid or unusual inputs return ordinary values such as `Err`, rather
+than triggering an intentional assertion or process exit.
+* One input normally finishes in less than 10 milliseconds.
+* Inputs and allocations have sensible upper bounds.
+* Every input terminates.
+
+The runner is a poor fit when one test takes a significant fraction of a
+second, can grow without a practical memory bound, or is expected to
+terminate the process for invalid input. If a crash, timeout, or memory
+blow-up would be a bug, it remains a useful fuzzing failure.
+
+A saved raw input produces the same typed value and result when the
+target and generator are unchanged. Keep the executable alongside
+important failure artifacts when exact historical reproduction matters.
+
+== Understand generator dispatch
+
+`generator_for` uses Roc's ordinary static dispatch. It is a method
+associated with the target's input type, not a runtime interface,
+registry, or callback table. Package APIs can require their own methods
+with `where` clauses, so the method does not need to be a
+compiler-defined name.
+
+The pattern deliberately mirrors `Json.parser_for`:
+
+* `Json.parse` requires its result type to have a compatible
+`parser_for` method and asks that type for a JSON parser.
+* `Fuzz.target` requires its input type to have a compatible
+`generator_for` method and asks that type for a fuzz generator.
+* The checker resolves both to a specific method implementation at
+compile time. The compiled call has no dynamic-dispatch overhead.
+
+Conceptually, `Fuzz.target` has this requirement:
+
+[source,roc]
+----
+target : { name : Str, test : a -> Outcome, show : a -> Str } -> Target
+    where [a.generator_for : FuzzEncoding -> Generator(a)]
+----
+
+`FuzzEncoding` currently contains the `Default` policy. Passing a policy
+value follows the same shape as `JsonEncoding` and leaves room for
+additional generation policies without changing the method pattern.
+
+Use `Fuzz.target` when generation is part of a reusable named input
+type. Use `Fuzz.target_with` with an explicit `Generator(a)` for a local
+structural input or when choosing between generators for the same type
+in different targets.
+
+== Assert on allocations
+
+A property can check what a builtin computes but not what it costs. A
+builtin that stops mutating a uniquely owned value in place and starts
+copying it still produces correct answers, so no content-based property
+will notice the regression. `Fuzz` exposes the platform's allocation
+counters so a target can assert on cost as well as correctness:
+
+[source,roc]
+----
+Fuzz.alloc_count! : () => U64          # cumulative allocations served this process
+Fuzz.live_alloc_count! : () => U64     # allocations not yet freed
+Fuzz.measure_allocs! : ({} => a) => { value : a, allocations : U64 }
+Fuzz.expect_allocs_at_most! : U64, ({} => a) => a
+Fuzz.expect_allocs_at_least! : U64, ({} => a) => a
+Fuzz.expect_no_leaks! : ({} => a) => {}
+----
+
+`alloc_count!` and `live_alloc_count!` are process-wide and monotonic,
+and libFuzzer reuses one process across millions of inputs, so never
+assert on a raw value. Always read the counter before and after the
+region you care about and assert on the difference; `measure_allocs!`
+and `expect_allocs_at_most!` and `expect_allocs_at_least!` do this for
+you.
+
+Only assert zero allocations for a value that is genuinely uniquely
+owned and pre-sized. If the value is aliased anywhere, copy-on-write
+allocation is correct behavior, not a regression. Measure only the
+region you mean to check: a constructor call such as
+`Dict.with_capacity` allocates the entries and bucket lists, so keep it
+outside the measured window.
+
+[source,roc]
+----
+# Build the dict OUTSIDE the measured region: Dict.with_capacity itself
+# allocates the entries and bucket lists.
+d = Dict.with_capacity(n)
+
+filled = Fuzz.expect_allocs_at_most!(
+    0,
+    |{}| {
+        var $result = d
+        var $i = 0
+        while $i < n {
+            $result = Dict.insert($result, $i, $i * 2)
+            $i = $i + 1
+        }
+        $result
+    },
+)
+----
+
+Allocation assertions need an effectful test, so build the target with
+`Fuzz.target_with!` or `Fuzz.from_bytes!` instead of their pure
+counterparts. `target_with!` takes `test! : a => Outcome`; `from_bytes!`
+takes `test! : List(U8) => U8`.
+
+These constructors exist because the runner calls a target through the
+widened `run! : List(U8) => U8`, not the older pure
+`run : List(U8) -> U8`. This is a backward-compatible change: a pure
+function body already satisfies an effectful signature, so every
+existing target keeps compiling and running unchanged. Keep targets pure
+unless the property itself needs one of the allocation combinators above
+-- a pure target is deterministic, and libFuzzer's crash replay and
+minimization rely on that determinism to reproduce and shrink a saved
+failure.
+
+== Use the libFuzzer interface
+
+`TARGET raw [LIBFUZZER_ARG...]` passes arguments directly to the
+embedded libFuzzer CLI. Run this for its complete option list:
+
+[source,sh]
+----
+TARGET raw -help=1
+----
+
+Prefer `run`, `show`, `replay`, `minimize`, and `reduce-corpus` for the
+normal workflow. Low-level flags such as `-max_total_time` and
+`-max_len` belong behind `raw`; `run` accepts the stable friendly
+options listed above. `raw` is an escape hatch for libFuzzer features
+the friendly command layer does not yet expose directly.
+
+== Further reading
+
+* https://llvm.org/docs/LibFuzzer.html[LLVM libFuzzer documentation]
+covers the in-process execution model, options, corpus behavior, output,
+and FAQ.

@@ -5,8 +5,7 @@
 /typedTarget
 /failureArtifact
 /.test-cache
-__pycache__/
-*.pyc
+/.docs-out
 *.ll
 *.bc
 *.o

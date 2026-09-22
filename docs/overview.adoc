@@ -1,0 +1,178 @@
+= Why fuzz a Roc application?
+
+Suppose a decoder passes every example you wrote, but one unusual combination
+of lengths and Unicode text still makes it fail. Adding more example tests helps
+only when you can imagine the troublesome input in advance.
+
+Fuzzing repeatedly runs part of your application with varied inputs. It watches
+which inputs reach new behavior and uses those discoveries to guide the search.
+You describe what valid inputs look like and what must always be true. roc-fuzz
+does the repetitive search and saves any input that exposes a failure.
+
+== What a fuzz target is
+
+A *fuzz target* is a small Roc application that connects roc-fuzz to one
+behavior in your code. It contains three essential ideas:
+
+* a *generator* that creates the Roc values to try;
+* an *operation* that calls the application code you want to exercise; and
+* a *property* that decides whether the result is acceptable.
+
+.Target anatomy
+[mermaid]
+....
+flowchart LR
+    Generator["Generator<br/>What values should be tried?"]
+    Operation["Application operation<br/>What code should run?"]
+    Property["Property<br/>What must always be true?"]
+    Generator --> Target[Fuzz target]
+    Operation --> Target
+    Property --> Target
+....
+
+The target is necessary because roc-fuzz cannot infer what correctness means for
+your application. It can explore inputs and notice crashes, hangs, leaks, and
+new behavior in the compiled program, but only you can state application rules such as:
+
+* encoding and then decoding returns the original value;
+* pushing an item and then popping returns that item and the original stack;
+* normalizing an already normalized value changes nothing;
+* two independent implementations produce the same result; or
+* arbitrary input may return an ordinary error but must never crash.
+
+A target is development and test code. It is separate from the application you
+ship, and it normally imports the module it exercises. Start with one operation
+and one property per target so failures remain easy to understand.
+
+== How fuzzing complements tests
+
+Unit tests and fuzzing answer different questions and work best together.
+
+[cols="1,2,2",options="header"]
+|===
+|Approach |What it does well |What it leaves to you
+
+|Unit tests
+|Check named examples and preserve known regressions quickly and deterministically.
+|You must choose every example.
+
+|A hand-written random loop
+|Tries more values than a short example list.
+|You must build generation, search strategy, repeatability, failure storage, and
+diagnostic tools.
+
+|roc-fuzz
+|Uses execution feedback to explore, retains useful inputs, and saves failures
+that can be shown, replayed, and minimized.
+|You must define meaningful generators and properties; a weak property can miss
+real bugs.
+|===
+
+After roc-fuzz finds a bug, fix the code and keep the minimized case as a normal
+regression test. The unit test prevents that exact bug from returning. Future
+fuzzing continues searching for cases nobody has named yet.
+
+== What “typed” and “coverage-guided” mean
+
+*Typed* means the test receives ordinary Roc values rather than making every
+target decode an arbitrary byte array itself. A generator can produce a `U64`,
+a `Str`, or a record such as
+`{ delimiter : Str, value : Str }`. You choose the useful ranges and shapes.
+roc-fuzz does not automatically know your application's domain rules.
+
+*Coverage-guided* describes how the search chooses where to spend effort.
+roc-fuzz observes which parts of the compiled program each input reaches. When
+an input reaches behavior not seen before, it retains that input and creates
+further variations from it. This feedback makes the search more purposeful than
+independent random samples.
+
+.Coverage-guided search and failure workflow
+[mermaid]
+....
+flowchart LR
+    Generate[Generate a typed value] --> Run[Run application code]
+    Run --> Check{Property holds?}
+    Check -->|yes| Observe{New behavior reached?}
+    Observe -->|yes| Corpus[Keep the useful input]
+    Observe -->|no| Generate
+    Corpus --> Vary[Create nearby variations]
+    Vary --> Generate
+    Check -->|no| Save[Save a reproducing input]
+    Save --> Inspect[Show, replay, and minimize]
+    Inspect --> Regression[Fix the bug and add a regression test]
+....
+
+The retained useful inputs form a *corpus*. A later run can reuse that corpus to
+resume from behavior already discovered. Coverage here is search feedback, not
+a percentage and not proof that the program is correct.
+
+roc-fuzz embeds a mature native fuzzing engine in the executable built by Roc.
+Normal users interact with roc-fuzz commands and Roc values; knowledge of that
+engine is needed only for the expert escape hatch described later.
+
+== What roc-fuzz provides
+
+For a Roc application author, the platform supplies:
+
+* typed generators for common Roc values and tools for combining them;
+* coverage feedback that directs the search toward new behavior;
+* a bounded local runner with sensible defaults;
+* saved inputs for crashes, failed properties, hangs, memory limits, and leaks;
+* commands to render a saved input as a Roc value, reproduce it, and minimize it;
+* a persistent corpus that makes later runs build on earlier discoveries; and
+* a supervised CI mode that records configuration, logs, hashes, and failures.
+
+A target builds into one self-contained executable:
+
+[source,sh]
+----
+roc build --fuzz fuzz/stack/main.roc --output=stack-fuzz
+./stack-fuzz run
+----
+
+The normal workflow needs no separate native project or fuzzing tool
+installation.
+
+== Choose a good first target
+
+Good first targets are fast, deterministic operations over in-memory values with
+a rule that is easy to state.
+
+[cols="2,2,2",options="header"]
+|===
+|Application behavior |Possible property |Why it fits
+
+|Parser or decoder
+|Every input returns a value or an ordinary error without crashing or hanging.
+|Large input space and clear acceptable outcomes.
+
+|Encoder and decoder
+|Decoding an encoded value returns the original value.
+|Strong round-trip property.
+
+|Collection or state transition
+|An operation preserves membership, length, ordering, or an independent model.
+|Many combinations can exercise edge cases.
+
+|Canonicalization or normalization
+|Applying the operation twice gives the same result as once.
+|Simple idempotence property.
+
+|Two implementations of one rule
+|Both produce the same result.
+|Each implementation acts as an oracle for the other.
+|===
+
+A target is a poor fit when one input performs slow network, filesystem, UI, or
+database work; depends on nondeterministic external state; can legitimately run
+without a practical time or memory bound; or deliberately terminates the
+process for ordinary invalid input. Prefer unit, integration, end-to-end, or
+benchmark tests for those jobs.
+
+Fuzzing consumes CPU time and stores a corpus and failure artifacts. More time
+can explore more behavior, but a clean run means only that no failure was found
+during that search. It never proves the absence of bugs.
+
+roc-fuzz currently supports Linux x86-64 with musl and Apple Silicon macOS 11 or
+newer. Continue with xref:getting-started.adoc[Fuzz your first function] to build
+a target against a small application module and work through a failure.

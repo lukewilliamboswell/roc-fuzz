@@ -30,17 +30,28 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - name: Install stable tooling Roc and latest nightly
+        id: roc
+        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
         with:
-          python-version: "3.13"
-      - name: Install the examples' declared compiler
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          roc_bin_dir="$(python scripts/install_roc.py --tag-file examples/stack/main.roc --install-dir "$RUNNER_TEMP/roc")"
-          echo "$roc_bin_dir" >> "$GITHUB_PATH"
+          version: stable-and-nightly
+          stable-tag: nightly-2026-09-18-1d982dc
+          nightly-tag: nightly-2026-09-19-d025939
       - name: Test committed URLs from a fresh cache
-        run: python scripts/test.py --operation all --max-total-time 1 --verbose
+        if: runner.os != 'macOS'
+        env:
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
+        run: >-
+          "$ROC_STABLE" --opt=dev scripts/test_targets.roc --
+          --operation all --max-total-time 1 --verbose
+
+      - name: Type-check the target runner on macOS
+        if: runner.os == 'macOS'
+        env:
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+        run: |
+          "$ROC_STABLE" check scripts/test_targets.roc
 
   self-contained-runner:
     strategy:
@@ -57,47 +68,61 @@ jobs:
       - name: Checkout roc-fuzz
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.13"
+      - name: Read workspace dependencies
+        id: dependencies
+        run: echo "zig-version=$(jq -r .zig_version scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
 
-      - name: Install checksum-pinned Roc nightly
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          roc_bin_dir="$(python3 scripts/install_roc.py --install-dir "$RUNNER_TEMP/roc-nightly")"
-          echo "$roc_bin_dir" >> "$GITHUB_PATH"
+      - name: Install stable tooling Roc and latest nightly
+        id: roc
+        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
+        with:
+          version: stable-and-nightly
+          stable-tag: nightly-2026-09-18-1d982dc
+          nightly-tag: nightly-2026-09-19-d025939
 
       - name: Install Zig
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
         with:
-          version: "0.16.0"
+          version: ${{ steps.dependencies.outputs.zig-version }}
 
       - name: Show tool versions
         run: |
-          roc version
+          "$ROC_STABLE" version
+          "$ROC_NIGHTLY" version
           zig version
-          python --version
-
-      - name: Validate supply-chain metadata
-        run: python scripts/check_supply_chain.py
-
-      - name: Test examples against the working-tree platform package
         env:
-          GH_TOKEN: ${{ github.token }}
-        # Bootstrap only: switch to release when the first native-library lock is adopted.
-        run: python scripts/test_local.py --libraries source --platform-target ${{ matrix.platform-target }} --operation all --max-total-time 1 --verbose
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
 
-      - name: Test release tooling
-        run: python -m unittest discover -s tests -p 'test_*.py'
+      - name: Build native inputs for the working-tree platform
+        env:
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
+        # Bootstrap only: switch to release when the first native-library lock is adopted.
+        run: scripts/build_platform.roc -- --target ${{ matrix.platform-target }} --libraries source
+
+      - name: Validate the repository
+        env:
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
+        run: scripts/check_all.roc
+
+      - name: Test examples against the working-tree platform
+        env:
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
+        run: |
+          scripts/build_bundle.roc -- --target ${{ matrix.platform-target }} --output-dir .test-cache/ci-bundle
+          scripts/test_bundle.roc -- .test-cache/ci-bundle/*.tar.zst
 
       - name: Generate and validate API documentation
         env:
           ROC_DOCS_URL_ROOT: /roc-fuzz/main
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
         run: |
-          roc docs --output=.test-cache/docs platform/main.roc
-          python scripts/check_docs.py .test-cache/docs
+          "$ROC_NIGHTLY" docs --output=.test-cache/docs platform/main.roc
+          scripts/check_docs.roc -- .test-cache/docs
 
   required:
     name: CI required

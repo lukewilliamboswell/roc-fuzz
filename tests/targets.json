@@ -1,0 +1,543 @@
+{
+  "schema": 1,
+  "cases": [
+    {
+      "name": "jsonToDec",
+      "path": "examples/builtins/jsonToDec.roc",
+      "seed_hex": "7b226e223a312e357d0901",
+      "libfuzzer_seed": 1001,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "jsonToStr",
+      "path": "examples/builtins/jsonToStr.roc",
+      "seed_hex": "22526f63f09f90a6220901",
+      "libfuzzer_seed": 1002,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "jsonToU64",
+      "path": "examples/builtins/jsonToU64.roc",
+      "seed_hex": "31383434363734343037333730393535313631350901",
+      "libfuzzer_seed": 1003,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "listConcat",
+      "path": "examples/builtins/listConcat.roc",
+      "seed_hex": "000102030405060708090a0b0c0d0e0f",
+      "libfuzzer_seed": 1004,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "listLen",
+      "path": "examples/builtins/listLen.roc",
+      "seed_hex": "00010203040506070809",
+      "libfuzzer_seed": 1005,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "listRange",
+      "path": "examples/builtins/listRange.roc",
+      "seed_hex": "052a00",
+      "libfuzzer_seed": 1006,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "noop",
+      "path": "examples/builtins/noop.roc",
+      "seed_hex": "00",
+      "libfuzzer_seed": 1007,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "setInsert",
+      "path": "examples/builtins/setInsert.roc",
+      "seed_hex": "010201030205080d152237",
+      "libfuzzer_seed": 1008,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "setOps",
+      "path": "examples/builtins/setOps/main.roc",
+      "seed_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+      "libfuzzer_seed": 2201,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "setCollisions",
+      "path": "examples/builtins/setCollisions/main.roc",
+      "seed_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+      "libfuzzer_seed": 2202,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strConcat",
+      "path": "examples/builtins/strConcat.roc",
+      "seed_hex": "48656c6c6f2c20e4b896e7958c2108070605",
+      "libfuzzer_seed": 1009,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strEndsWith",
+      "path": "examples/builtins/strEndsWith.roc",
+      "seed_hex": "726f632e726f630908070605",
+      "libfuzzer_seed": 1010,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strFromUtf8",
+      "path": "examples/builtins/strFromUtf8.roc",
+      "seed_hex": "526f63f09f90a6ff08070605",
+      "libfuzzer_seed": 1011,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strIsEmpty",
+      "path": "examples/builtins/strIsEmpty.roc",
+      "seed_hex": "000102030405",
+      "libfuzzer_seed": 1012,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strRepeat",
+      "path": "examples/builtins/strRepeat.roc",
+      "seed_hex": "61626308070605040302",
+      "libfuzzer_seed": 1013,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strSplit",
+      "path": "examples/builtins/strSplit.roc",
+      "seed_hex": "612c622c6309080706050403",
+      "libfuzzer_seed": 1014,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strStartsWith",
+      "path": "examples/builtins/strStartsWith.roc",
+      "seed_hex": "726f632d66757a7a0908070605",
+      "libfuzzer_seed": 1015,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strToDec",
+      "path": "examples/builtins/strToDec.roc",
+      "seed_hex": "2d3132332e3435300807",
+      "libfuzzer_seed": 1016,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strToF32",
+      "path": "examples/builtins/strToF32.roc",
+      "seed_hex": "312e3235652d31300807",
+      "libfuzzer_seed": 1017,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strToF64",
+      "path": "examples/builtins/strToF64.roc",
+      "seed_hex": "2d312e37393736393331333438363233313537653330380807",
+      "libfuzzer_seed": 1018,
+      "skip": {
+        "fuzz": {
+          "reason": "F64.from_str hangs for 30+ minutes on adversarial underscore-heavy decimal literals",
+          "issue": "https://github.com/roc-lang/roc/issues/10660"
+        }
+      },
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": true
+    },
+    {
+      "name": "strToI128",
+      "path": "examples/builtins/strToI128.roc",
+      "seed_hex": "2d3137303134313138333436303436393233313733313638373330333731353838343130353732380807",
+      "libfuzzer_seed": 1019,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strToI16",
+      "path": "examples/builtins/strToI16.roc",
+      "seed_hex": "2d33323736380807",
+      "libfuzzer_seed": 1020,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strToI32",
+      "path": "examples/builtins/strToI32.roc",
+      "seed_hex": "323134373438333634370807",
+      "libfuzzer_seed": 1021,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strToI64",
+      "path": "examples/builtins/strToI64.roc",
+      "seed_hex": "2d393232333337323033363835343737353830380807",
+      "libfuzzer_seed": 1022,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strToI8",
+      "path": "examples/builtins/strToI8.roc",
+      "seed_hex": "2d3132380807",
+      "libfuzzer_seed": 1023,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strToU128",
+      "path": "examples/builtins/strToU128.roc",
+      "seed_hex": "3334303238323336363932303933383436333436333337343630373433313736383231313435350807",
+      "libfuzzer_seed": 1024,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strToU16",
+      "path": "examples/builtins/strToU16.roc",
+      "seed_hex": "36353533350807",
+      "libfuzzer_seed": 1025,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strToU32",
+      "path": "examples/builtins/strToU32.roc",
+      "seed_hex": "343239343936373239350807",
+      "libfuzzer_seed": 1026,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strToU64",
+      "path": "examples/builtins/strToU64.roc",
+      "seed_hex": "31383434363734343037333730393535313631350807",
+      "libfuzzer_seed": 1027,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strToU8",
+      "path": "examples/builtins/strToU8.roc",
+      "seed_hex": "3235350807",
+      "libfuzzer_seed": 1028,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strTrim",
+      "path": "examples/builtins/strTrim.roc",
+      "seed_hex": "202009526f63c2a0090807",
+      "libfuzzer_seed": 1029,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strTrimLeft",
+      "path": "examples/builtins/strTrimLeft.roc",
+      "seed_hex": "20090a526f63090807",
+      "libfuzzer_seed": 1030,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strTrimRight",
+      "path": "examples/builtins/strTrimRight.roc",
+      "seed_hex": "526f63200d0a090807",
+      "libfuzzer_seed": 1031,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "floatMinMax",
+      "path": "examples/floatMinMax.roc",
+      "seed_hex": "020000000000000000050000000000000000",
+      "libfuzzer_seed": 1038,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "jsonRoundTrip",
+      "path": "examples/jsonRoundTrip.roc",
+      "seed_hex": "0001020304050607",
+      "libfuzzer_seed": 1032,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "listConcatLength",
+      "path": "examples/listConcatLength.roc",
+      "seed_hex": "00010203040506070809",
+      "libfuzzer_seed": 1033,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "parserRobustness",
+      "path": "examples/parserRobustness.roc",
+      "seed_hex": "313233090807",
+      "libfuzzer_seed": 1034,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "stack",
+      "path": "examples/stack/main.roc",
+      "seed_hex": "00010203040506070809",
+      "libfuzzer_seed": 1035,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "stringSplitRoundTrip",
+      "path": "examples/stringSplitRoundTrip.roc",
+      "seed_hex": "526f63202c090807",
+      "libfuzzer_seed": 1036,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "failureArtifact",
+      "path": "examples/fixtures/failureArtifact.roc",
+      "seed_hex": "0001020304050607",
+      "libfuzzer_seed": 1037,
+      "expected_failure": true,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "dictOps",
+      "path": "examples/builtins/dictOps.roc",
+      "seed_hex": "0000010203000102",
+      "libfuzzer_seed": 1039,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "dictInsertAlias",
+      "path": "examples/builtins/dictInsertAlias.roc",
+      "seed_hex": "000102030405060708090a0b",
+      "libfuzzer_seed": 1052,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "dictRefcountAlias",
+      "path": "examples/builtins/dictRefcountAlias.roc",
+      "seed_hex": "000102030405060708090a0b",
+      "libfuzzer_seed": 1053,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "dictInsertUniqueness",
+      "path": "examples/builtins/dictInsertUniqueness.roc",
+      "seed_hex": "0001020304050607",
+      "libfuzzer_seed": 1054,
+      "skip": {
+        "seed": {
+          "reason": "Dict.insert loses uniqueness across the allocation-check closure and allocates once per insertion",
+          "issue": "https://github.com/roc-lang/roc/issues/11162"
+        },
+        "fuzz": {
+          "reason": "Dict.insert loses uniqueness across the allocation-check closure and allocates once per insertion",
+          "issue": "https://github.com/roc-lang/roc/issues/11162"
+        }
+      },
+      "expected_failure": false,
+      "skip_seed": true,
+      "skip_fuzz": true
+    },
+    {
+      "name": "dictIterRoundTrip",
+      "path": "examples/dictIterRoundTrip.roc",
+      "seed_hex": "0001020304050607",
+      "libfuzzer_seed": 1040,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "listSortNumbers",
+      "path": "examples/builtins/listSortNumbers.roc",
+      "seed_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728",
+      "libfuzzer_seed": 1041,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "listSortReversed",
+      "path": "examples/builtins/listSortReversed.roc",
+      "seed_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728",
+      "libfuzzer_seed": 1042,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "listSortBy",
+      "path": "examples/builtins/listSortBy.roc",
+      "seed_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728",
+      "libfuzzer_seed": 1043,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "listSortByReversed",
+      "path": "examples/builtins/listSortByReversed.roc",
+      "seed_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728",
+      "libfuzzer_seed": 1044,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "listSortWith",
+      "path": "examples/builtins/listSortWith.roc",
+      "seed_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728",
+      "libfuzzer_seed": 1045,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "listSortWithReversed",
+      "path": "examples/builtins/listSortWithReversed.roc",
+      "seed_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728",
+      "libfuzzer_seed": 1046,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "listSortStrings",
+      "path": "examples/builtins/listSortStrings.roc",
+      "seed_hex": "0100f780010400",
+      "libfuzzer_seed": 1047,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "listSortWideElements",
+      "path": "examples/builtins/listSortWideElements.roc",
+      "seed_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728",
+      "libfuzzer_seed": 1048,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "listSortInconsistentCmp",
+      "path": "examples/builtins/listSortInconsistentCmp.roc",
+      "seed_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728",
+      "libfuzzer_seed": 1049,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "listSortAliasing",
+      "path": "examples/builtins/listSortAliasing.roc",
+      "seed_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728",
+      "libfuzzer_seed": 1050,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "listSortPatterns",
+      "path": "examples/builtins/listSortPatterns.roc",
+      "seed_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728",
+      "libfuzzer_seed": 1051,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    }
+  ],
+  "retired": [
+    {
+      "name": "strCountGraphemes",
+      "reason": "The modern builtin Str API no longer exposes grapheme counting."
+    },
+    {
+      "name": "strGraphemes",
+      "reason": "The modern builtin Str API no longer exposes grapheme splitting."
+    },
+    {
+      "name": "strStartsWithScalar",
+      "reason": "The modern builtin Str API no longer exposes starts_with_scalar."
+    },
+    {
+      "name": "strToNat",
+      "reason": "Nat was removed; the fixed-width unsigned parser targets cover the supported API."
+    }
+  ]
+}
