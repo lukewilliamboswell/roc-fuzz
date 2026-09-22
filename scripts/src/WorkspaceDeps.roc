@@ -9,7 +9,6 @@ RocAutomationDependency : { build_docs_revision : Str, repository : Str }
 
 RawWorkspaceDeps : {
 	libfuzzer : LibfuzzerDependency,
-	native_release_default : Str,
 	package_urls : PackageUrls,
 	repository : Str,
 	roc_automation : RocAutomationDependency,
@@ -27,7 +26,6 @@ WorkspaceLibfuzzerDependency : { sha256 : Identity.Sha256, url : Str, version : 
 ## those dependencies must resolve before this module can be loaded.
 WorkspaceDeps := {
 	libfuzzer : WorkspaceLibfuzzerDependency,
-	native_release_default : Identity.NativeRelease,
 	package_urls : PackageUrls,
 	repository : Identity.Repository,
 	roc_automation : RocAutomationDependency,
@@ -52,10 +50,6 @@ WorkspaceDeps := {
 			Ok(value) => value
 			Err(_) => return Err(InvalidLibfuzzerSha256)
 		}
-		native_release = match Identity.NativeRelease.parse(decoded.native_release_default) {
-			Ok(value) => value
-			Err(_) => return Err(InvalidDefaultNativeRelease(decoded.native_release_default))
-		}
 		repository = match Identity.Repository.parse(decoded.repository) {
 			Ok(value) => value
 			Err(_) => return Err(InvalidWorkspaceRepository(decoded.repository))
@@ -67,7 +61,6 @@ WorkspaceDeps := {
 		WorkspaceDeps.validate(
 			WorkspaceDeps.{
 				libfuzzer: { sha256: libfuzzer_sha256, url: decoded.libfuzzer.url, version: decoded.libfuzzer.version },
-				native_release_default: native_release,
 				package_urls: decoded.package_urls,
 				repository,
 				roc_automation: decoded.roc_automation,

@@ -10,7 +10,6 @@ app [main!] {
 import cli.Stdout
 import src/Integrity
 import src/LibrarySource
-import src/NativeLibraries
 import src/RocSource
 
 main! = |_args| Stdout.line!("This is the test root for shared tooling modules; run it with `roc test`.")

@@ -1,36 +1,42 @@
-name: Native libraries
+name: Linker inputs
 
 on:
   workflow_dispatch:
     inputs:
-      release_version:
-        description: "Independent library tag; blank uses workspace configuration"
-        required: false
-        default: ""
-        type: string
-      publish:
-        description: "Publish the exact tested archives from the default branch"
-        type: boolean
+      release_candidate:
+        description: Build and attest the exact candidate selected by the trusted publisher
+        required: true
         default: false
-  pull_request:
-    paths:
-      - .github/workflows/native-libraries.yml
-      - scripts/*.roc
-      - scripts/src/**
-      - scripts/workspace-deps.json
-      - src/macos_fuzzer_ext_functions.cpp
-      - THIRD_PARTY_LICENSES.md
+        type: boolean
+      expected_sha:
+        description: Exact pull-request head selected by the trusted publisher
+        required: false
+        type: string
 
 permissions: {}
-
 concurrency:
-  group: native-libraries-${{ github.ref }}
+  group: linker-inputs-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  validate-request:
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Bind publication candidates to the dispatched commit
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          RELEASE_CANDIDATE: ${{ inputs.release_candidate || false }}
+        run: |
+          set -euo pipefail
+          if [ "$RELEASE_CANDIDATE" = true ]; then
+            test "$GITHUB_EVENT_NAME" = workflow_dispatch
+            test -n "$EXPECTED_SHA"
+            test "$EXPECTED_SHA" = "$GITHUB_SHA"
+          fi
+
   build:
-    outputs:
-      library-release: ${{ steps.dependencies.outputs.library-release }}
+    needs: validate-request
     permissions:
       contents: read
     strategy:
@@ -46,143 +52,89 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - name: Read workspace dependencies
+      - name: Read tool versions
         id: dependencies
-        env:
-          REQUESTED_RELEASE: ${{ inputs.release_version }}
-        run: |
-          echo "zig-version=$(jq -r .zig_version scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
-          if [ -n "$REQUESTED_RELEASE" ]; then
-            echo "LIBRARY_RELEASE=$REQUESTED_RELEASE" >> "$GITHUB_ENV"
-            echo "library-release=$REQUESTED_RELEASE" >> "$GITHUB_OUTPUT"
-          else
-            release=$(jq -r .native_release_default scripts/workspace-deps.json)
-            echo "LIBRARY_RELEASE=$release" >> "$GITHUB_ENV"
-            echo "library-release=$release" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Validate request before installing build tools
-        env:
-          PUBLISH: ${{ inputs.publish || false }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        run: |
-          set -euo pipefail
-          [[ "$LIBRARY_RELEASE" =~ ^native-libs-v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          if [ "$PUBLISH" = true ]; then
-            test "$GITHUB_REF" = "refs/heads/$DEFAULT_BRANCH"
-          fi
+        run: echo "zig-version=$(jq -r .zig_version scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
         with:
           version: ${{ steps.dependencies.outputs.zig-version }}
           use-cache: false
-      - name: Install stable tooling Roc and latest nightly
+      - name: Install Roc toolchains
         id: roc
         uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
         with:
           version: stable-and-nightly
           stable-tag: nightly-2026-09-18-1d982dc
           nightly-tag: nightly-2026-09-19-d025939
-      - name: Build and package libraries without libhost
+      - name: Build linker inputs from source
+        env:
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
+        run: scripts/build_platform.roc -- --target ${{ matrix.target }} --libraries source --libraries-only
+      - name: Validate inputs through a fresh host and final bundle
         env:
           ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
           ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
         run: |
-          scripts/build_platform.roc -- --target ${{ matrix.target }} --libraries source --libraries-only
-          scripts/pack_native_libraries.roc -- --target ${{ matrix.target }} --release "$LIBRARY_RELEASE"
-      - name: Extract and test the exact candidate archive
-        env:
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
-        run: |
-          scripts/extract_native_libraries.roc -- --target ${{ matrix.target }} --archive "dist/native/$LIBRARY_RELEASE-${{ matrix.target }}.tar.gz" --directory "$RUNNER_TEMP/extracted"
-          # Copy only the validated library inventory; build a fresh host around it.
-          find "$RUNNER_TEMP/extracted" -maxdepth 1 -type f \( -name '*.a' -o -name 'crt1.o' \) -exec cp {} "platform/targets/${{ matrix.target }}/" \;
           scripts/build_platform.roc -- --target ${{ matrix.target }} --host-only
           scripts/build_bundle.roc -- --target ${{ matrix.target }} --output-dir "$RUNNER_TEMP/bundle"
           scripts/test_bundle.roc -- "$RUNNER_TEMP"/bundle/*.tar.zst
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: native-${{ matrix.target }}
-          path: dist/native/*
+          name: built-${{ matrix.target }}
+          path: platform/targets/${{ matrix.target }}
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
 
-  attest:
+  assemble:
     needs: build
-    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-      id-token: write
-      attestations: write
-      artifact-metadata: write
-    strategy:
-      matrix:
-        target: [x64musl, arm64mac]
-    steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: native-${{ matrix.target }}
-          path: assets
-      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
-        with:
-          subject-path: assets/*.tar.gz
-      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
-        with:
-          subject-path: assets/*.tar.gz
-          sbom-path: assets/${{ needs.build.outputs.library-release }}-${{ matrix.target }}.tar.gz.spdx.json
-      - name: Export attestation bundles
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          for archive in "$GITHUB_WORKSPACE"/assets/*.tar.gz; do
-            work="$(mktemp -d)"
-            (cd "$work" && gh attestation download "$archive" --repo "$GITHUB_REPOSITORY")
-            files=("$work"/*.jsonl)
-            test "${#files[@]}" -eq 1
-            cp "${files[0]}" "$archive.intoto.jsonl"
-          done
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: attested-native-${{ matrix.target }}
-          path: assets/*
-          if-no-files-found: error
-          retention-days: 30
-
-  publish:
-    needs: [build, attest]
-    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      LIBRARY_RELEASE: ${{ needs.build.outputs.library-release }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          pattern: attested-native-*
-          merge-multiple: true
-          path: assets
-      - name: Install stable tooling Roc and latest nightly
-        id: roc
-        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
-        with:
-          version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-19-d025939
-      - name: Record pins for the platform follow-up
-        env:
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
-        run: scripts/lock_native_libraries.roc -- --directory assets --release "$LIBRARY_RELEASE" --output assets/native-libraries.lock.json
-      - name: Publish immutable library release without changing latest platform
+          pattern: built-*
+          path: built
+      - name: Restore target layouts
         run: |
-          set -euo pipefail
-          # Existing tags are never moved and existing releases are never overwritten.
-          refs="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$LIBRARY_RELEASE")"
-          test "$(jq --arg tag "refs/tags/$LIBRARY_RELEASE" '[.[] | select(.ref == $tag)] | length' <<< "$refs")" -eq 0
-          gh release create "$LIBRARY_RELEASE" assets/* --target "$GITHUB_SHA" --latest=false --title "$LIBRARY_RELEASE" --notes 'Independent native libraries. Excludes libhost.a. Verify archive SHA-256 and workflow attestation before use. Adopt the attached lock file in a reviewed platform PR.'
+          cp -R built/built-x64musl/. platform/targets/x64musl/
+          cp -R built/built-arm64mac/. platform/targets/arm64mac/
+      - name: Create deterministic target archives and canonical manifest
+        run: >-
+          python3 scripts/link_input_artifacts.py package
+          --output candidate
+          --repository "$GITHUB_REPOSITORY"
+          --sha "$GITHUB_SHA"
+          --ref "$GITHUB_REF"
+          --workflow "$GITHUB_REPOSITORY/.github/workflows/native-libraries.yml"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: link-input-release
+          path: candidate/*
+          if-no-files-found: error
+          retention-days: 30
+
+  attest:
+    needs: assemble
+    if: github.event_name == 'workflow_dispatch' && inputs.release_candidate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: link-input-release
+          path: candidate
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: candidate/build-input-release.json
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: candidate/link-inputs-*.tar

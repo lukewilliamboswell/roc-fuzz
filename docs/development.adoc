@@ -20,9 +20,11 @@ packaging require only:
 * stable Roc for the repository's typed tooling; and
 * the nightly Roc compiler selected by the platform and application headers.
 
-Native libraries have an independent release cycle; `libhost.a` is built
-with each platform update. Source development requires Zig 0.16.0. The builder
-uses `zig ar`.
+Linker inputs have an independent, content-addressed release cycle;
+`libhost.a` is deliberately outside that cycle and is built with each platform
+update. This separation means a host or Roc source change does not rebuild large,
+stable runtime inputs. Source development and the explicitly dispatched producer
+require Zig 0.16.0. The builder uses `zig ar`.
 
 Exact project compiler versions live in the platform and application header
 `roc` fields. The shared updater changes only those pins, preserving published
@@ -40,34 +42,53 @@ scripts/build_platform.roc
 ----
 
 Pass `--target x64musl` or `--target arm64mac` explicitly in automation.
-The default restores the archive in `native-libraries.lock.json`,
-verifies its reviewed content digest and embedded release identity, builds the
-current host, and writes local `SHA256SUMS`. It does not query GitHub's
-attestation service during routine restoration. Never commit generated archives,
-objects, or manifests.
+The default restores the archives selected by `native-libraries.lock.json`,
+rehashes their manifest and target archive even on a cache hit, validates the
+complete archive inventory, builds the current host, and writes local
+`SHA256SUMS`. The archive digest is the reviewed authorization for routine use;
+the cache key only locates likely bytes. This is why cache hits are still hashed
+and why a cache miss downloads the exact locked release rather than rebuilding.
+It avoids repeat network traffic without allowing a poisoned or truncated cache
+entry to become trusted. Routine restoration does not query GitHub's attestation
+service. Never commit generated archives, objects, or manifests.
 
-During initial bootstrap, the lock intentionally has no published
-release. Use `--libraries source` explicitly with `build_platform.roc`
-or `run_target.roc` until adopting the first release. This
-compiles pinned libFuzzer and Zig runtimes locally. CI's temporary
-source-build flags must be removed in the same reviewed change that
-adopts the published lock.
+The one-time rollout uses two pull requests. First merge the consumer, producer,
+publisher, and temporary empty-lock handling. This infrastructure PR may use the
+explicit bootstrap branch because no trusted publisher exists on the default
+branch yet. Then open a same-repository adoption PR, dispatch `Publish linker
+inputs` with that PR number, and review the publisher's GitHub-signed lock-only
+commit. Replacing the empty lock makes routine jobs take only the locked consumer
+path. This ordering keeps
+release credentials in already-reviewed default-branch code while still binding
+the first release to the exact adoption-PR producer commit.
 
-The `Native libraries` workflow packages each target without
-`libhost.a`, tests the archive with a fresh host, and signs provenance
-and an SPDX SBOM when explicitly publishing from the default branch.
-Tags use `native-libs-vX.Y.Z` and never become GitHub's latest platform
-release. Release new libraries for changes to library sources,
-runtimes/toolchains, flags, targets, security fixes, or the macOS
-adapter compiled into `libfuzzer.a`. The workflow emits the archive pins
-and source identity as a lock-file release asset for review. The macOS
-coverage shim stays with `libhost.a`.
+The workflow-dispatch-only `Linker inputs` producer packages both targets without
+`libhost.a`, tests each candidate through a fresh host and final bundle, emits a
+canonical aggregate manifest, and attests that manifest and both archives. It has
+no publication authority. Release new inputs for changes to their sources,
+runtimes/toolchains, flags, targets, security fixes, or the macOS adapter compiled
+into `libfuzzer.a`. The macOS coverage shim stays with `libhost.a`.
 
-Before adopting a native-library release, review its
-`native-libraries.lock.json` asset, source revision, archive digests,
-and workflow attestations. Once adopted, the reviewed SHA-256 pins the exact
-bytes used by builds without repeating that network verification. The workflow's
-default manual run is validation-only; publication must be explicitly requested.
+`Publish linker inputs` runs trusted controller code pinned to a reviewed full
+`roc-automation` commit. It dispatches the producer at the exact same-repository
+PR head, verifies the workflow/ref/SHA, hashes and attestations, publishes an
+immutable release named from the aggregate manifest hash, and adds only the lock
+in a lease-guarded GitHub-signed commit. Candidate code cannot publish, while the
+privileged job never executes candidate code. The PR-built release remains the
+permanent dependency after merge; rebuilding it would break the evidence-to-byte
+identity that the review admitted.
+
+GitHub immutable releases must be enabled before the first publication. The
+controller checks the resulting release state and refuses to adopt a lock when
+the hosting policy does not enforce immutability; a content-derived name alone
+cannot prevent an administrator from replacing assets.
+
+Before adopting a release, review its producer changes, exact source revision,
+input fingerprint, manifest and archive digests, sizes, target coverage, native
+link tests, and workflow attestations. Merge with a merge commit so the attested
+producer SHA and signed lock commit remain reachable. Ordinary PRs and nightly
+updates then know only the reviewed lock, cache, verifier, and target files; they
+never dispatch or reproduce linker inputs.
 
 The fully static build excludes `FuzzerInterceptors.cpp`. Its wrappers
 locate libc functions through `dlsym`, which is not usable in the static

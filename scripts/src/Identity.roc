@@ -1,5 +1,3 @@
-import Version
-
 ## Validated identities used across repository automation. Raw strings should be
 ## converted at JSON/CLI boundaries and unwrapped only for serialization or a
 ## subprocess argument.
@@ -14,12 +12,6 @@ Identity := [].{
 		parse = |value| if is_lower_hex(value, 40) Ok(GitRevision.(value)) else Err(InvalidGitRevision(value))
 		to_str = |GitRevision.(value)| value
 		is_eq = |GitRevision.(left), GitRevision.(right)| left == right
-	}
-
-	NativeRelease :: Str.{
-		parse = |value| if Version.native_release(value) Ok(NativeRelease.(value)) else Err(InvalidNativeRelease(value))
-		to_str = |NativeRelease.(value)| value
-		is_eq = |NativeRelease.(left), NativeRelease.(right)| left == right
 	}
 
 	Repository :: Str.{

@@ -1,21 +1,21 @@
 = Release bundle provenance
 
-roc-fuzz does not store native archives or objects in Git. The
-independent `native-libraries.yml` workflow builds x64-musl and Apple
-Silicon libraries on native GitHub-hosted runners, packages them without
-`libhost.a`, and tests the exact archives with fresh hosts. Publication
-attaches signed provenance, an SPDX SBOM, exported attestations and
-checksums to `native-libs-vX.Y.Z` releases.
+roc-fuzz does not store native archives or objects in Git. The independent,
+workflow-dispatch-only `native-libraries.yml` producer builds x64-musl and Apple
+Silicon inputs on native GitHub-hosted runners, packages them without
+`libhost.a`, and tests the exact archives with fresh hosts and final bundles. It
+attests a canonical manifest and each archive but cannot publish. The trusted
+default-branch publisher verifies that evidence for the exact same-repository
+pull-request ref and SHA before creating an immutable release.
 
-Platform builds restore the reviewed `native-libraries.lock.json`
-archives, verify their SHA-256 digests, validate their locked release and source
-identity, and build fresh hosts. The reviewed content hash is the trust anchor,
-so routine restores do not contact GitHub's attestation service. Cached archives
-are verified on reuse. The native workflow's attestation is checked when a new
-lock is reviewed and adopted. The first library release still needs
-bootstrapping; CI explicitly builds from source until its lock is
-adopted. See
-xref:development.adoc#generate-platform-inputs[native-library setup].
+Platform builds restore the reviewed `native-libraries.lock.json` manifest and
+archives, verify sizes and SHA-256 digests on downloads and cache hits, validate
+their locked release, source, fingerprint and inventory, and build fresh hosts.
+The reviewed content hash is the routine trust anchor, so a valid cache hit uses
+zero network and does not contact GitHub's attestation service. A corrupt cache
+entry is discarded and only the exact locked asset may be downloaded again. The
+producer attestations are admission evidence checked once by the trusted
+publisher. See xref:development.adoc#generate-platform-inputs[linker-input setup].
 
 After those consumer tests pass, GitHub's attestation service creates
 signed SLSA build provenance and an SBOM attestation for the exact

@@ -66,8 +66,10 @@ The focused compiler and builtin regressions remain under
 [`examples/builtins/`](examples/builtins/), and the
 [trophy case](trophy-case/README.md) records bugs found through fuzzing.
 
-Native libraries and platform bundles are published independently with
-checksums, provenance, and SPDX SBOMs. See the
+Content-addressed linker inputs, `libhost.a`, and platform bundles have distinct
+invalidation boundaries. Linker-input releases are admitted from exact PR
+producer commits with hashes and attestations, while routine builds reuse their
+verified caches instead of rebuilding or repeatedly downloading them. See the
 [releases](https://github.com/lukewilliamboswell/roc-fuzz/releases) for immutable
 bundles and versioned PDF/HTML documentation archives.
 
