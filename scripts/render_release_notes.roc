@@ -12,7 +12,7 @@ import src/ReleaseCandidate
 import src/Script
 import src/Version
 
-ReleaseBundle := { artifact_file : Str, name : Str, source_path : Str }
+ReleaseBundle : { artifact_file : Str, name : Str, source_path : Str }
 
 main! = |_args| {
 	version = Script.env_str!("RELEASE_VERSION")?
