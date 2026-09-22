@@ -38,8 +38,11 @@ MAX_BYTES = 512 * 1024 * 1024
 
 
 def digest(path: Path) -> str:
+    state = hashlib.sha256()
     with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
+        while chunk := stream.read(1024 * 1024):
+            state.update(chunk)
+    return state.hexdigest()
 
 
 def canonical(value: object) -> bytes:
