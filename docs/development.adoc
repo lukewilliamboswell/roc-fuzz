@@ -159,6 +159,15 @@ migration exception. The release workflow additionally tests the exact
 candidate archives. `nightly_validation: true` never publishes or
 deploys.
 
+Linux CI also rebuilds the checksum-pinned libFuzzer sources with
+AddressSanitizer and runs a short native smoke campaign. This detects heap,
+stack, use-after-free, and leak errors in the embedded C++ fuzzing engine on
+every pull request, every `trunk` update, and before release publication. Run
+the same check locally with
+`roc-stable --opt=dev scripts/test_native_sanitizers.roc`; it requires Clang,
+`curl`, and `tar`. The sanitizer executable is CI-only and does not change the
+static release artifacts.
+
 When checking, testing, or building with a newer compiler, the runner
 permits Roc's warning-only exit code only if every diagnostic is a
 compiler-pin mismatch. The warnings remain visible. Errors, other

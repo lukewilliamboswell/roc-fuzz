@@ -29,6 +29,32 @@ concurrency:
   cancel-in-progress: ${{ (github.event_name != 'workflow_dispatch' || inputs.nightly_validation) }}
 
 jobs:
+  native-sanitizers:
+    name: Native sanitizers
+    needs: release-info
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact source revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install stable tooling Roc and latest nightly
+        id: roc
+        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
+        with:
+          version: stable-and-nightly
+          stable-tag: nightly-2026-09-18-1d982dc
+          nightly-tag: nightly-2026-09-19-d025939
+
+      - name: Build and run the pinned libFuzzer with AddressSanitizer
+        env:
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+        run: |
+          "$ROC_STABLE" --opt=dev scripts/test_native_sanitizers.roc
+
   release-info:
     name: Validate release request
     runs-on: ubuntu-24.04
@@ -473,7 +499,7 @@ jobs:
 
   publish-release:
     name: Publish GitHub release
-    needs: [release-info, build, build-docs, test-bundles, attest-release]
+    needs: [release-info, native-sanitizers, build, build-docs, test-bundles, attest-release]
     if: (github.event_name == 'workflow_dispatch' && !inputs.nightly_validation)
     runs-on: ubuntu-24.04
     permissions:
@@ -561,13 +587,14 @@ jobs:
   required:
     name: Release required
     if: always() && (github.event_name == 'pull_request' || inputs.nightly_validation)
-    needs: [release-info, native-inputs, build, test-bundles, build-docs, generate-sbom]
+    needs: [release-info, native-sanitizers, native-inputs, build, test-bundles, build-docs, generate-sbom]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:
       - name: Require every release validation job
         env:
           RELEASE_INFO: ${{ needs.release-info.result }}
+          NATIVE_SANITIZERS: ${{ needs.native-sanitizers.result }}
           NATIVE_INPUTS: ${{ needs.native-inputs.result }}
           BUILD: ${{ needs.build.result }}
           TEST_BUNDLES: ${{ needs.test-bundles.result }}
@@ -575,6 +602,7 @@ jobs:
           GENERATE_SBOM: ${{ needs.generate-sbom.result }}
         run: |
           test "$RELEASE_INFO" = success
+          test "$NATIVE_SANITIZERS" = success
           test "$NATIVE_INPUTS" = success
           test "$BUILD" = success
           test "$TEST_BUNDLES" = success

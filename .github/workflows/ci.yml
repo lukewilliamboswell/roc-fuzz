@@ -19,6 +19,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  native-sanitizers:
+    name: Native sanitizers
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout roc-fuzz
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install stable tooling Roc and latest nightly
+        id: roc
+        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
+        with:
+          version: stable-and-nightly
+          stable-tag: nightly-2026-09-18-1d982dc
+          nightly-tag: nightly-2026-09-19-d025939
+
+      - name: Build and run the pinned libFuzzer with AddressSanitizer
+        env:
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+        run: |
+          "$ROC_STABLE" --opt=dev scripts/test_native_sanitizers.roc
+
   published-examples:
     name: Public downloads (${{ matrix.os }})
     strategy:
@@ -127,14 +148,16 @@ jobs:
   required:
     name: CI required
     if: always()
-    needs: [self-contained-runner, published-examples]
+    needs: [native-sanitizers, self-contained-runner, published-examples]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:
       - name: Require every CI matrix job
         env:
           MATRIX_RESULT: ${{ needs.self-contained-runner.result }}
+          SANITIZER_RESULT: ${{ needs.native-sanitizers.result }}
           PUBLIC_RESULT: ${{ needs.published-examples.result }}
         run: |
           test "$MATRIX_RESULT" = success
+          test "$SANITIZER_RESULT" = success
           test "$PUBLIC_RESULT" = success
