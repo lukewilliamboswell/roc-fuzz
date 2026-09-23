@@ -91,7 +91,7 @@ generate! = |bundle, release, native_manifests, library_manifest_paths, dependen
 	repository = dependencies.repository.to_str()
 	base = base_packages(bundle_name, release, bundle_digest, dependencies, repository)
 	native = native_packages!(native_manifests, release, dependencies)?
-	libraries = library_packages!(library_manifest_paths, release, repository)?
+	libraries = library_packages!(library_manifest_paths, repository)?
 	components = base.concat(native).concat(libraries)
 	if !unique(components.map(|item| item.identifier)) {
 		return Err(DuplicateSbomIdentifier)
@@ -174,7 +174,7 @@ native_packages! = |manifests, release, dependencies| {
 	Ok($found)
 }
 
-library_packages! = |paths, release, repository| {
+library_packages! = |paths, repository| {
 	var $found = []
 	var $found_targets = []
 	for path in paths {
@@ -185,8 +185,8 @@ library_packages! = |paths, release, repository| {
 		if $found_targets.contains(target) {
 			return Err(DuplicateLibraryManifestTarget(target_name))
 		}
-		if raw.release != release or raw.repository != repository {
-			return Err(LibraryManifestIdentityMismatch(Path.display(path), release, repository, raw.release, raw.repository))
+		if raw.repository != repository {
+			return Err(LibraryManifestRepositoryMismatch(Path.display(path), repository, raw.repository))
 		}
 		if !Integrity.is_hex(raw.sha256, 64) {
 			return Err(InvalidLibraryDigest(Path.display(path)))

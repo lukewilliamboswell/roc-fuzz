@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       release_candidate:
-        description: Publish a branch RC; permits source-built bootstrap libraries, excludes Pages and default-branch follow-up
+        description: Publish a branch RC; excludes Pages and default-branch follow-up
         type: boolean
         default: false
       expected_sha:
@@ -170,7 +170,6 @@ jobs:
         run: echo "identity=$(python3 scripts/link_input_artifacts.py cache-identity --target "$TARGET")" >> "$GITHUB_OUTPUT"
 
       - name: Restore the content-addressed linker-input download cache
-        if: steps.linker-inputs.outputs.identity != 'bootstrap'
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: .test-cache/native-libraries
@@ -181,13 +180,7 @@ jobs:
           ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
           ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
           TARGET: ${{ matrix.platform_target }}
-          INPUT_IDENTITY: ${{ steps.linker-inputs.outputs.identity }}
-        run: |
-          if [ "$INPUT_IDENTITY" = bootstrap ]; then
-            scripts/build_platform.roc -- --target "$TARGET" --libraries source
-          else
-            scripts/build_platform.roc -- --target "$TARGET"
-          fi
+        run: scripts/build_platform.roc -- --target "$TARGET"
 
       - name: Upload native inputs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

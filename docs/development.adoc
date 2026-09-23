@@ -52,16 +52,6 @@ It avoids repeat network traffic without allowing a poisoned or truncated cache
 entry to become trusted. Routine restoration does not query GitHub's attestation
 service. Never commit generated archives, objects, or manifests.
 
-The one-time rollout uses two pull requests. First merge the consumer, producer,
-publisher, and temporary empty-lock handling. This infrastructure PR may use the
-explicit bootstrap branch because no trusted publisher exists on the default
-branch yet. Then open a same-repository adoption PR, dispatch `Publish linker
-inputs` with that PR number, and review the publisher's GitHub-signed lock-only
-commit. Replacing the empty lock makes routine jobs take only the locked consumer
-path. This ordering keeps
-release credentials in already-reviewed default-branch code while still binding
-the first release to the exact adoption-PR producer commit.
-
 The workflow-dispatch-only `Linker inputs` producer packages both targets without
 `libhost.a`, tests each candidate through a fresh host and final bundle, emits a
 canonical aggregate manifest, and attests that manifest and both archives. It has

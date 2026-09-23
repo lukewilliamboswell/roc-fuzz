@@ -110,10 +110,6 @@ def make_manifest(output: Path, repository: str, sha: str, ref: str, workflow: s
 
 def read_lock(path: Path = LOCK) -> dict:
     value = json.loads(path.read_text())
-    if value.get("release") is None and value.get("targets") == {}:
-        if set(value) != {"schema", "repository", "release", "source_revision", "targets"} or value.get("schema") != 1:
-            raise ValueError("invalid bootstrap linker-input lock")
-        return value
     required = {"schema_version", "kind", "repository", "release", "manifest", "source", "targets"}
     if set(value) != required or value["schema_version"] != 1 or value["kind"] != KIND:
         raise ValueError("unsupported linker-input lock")
@@ -148,8 +144,6 @@ def read_lock(path: Path = LOCK) -> dict:
 
 def cache_identity(target: str) -> str:
     lock = read_lock()
-    if lock.get("release") is None:
-        return "bootstrap"
     item = lock["targets"][target]
     return f"{lock['manifest']['sha256']}-{item['sha256']}-{item['size']}"
 
@@ -188,8 +182,6 @@ def verify_manifest(lock: dict, cache: Path) -> None:
 
 def verified_archive(target: str, cache: Path) -> tuple[Path, dict, dict]:
     lock = read_lock()
-    if lock.get("release") is None:
-        raise ValueError("linker inputs have not been bootstrapped")
     item = lock["targets"][target]
     if set(item) != {"asset", "sha256", "size"} or item["size"] <= 0 or item["size"] > MAX_BYTES:
         raise ValueError("invalid linker-input target lock")

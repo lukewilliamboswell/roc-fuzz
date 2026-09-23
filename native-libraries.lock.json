@@ -1,7 +1,29 @@
 {
-  "schema": 1,
+  "schema_version": 1,
+  "kind": "link-inputs",
   "repository": "lukewilliamboswell/roc-fuzz",
-  "release": null,
-  "source_revision": null,
-  "targets": {}
+  "release": "linker-inputs-sha256-b3479536a26a3b83b37a4b32ec1aea16288c607247b1c8f15169a3b11e42a4eb",
+  "manifest": {
+    "asset": "build-input-release.json",
+    "sha256": "b3479536a26a3b83b37a4b32ec1aea16288c607247b1c8f15169a3b11e42a4eb"
+  },
+  "source": {
+    "input_fingerprint": "f0214bce3b5a01395f8d13d23d53c9521d523b80139efe752e29c9d1cd0e897b",
+    "ref": "refs/heads/adopt/content-addressed-linker-inputs",
+    "repository": "lukewilliamboswell/roc-fuzz",
+    "sha": "b67241a65aabd9d6cfd609c2e2759d1a5813591d",
+    "workflow": "lukewilliamboswell/roc-fuzz/.github/workflows/native-libraries.yml"
+  },
+  "targets": {
+    "arm64mac": {
+      "asset": "link-inputs-arm64mac.tar",
+      "sha256": "b8b1f5d0269993f08ef850e5c7791b1fde88716b31866c52982d4552e596062c",
+      "size": 22835200
+    },
+    "x64musl": {
+      "asset": "link-inputs-x64musl.tar",
+      "sha256": "4affe25bbb9fb886f5c38a21ec57c74e22e17e4aa7c4a324a9e0293085310c27",
+      "size": 36823040
+    }
+  }
 }
