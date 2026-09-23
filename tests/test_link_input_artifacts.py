@@ -94,11 +94,12 @@ class LinkInputArtifactsTests(unittest.TestCase):
                 timeout=120,
             )
 
-    def test_bootstrap_lock_is_explicit(self):
+    def test_empty_legacy_lock_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             lock = Path(directory) / "lock.json"
             lock.write_text('{"schema":1,"repository":"owner/repo","release":null,"source_revision":null,"targets":{}}')
-            self.assertIsNone(module.read_lock(lock)["release"])
+            with self.assertRaisesRegex(ValueError, "unsupported linker-input lock"):
+                module.read_lock(lock)
 
 
 if __name__ == "__main__":
