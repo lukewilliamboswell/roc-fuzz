@@ -74,6 +74,12 @@ The platform's low-level `Target.run` callback is now effectful and is named
 `Fuzz.from_bytes` do not need to change for this API adjustment. Custom code
 which constructs or calls `Target` directly must rename that field or method.
 
+This release requires `nightly-2026-09-22-e494788` or later, where tag unions in
+output positions are implicitly open. `Arbitrary.bytes` now declares its error as
+`[NotEnoughData(U64)]` without `..`; code that uses `?` to merge that error into
+a wider union keeps working on the required compiler, but will not type-check on
+older nightlies.
+
 Saved corpus and crash files encode generator input rather than a stable public
 format. Keep the matching executable when exact historical reproduction
 matters, and start a fresh corpus when changing a target's generator changes
