@@ -20,6 +20,5 @@
   "roc_automation": {
     "repository": "https://github.com/lukewilliamboswell/roc-automation.git",
     "build_docs_revision": "a2b4d8abc967952b59fc751345efd144cbc0fbfc"
-  },
-  "native_release_default": "native-libs-v1.0.0"
+  }
 }

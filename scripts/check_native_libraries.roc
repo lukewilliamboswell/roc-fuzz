@@ -8,47 +8,8 @@ app [main!] {
 	roc: "nightly-2026-09-18-1d982dc",
 }
 
-import cli.Path
-import weaver.Cli
-import weaver.Opt
-import src/CliValues
-import src/Identity
-import src/NativeLibraries
-import src/Project
 import src/Script
-import src/WeaverCli
-import src/WorkspaceDeps
 
-main! = |raw_args| {
-	lock_path = match WeaverCli.parse!(cli_parser, raw_args)? {
-		Run(value) => value
-		Exit => return Ok({})
-	}
-	root = Project.root!()?
-	deps = WorkspaceDeps.current
-	lock = Path.absolute!(lock_path)?
-	Script.info!("CHECK", "Comparing installed provenance with the reviewed lock")?
-	reviewed = NativeLibraries.read_lock!(lock, deps.repository)?
-	for spec in Project.target_specs {
-		target_name = spec.target.name()
-		entry = NativeLibraries.lock_target(reviewed, spec.target)
-		path = Path.join(spec.target.dir(root), "NATIVE_LIBRARIES.json")
-		if !Path.is_file!(path)? {
-			return Err(MissingReleasedLibraryProvenance(target_name))
-		}
-		recorded = NativeLibraries.parse_provenance(Path.read_utf8!(path)?).map_err(|err| InvalidReleasedLibraryProvenance(target_name, err))?
-		expected = NativeLibraries.Provenance.{ archive: entry.archive, release: reviewed.release, repository: reviewed.repository, sha256: entry.sha256, source_revision: reviewed.source_revision, target: spec.target }
-		if !NativeLibraries.provenance_matches(recorded, expected) {
-			return Err(ReleasedLibraryProvenanceMismatch(target_name))
-		}
-	}
-	Script.pass!("Native-library provenance matches ${reviewed.release.to_str()}")
-}
-
-cli_parser : Cli.CliParser(Path)
-cli_parser = Cli.assert_valid(
-	Cli.finish(
-		Opt.single({ short: "", long: "lock", help: "Reviewed native-library lock. [default: native-libraries.lock.json]", type: "path", default: Value(Path.utf8("native-libraries.lock.json")), parser: CliValues.path }),
-		{ name: "check-native-libraries", version: "development", authors: [], description: "Require release provenance matching the reviewed native-library lock.", text_style: Plain },
-	),
+main! = |_args| Script.command("python3").run!(
+	["scripts/link_input_artifacts.py", "check-installed"],
 )

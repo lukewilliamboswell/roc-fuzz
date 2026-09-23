@@ -12,10 +12,13 @@ Regenerate them from the repository root with:
 scripts/build_platform.roc -- --target arm64mac
 ```
 
-The default verifies released library digests and attestations, then builds the
-host adapter and refreshes `SHA256SUMS`. During initial bootstrap, add
-`--libraries source` to compile checksum-pinned libFuzzer (including upstream
-`FuzzerInterceptors.cpp`) and Zig runtimes for `aarch64-macos.11.0` locally.
+The default verifies the reviewed manifest and archive hashes, including on a
+cache hit, then builds the host adapter and refreshes `SHA256SUMS`. Attestations
+are checked by the trusted publisher when adopting a new release, rather than by
+every routine consumer. Use `--libraries source` only when explicitly developing
+the dispatched producer; it compiles checksum-pinned libFuzzer (including
+upstream `FuzzerInterceptors.cpp`) and Zig runtimes for
+`aarch64-macos.11.0` locally.
 Generated files, provenance metadata, and checksum manifests are ignored by Git.
 The repository-owned host glue also supplies Roc's stack-depth coverage TLS
 slot and direct libFuzzer hook bindings required without `-export_dynamic`.

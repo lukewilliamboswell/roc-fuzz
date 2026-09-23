@@ -18,18 +18,11 @@ Version := [].{
 			_ => Bool.False
 		}
 
-	native_release = |value| {
-		prefix = "native-libs-v"
-		starts_with(value, prefix) and Version.semantic(Str.from_utf8_lossy(value.to_utf8().drop_first(prefix.to_utf8().len())))
-	}
 }
 
 nonempty_digits = |value| !value.is_empty() and value.to_utf8().all(|byte| byte >= '0' and byte <= '9')
 
 lower_hex_digit = |byte| (byte >= '0' and byte <= '9') or (byte >= 'a' and byte <= 'f')
 
-starts_with = |value, prefix| value.to_utf8().take_first(prefix.to_utf8().len()) == prefix.to_utf8()
-
 expect !Version.semantic("1.2")
 expect !Version.nightly("nightly-main")
-expect Version.native_release("native-libs-v1.2.3")

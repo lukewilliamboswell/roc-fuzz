@@ -11,8 +11,8 @@
 *.o
 *.a
 
-# Native inputs are built locally or restored from attested native-library
-# releases. Keep the target documentation, never the payloads.
+# Linker inputs are built only by the explicit producer or restored from the
+# content-hashed release cache. Keep target documentation, never payloads.
 /platform/targets/*/SHA256SUMS
 /platform/targets/*/NATIVE_LIBRARIES.json
 /examples/**/main

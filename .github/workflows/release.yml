@@ -127,7 +127,7 @@ jobs:
           scripts/check_supply_chain.roc
 
   native-inputs:
-    name: Generate native inputs (${{ matrix.platform_target }})
+    name: Prepare locked native inputs (${{ matrix.platform_target }})
     needs: release-info
     runs-on: ${{ matrix.os }}
     permissions:
@@ -163,13 +163,31 @@ jobs:
         with:
           version: ${{ steps.dependencies.outputs.zig-version }}
 
-      - name: Generate and checksum native inputs
+      - name: Resolve the reviewed linker-input identity
+        id: linker-inputs
         env:
-          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ matrix.platform_target }}
+        run: echo "identity=$(python3 scripts/link_input_artifacts.py cache-identity --target "$TARGET")" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the content-addressed linker-input download cache
+        if: steps.linker-inputs.outputs.identity != 'bootstrap'
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: .test-cache/native-libraries
+          key: linker-inputs-${{ matrix.platform_target }}-${{ steps.linker-inputs.outputs.identity }}
+
+      - name: Prepare host and reviewed linker inputs
+        env:
           ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
           ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
-        run: scripts/build_platform.roc -- --target ${{ matrix.platform_target }} --libraries source
-        # Bootstrap only: switch to release when adopting the first published library lock.
+          TARGET: ${{ matrix.platform_target }}
+          INPUT_IDENTITY: ${{ steps.linker-inputs.outputs.identity }}
+        run: |
+          if [ "$INPUT_IDENTITY" = bootstrap ]; then
+            scripts/build_platform.roc -- --target "$TARGET" --libraries source
+          else
+            scripts/build_platform.roc -- --target "$TARGET"
+          fi
 
       - name: Upload native inputs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

@@ -62,9 +62,9 @@ main! = |raw_args| {
 build_summary = |build| {
 	target_names = Str.join_with(build.specs.map(|spec| spec.target.name()), ", ")
 	mode = match build.mode {
-		Complete => "native libraries and platform host"
+		Complete => "linker inputs and platform host"
 		HostOnly => "platform host using existing libraries"
-		LibrariesOnly => "native libraries only"
+		LibrariesOnly => "linker inputs only"
 	}
 	"prepare ${mode} for ${target_names}"
 }
@@ -88,7 +88,7 @@ cli_parser = Cli.assert_valid(
 				parser: parse_library_source_arg,
 				default: Value(Release),
 			}),
-			libraries_only: Opt.flag({ short: "", long: "libraries-only", help: "Build only native libraries for the independent release workflow." }),
+			libraries_only: Opt.flag({ short: "", long: "libraries-only", help: "Build only linker inputs for the independent release workflow." }),
 			libfuzzer_source: Cli.map(
 				Opt.maybe({ short: "", long: "libfuzzer-source", help: "Use a local libFuzzer source tree instead of the pinned source archive.", type: "path", parser: CliValues.path }),
 				|value| match value {
@@ -117,7 +117,7 @@ cli_parser = Cli.assert_valid(
 			name: "build-platform",
 			version: "development",
 			authors: [],
-			description: "Prepare the native libraries and host archive required by the roc-fuzz platform.",
+			description: "Prepare the linker inputs and host archive required by the roc-fuzz platform.",
 			text_style: Plain,
 		},
 	),
@@ -220,8 +220,7 @@ prepare_target! = |build, work, spec, libfuzzer| {
 		}
 		(_, NotNeeded) => {
 			Script.info!("LIBRARIES", "restoring the reviewed release libraries for ${Project.Target.name(spec.target)}")?
-			stable = Script.roc_stable!()?
-			stable.run!(["scripts/restore_native_libraries.roc", "--", "--target", OsStr.from_str(Project.Target.name(spec.target))])?
+			Script.command("python3").run!(["scripts/link_input_artifacts.py", "install", "--target", OsStr.from_str(Project.Target.name(spec.target))])?
 		}
 	}
 	if build.mode != LibrariesOnly {
