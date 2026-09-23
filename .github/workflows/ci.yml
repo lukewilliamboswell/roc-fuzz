@@ -32,7 +32,7 @@ jobs:
         with:
           version: stable-and-nightly
           stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-19-d025939
+          nightly-tag: nightly-2026-09-22-e494788
 
       - name: Build and run the pinned libFuzzer with AddressSanitizer
         env:
@@ -57,7 +57,7 @@ jobs:
         with:
           version: stable-and-nightly
           stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-19-d025939
+          nightly-tag: nightly-2026-09-22-e494788
       - name: Test committed URLs from a fresh cache
         if: runner.os != 'macOS'
         env:
@@ -99,7 +99,7 @@ jobs:
         with:
           version: stable-and-nightly
           stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-19-d025939
+          nightly-tag: nightly-2026-09-22-e494788
 
       - name: Install Zig
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2

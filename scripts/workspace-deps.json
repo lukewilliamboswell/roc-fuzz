@@ -2,7 +2,7 @@
   "schema": 1,
   "repository": "lukewilliamboswell/roc-fuzz",
   "roc_stable": "nightly-2026-09-18-1d982dc",
-  "roc_nightly": "nightly-2026-09-19-d025939",
+  "roc_nightly": "nightly-2026-09-22-e494788",
   "setup_roc_revision": "89a8a2945bd107f27b160096b3af7f52d2d78369",
   "package_urls": {
     "basic_cli": "https://github.com/roc-lang/basic-cli/releases/download/0.23.0-rc1/3hT3SoHZ6qbEsa9qVFLUW3547U5LeoNd1KbpqLpz4r1i.tar.zst",
