@@ -28,7 +28,7 @@ Arbitrary := [Unstructured(List(U8))].{
 	##
 	## `NotEnoughData(available)` reports how many bytes remained when the request
 	## could not be satisfied.
-	bytes : Arbitrary, U64 -> Try({ value : List(U8), state : Arbitrary }, [NotEnoughData(U64), ..])
+	bytes : Arbitrary, U64 -> Try({ value : List(U8), state : Arbitrary }, [NotEnoughData(U64)])
 	bytes = |Unstructured(data), requested_len| {
 		if List.len(data) >= requested_len {
 			{ before, others } = List.split_at(data, requested_len)

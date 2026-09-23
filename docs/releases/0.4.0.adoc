@@ -14,14 +14,14 @@ pinned and audited later.
 == Use this release
 
 roc-fuzz 0.4.0 supports Linux x86-64 with musl and Apple Silicon macOS 11 or
-newer. It was built using `nightly-2026-09-19-d025939` of the Roc compiler but is
+newer. It was built using `nightly-2026-09-22-e494788` of the Roc compiler but is
 expected to work on later compatible versions.
 
 Copy this application header into a fuzz target:
 
 [source,roc]
 ----
-app [target] { fuzz: platform "{platform-url}", roc: "nightly-2026-09-19-d025939" }
+app [target] { fuzz: platform "{platform-url}", roc: "nightly-2026-09-22-e494788" }
 ----
 
 Read or download the versioned PDF manual at {manual-url}. The online manual at
