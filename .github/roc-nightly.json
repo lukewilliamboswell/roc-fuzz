@@ -10,6 +10,7 @@
     "examples/builtins/dictInsertUniqueness.roc",
     "examples/builtins/dictOps.roc",
     "examples/builtins/dictRefcountAlias.roc",
+    "examples/builtins/iterCustom.roc",
     "examples/builtins/jsonToDec.roc",
     "examples/builtins/jsonToStr.roc",
     "examples/builtins/jsonToU64.roc",
