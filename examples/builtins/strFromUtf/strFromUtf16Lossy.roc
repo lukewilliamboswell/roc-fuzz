@@ -8,17 +8,17 @@ import Utf
 ## Every invalid unit (unpaired surrogate for UTF-16; surrogate or
 ## out-of-range value for UTF-32) must become exactly one U+FFFD and decoding
 ## must resume at the next unit. The output is compared byte-for-byte with the
-## Utf.roc oracle, allocates at most once, and never leaks.
+## Utf.roc oracle, stays within `Utf.alloc_bound`, and never leaks.
 generator : Fuzz.Generator(List(U16))
 generator = Fuzz.map(
-	Fuzz.list(Fuzz.map2(Fuzz.u8_in(0, 7), Fuzz.u64, Utf.utf16_chunk), 96),
+	Fuzz.list(Fuzz.map2(Fuzz.u8_in(0, 9), Fuzz.u64, Utf.utf16_chunk), 128),
 	|chunks| List.join(chunks),
 )
 
 test! : List(U16) => Fuzz.Outcome
 test! = |units| {
 	expected = Utf.decode_utf16(units)
-	decoded = Fuzz.expect_allocs_at_most!(1, |{}| Str.from_utf16_lossy(units))
+	decoded = Fuzz.expect_allocs_at_most!(Utf.alloc_bound(expected.bytes), |{}| Str.from_utf16_lossy(units))
 	if decoded.to_utf8() != expected.bytes {
 		crash "lossy output differs from oracle"
 	}

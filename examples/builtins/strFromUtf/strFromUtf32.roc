@@ -8,12 +8,13 @@ import Utf
 ## Units are shaped toward surrogate, noncharacter, BOM, and range-boundary
 ## values, then compared against the hand-written oracle in Utf.roc:
 ## the exact first problem and code-unit index on failure, the exact string on
-## success. Allocation contract: strict failures allocate nothing, successes
-## allocate at most once, and nothing leaks either way. A successful decode
-## must also agree with the lossy decoder and re-encode to the original units.
+## success. Allocation contract (`Utf.strict_alloc_bound`): failures allocate
+## nothing, inline-sized output allocates nothing, and longer output allocates
+## exactly once. A successful decode must also agree with the lossy decoder and
+## re-encode to the original units, and nothing leaks.
 generator : Fuzz.Generator(List(U32))
 generator = Fuzz.map(
-	Fuzz.list(Fuzz.map2(Fuzz.u8_in(0, 7), Fuzz.u64, Utf.utf32_chunk), 96),
+	Fuzz.list(Fuzz.map2(Fuzz.u8_in(0, 9), Fuzz.u64, Utf.utf32_chunk), 128),
 	|chunks| List.join(chunks),
 )
 
@@ -33,16 +34,13 @@ test! = |units| {
 	if got != expected.problem {
 		crash "problem mismatch: got ${Str.inspect(got)}, expected ${Str.inspect(expected.problem)}"
 	}
+	bound = Utf.strict_alloc_bound(expected)
+	if allocations > bound {
+		crash "strict decode allocated ${allocations.to_str()} times (expected <= ${bound.to_str()})"
+	}
 	match result {
-		Err(_) => {
-			if allocations != 0 {
-				crash "strict failure allocated ${allocations.to_str()} times (expected 0)"
-			}
-		}
+		Err(_) => {}
 		Ok(decoded) => {
-			if allocations > 1 {
-				crash "strict success allocated ${allocations.to_str()} times (expected <= 1)"
-			}
 			if decoded.to_utf8() != expected.bytes {
 				crash "decoded bytes differ from oracle"
 			}

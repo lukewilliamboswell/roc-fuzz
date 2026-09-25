@@ -121,55 +121,100 @@ Utf :: {}.{
 	}
 
 	encode_utf16 : Str -> List(U16)
-	encode_utf16 = |str|
-		List.fold(scalars(str), [], |acc, cp|
-			if cp < 0x10000 {
-				acc.append(cp.to_u16_wrap())
-			} else {
-				v : U32
-				v = cp - 0x10000
-				acc.append((0xD800 + v // 0x400).to_u16_wrap()).append((0xDC00 + v % 0x400).to_u16_wrap())
-			})
+	encode_utf16 = |str| List.join(scalars(str).map(scalar_utf16))
 
 	encode_utf32 : Str -> List(U32)
 	encode_utf32 = |str| scalars(str)
 
+	## Scalars whose UTF-8 widths are 1, 2, 3, and 4 bytes.
+	width_scalar : U64 -> U32
+	width_scalar = |n| {
+		samples : List(U32)
+		samples = [0x41, 0xE9, 0x20AC, 0x1F426, 0x7F, 0x80, 0x7FF, 0x800, 0xFFFF, 0x10000, 0x10FFFF]
+		samples.get(n % samples.len()) ?? 0x41
+	}
+
+	scalar_utf16 : U32 -> List(U16)
+	scalar_utf16 = |cp|
+		if cp < 0x10000 {
+			[cp.to_u16_wrap()]
+		} else {
+			v = cp - 0x10000
+			[(0xD800 + v // 0x400).to_u16_wrap(), (0xDC00 + v % 0x400).to_u16_wrap()]
+		}
+
+	## Runs long enough to cross the decoder's SIMD lanes (8 UTF-16 / 4 UTF-32
+	## units), the 23-byte inline capacity, and the 92-byte stack staging buffer.
+	ascii_run : U64 -> List(U32)
+	ascii_run = |n| ascii_seq(n, n % 128 + 1)
+
+	## `len` consecutive ASCII scalars starting at `seed % 0x80`.
+	ascii_seq : U64, U64 -> List(U32)
+	ascii_seq = |seed, len| {
+		var $out = List.with_capacity(len)
+		var $i = 0
+		while $i < len {
+			$out = $out.append(((seed % 0x80 + $i) % 0x80).to_u32_wrap())
+			$i = $i + 1
+		}
+		$out
+	}
+
+	dense_run : U64 -> List(U32)
+	dense_run = |n| List.repeat(width_scalar(n // 128), n % 64 + 1)
+
 	## Shape a UTF-16 chunk from a class selector and raw entropy. Classes are
-	## weighted toward surrogate edges where decoders go wrong.
+	## weighted toward surrogate edges and toward runs that cross buffer edges.
 	utf16_chunk : U8, U64 -> List(U16)
 	utf16_chunk = |class, n| {
 		u = n.to_u16_wrap()
 		match class {
-			0 | 1 => [(n % 0x80).to_u16_wrap()]
-			2 => [(0x80 + n % (0xD800 - 0x80)).to_u16_wrap()]
-			3 => [(0xD800 + n % 0x400).to_u16_wrap()]
-			4 => [(0xDC00 + n % 0x400).to_u16_wrap()]
-			5 => {
+			0 => [(n % 0x80).to_u16_wrap()]
+			1 => [(0x80 + n % (0xD800 - 0x80)).to_u16_wrap()]
+			2 => [(0xD800 + n % 0x400).to_u16_wrap()]
+			3 => [(0xDC00 + n % 0x400).to_u16_wrap()]
+			4 => {
 				specials : List(U16)
 				specials = [0, 0x7F, 0x80, 0x7FF, 0x800, 0xD7FF, 0xD800, 0xDBFF, 0xDC00, 0xDFFF, 0xE000, 0xFEFF, 0xFFFD, 0xFFFE, 0xFFFF]
 				[specials.get(n % specials.len()) ?? 0]
 			}
-			6 => [u]
-			_ => [(0xD800 + n % 0x400).to_u16_wrap(), (0xDC00 + (n // 0x400) % 0x400).to_u16_wrap()]
+			5 => [u]
+			6 => [(0xD800 + n % 0x400).to_u16_wrap(), (0xDC00 + (n // 0x400) % 0x400).to_u16_wrap()]
+			7 | 8 => ascii_run(n).map(|cp| cp.to_u16_wrap())
+			_ => List.join(dense_run(n).map(scalar_utf16))
 		}
 	}
 
 	utf32_chunk : U8, U64 -> List(U32)
 	utf32_chunk = |class, n| {
 		match class {
-			0 | 1 => [(n % 0x80).to_u32_wrap()]
-			2 => [(0x80 + n % (0xD800 - 0x80)).to_u32_wrap()]
-			3 => [(0x10000 + n % 0x100000).to_u32_wrap()]
-			4 => [(0xD800 + n % 0x800).to_u32_wrap()]
-			5 => [(0x110000 + n % 0x100).to_u32_wrap()]
-			6 => {
+			0 => [(n % 0x80).to_u32_wrap()]
+			1 => [(0x80 + n % (0xD800 - 0x80)).to_u32_wrap()]
+			2 => [(0x10000 + n % 0x100000).to_u32_wrap()]
+			3 => [(0xD800 + n % 0x800).to_u32_wrap()]
+			4 => [(0x110000 + n % 0x100).to_u32_wrap()]
+			5 => {
 				specials : List(U32)
 				specials = [0, 0x7F, 0x80, 0x7FF, 0x800, 0xFFFF, 0x10000, 0x10FFFF, 0x110000, 0xD7FF, 0xD800, 0xDFFF, 0xE000, 0xFFFD, 0xFEFF, 0x7FFFFFFF, 0x80000000, 0xFFFFFFFF]
 				[specials.get(n % specials.len()) ?? 0]
 			}
-			_ => [n.to_u32_wrap()]
+			6 => [n.to_u32_wrap()]
+			7 | 8 => ascii_run(n)
+			_ => dense_run(n)
 		}
 	}
+
+	## Allocations for one successful decode (and for any lossy decode), from
+	## the size-then-encode design in roc-lang/roc#11700: output of at most 23
+	## bytes is built inline from a stack buffer (none on 64-bit targets); longer
+	## output is encoded into one exact-capacity list (exactly one, no regrowth).
+	alloc_bound : List(U8) -> U64
+	alloc_bound = |output| if output.len() <= 23 0 else 1
+
+	## Strict decoding sizes and validates before allocating, so a failure
+	## allocates nothing.
+	strict_alloc_bound : Decoded -> U64
+	strict_alloc_bound = |decoded| if decoded.problem == NoProblem alloc_bound(decoded.bytes) else 0
 
 	show_problem : Problem -> Str
 	show_problem = |p| Str.inspect(p)
