@@ -2,6 +2,15 @@
   "schema": 1,
   "cases": [
     {
+      "name": "iterCustom",
+      "path": "examples/builtins/iterCustom.roc",
+      "seed_hex": "0003616263000102",
+      "libfuzzer_seed": 1055,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
       "name": "jsonToDec",
       "path": "examples/builtins/jsonToDec.roc",
       "seed_hex": "7b226e223a312e357d0901",
