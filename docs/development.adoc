@@ -80,6 +80,29 @@ producer SHA and signed lock commit remain reachable. Ordinary PRs and nightly
 updates then know only the reviewed lock, cache, verifier, and target files; they
 never dispatch or reproduce linker inputs.
 
+When the linker-input fingerprint changes, use this sequence:
+
+. Stage the source and tool-pin changes in a same-repository PR. Its regular CI
+  may fail with `linker-input lock is stale` until the new lock is adopted.
+. To inspect a nonpublishing candidate, dispatch `Linker inputs` on the PR branch
+  with `release_candidate=true` and `expected_sha` set to its exact current head.
+  For example, run `gh workflow run native-libraries.yml --ref BRANCH -f release_candidate=true -f expected_sha=SHA`, replacing `BRANCH` and `SHA`.
+  Review both target tests, the manifest, archive hashes, and attestations. This
+  run does not create a GitHub release or edit the PR.
+. From `trunk`, dispatch `Publish linker inputs` with `pull-request` set to that
+  PR number: `gh workflow run publish-linker-inputs.yml --ref trunk -f pull-request=NUMBER`.
+  The trusted publisher reruns the producer at the exact PR head,
+  publishes the immutable linker-input release, and appends a GitHub-signed
+  `native-libraries.lock.json`-only commit to the PR. Do not dispatch it from
+  the PR branch or rebuild the inputs after merging.
+. Review that lock commit and revalidate the updated PR. After its required
+  checks pass, merge the PR with a merge commit. Publish a new Roc platform
+  bundle later through the separate `Release` workflow, using the adopted lock.
+
+The optional preview in step 2 does not replace the producer run performed by
+the trusted publisher in step 3. The publisher is the release operation; stop
+before that dispatch when only candidate validation is authorized.
+
 The fully static build excludes `FuzzerInterceptors.cpp`. Its wrappers
 locate libc functions through `dlsym`, which is not usable in the static
 musl executable. The standard libFuzzer scheduler, mutators, corpus
