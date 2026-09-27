@@ -243,11 +243,28 @@ jobs:
         env: *roc-environment
         run: scripts/test_bundle.roc -- dist/*.tar.zst
 
+      # Linker-input releases share this repository but are not platform API
+      # baselines. Select a stable semantic-version release with a Roc bundle.
+      - name: Select previous platform release
+        id: previous-platform
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          previous_url=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases" | jq -er '
+            first(.[][]
+              | select(.draft == false and .prerelease == false)
+              | select(.tag_name | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
+              | .assets[]
+              | select(.name | endswith(".tar.zst"))
+              | .browser_download_url)
+          ')
+          echo "previous_url=$previous_url" >> "$GITHUB_OUTPUT"
+
       - name: Resolve previous release
-        if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation
         id: previous
         uses: roc-lang/release-package/actions/resolve-previous-release@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
+          previous_release_url: ${{ steps.previous-platform.outputs.previous_url }}
           github_token: ${{ github.token }}
 
       - name: Check version bump
