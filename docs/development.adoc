@@ -32,6 +32,12 @@ URLs. Repository scripts use `ROC_STABLE` and `ROC_NIGHTLY` when set, then fall
 back to the `roc-stable` and `roc-nightly` commands installed by
 `lukewilliamboswell/setup-roc`.
 
+Downstream builds that require warning-free compiler output must select a
+platform release with the matching compiler pin. September 26 Roc checks pins
+inside downloaded dependencies too; API compatibility alone does not suppress
+that diagnostic. Validate a release archive with the downstream compiler before
+updating its content-addressed URL.
+
 == Generate platform inputs
 
 Generate the current host's ignored inputs with:
@@ -105,7 +111,7 @@ Regenerate glue only when the Roc natural ABI changes:
 
 [source,sh]
 ----
-export ROC_NIGHTLY="$HOME/roc_nightly-linux_x86_64-2026-09-22-e494788/roc"
+export ROC_NIGHTLY="$HOME/roc_nightly-linux_x86_64-2026-09-26-d6267b4/roc"
 scripts/build_platform.roc -- --regenerate-glue
 ----
 
