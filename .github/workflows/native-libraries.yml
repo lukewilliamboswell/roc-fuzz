@@ -65,7 +65,7 @@ jobs:
         with:
           version: stable-and-nightly
           stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-19-d025939
+          nightly-tag: nightly-2026-09-22-e494788
       - name: Build linker inputs from source
         env:
           ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}

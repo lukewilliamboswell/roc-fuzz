@@ -105,7 +105,7 @@ Regenerate glue only when the Roc natural ABI changes:
 
 [source,sh]
 ----
-export ROC_NIGHTLY="$HOME/roc_nightly-linux_x86_64-2026-09-19-d025939/roc"
+export ROC_NIGHTLY="$HOME/roc_nightly-linux_x86_64-2026-09-22-e494788/roc"
 scripts/build_platform.roc -- --regenerate-glue
 ----
 

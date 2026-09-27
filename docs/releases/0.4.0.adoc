@@ -14,14 +14,14 @@ pinned and audited later.
 == Use this release
 
 roc-fuzz 0.4.0 supports Linux x86-64 with musl and Apple Silicon macOS 11 or
-newer. It was built using `nightly-2026-09-19-d025939` of the Roc compiler but is
+newer. It was built using `nightly-2026-09-22-e494788` of the Roc compiler but is
 expected to work on later compatible versions.
 
 Copy this application header into a fuzz target:
 
 [source,roc]
 ----
-app [target] { fuzz: platform "{platform-url}", roc: "nightly-2026-09-19-d025939" }
+app [target] { fuzz: platform "{platform-url}", roc: "nightly-2026-09-22-e494788" }
 ----
 
 Read or download the versioned PDF manual at {manual-url}. The online manual at
@@ -73,6 +73,12 @@ The platform's low-level `Target.run` callback is now effectful and is named
 `run!`. Applications built through `Fuzz.target`, `Fuzz.target_with`, or
 `Fuzz.from_bytes` do not need to change for this API adjustment. Custom code
 which constructs or calls `Target` directly must rename that field or method.
+
+This release requires `nightly-2026-09-22-e494788` or later, where tag unions in
+output positions are implicitly open. `Arbitrary.bytes` now declares its error as
+`[NotEnoughData(U64)]` without `..`; code that uses `?` to merge that error into
+a wider union keeps working on the required compiler, but will not type-check on
+older nightlies.
 
 Saved corpus and crash files encode generator input rather than a stable public
 format. Keep the matching executable when exact historical reproduction

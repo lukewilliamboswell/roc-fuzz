@@ -29,7 +29,7 @@ jobs:
         with:
           version: stable-and-nightly
           stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-19-d025939
+          nightly-tag: nightly-2026-09-22-e494788
 
       - id: docs
         name: Build HTML, PDF, and API documentation

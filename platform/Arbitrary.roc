@@ -28,7 +28,7 @@ Arbitrary := [Unstructured(List(U8))].{
 	##
 	## `NotEnoughData(available)` reports how many bytes remained when the request
 	## could not be satisfied.
-	bytes : Arbitrary, U64 -> Try({ value : List(U8), state : Arbitrary }, [NotEnoughData(U64), ..])
+	bytes : Arbitrary, U64 -> Try({ value : List(U8), state : Arbitrary }, [NotEnoughData(U64)])
 	bytes = |Unstructured(data), requested_len| {
 		if List.len(data) >= requested_len {
 			{ before, others } = List.split_at(data, requested_len)
@@ -210,3 +210,12 @@ expect Arbitrary.new([]).is_empty()
 expect Arbitrary.new([49, 50, 51, 52, 9]).arbitrary_str().value == "1234"
 expect Arbitrary.new([2, 4, 5, 6, 9]).arbitrary_byte_size().value == 4
 expect Arbitrary.new([]).u64_in_inclusive_range(0, 100).value == 0
+
+# A caller can propagate bytes' error alongside its own validation error.
+expect {
+	decode = |input| {
+		{ value, .. } = Arbitrary.new(input).bytes(1)?
+		if value == [0] Err(ZeroByte) else Ok(value)
+	}
+	decode([1, 2]) == Ok([1]) and decode([]) == Err(NotEnoughData(0)) and decode([0]) == Err(ZeroByte)
+}
