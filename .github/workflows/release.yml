@@ -47,7 +47,7 @@ jobs:
         with:
           version: stable-and-nightly
           stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-22-e494788
+          nightly-tag: nightly-2026-09-26-d6267b4
 
       - name: Build and run the pinned libFuzzer with AddressSanitizer
         env:
@@ -75,7 +75,7 @@ jobs:
         with:
           version: stable-and-nightly
           stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-22-e494788
+          nightly-tag: nightly-2026-09-26-d6267b4
 
       - name: Validate release request
         id: validate
@@ -156,7 +156,7 @@ jobs:
         with:
           version: stable-and-nightly
           stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-22-e494788
+          nightly-tag: nightly-2026-09-26-d6267b4
 
       - name: Install Zig
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
@@ -211,7 +211,7 @@ jobs:
         with:
           version: stable-and-nightly
           stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-22-e494788
+          nightly-tag: nightly-2026-09-26-d6267b4
 
       - name: Download x64-musl inputs
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -347,7 +347,7 @@ jobs:
         with:
           version: stable-and-nightly
           stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-22-e494788
+          nightly-tag: nightly-2026-09-26-d6267b4
 
       - name: Download release bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -384,7 +384,7 @@ jobs:
         with:
           version: stable-and-nightly
           stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-22-e494788
+          nightly-tag: nightly-2026-09-26-d6267b4
 
       - name: Download release bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -444,7 +444,7 @@ jobs:
         with:
           version: stable-and-nightly
           stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-22-e494788
+          nightly-tag: nightly-2026-09-26-d6267b4
 
       - id: docs
         name: Build versioned HTML, PDF, and API documentation
@@ -567,7 +567,7 @@ jobs:
         with:
           version: stable-and-nightly
           stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-22-e494788
+          nightly-tag: nightly-2026-09-26-d6267b4
 
       - name: Download release bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
