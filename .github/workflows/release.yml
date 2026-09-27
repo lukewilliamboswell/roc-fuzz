@@ -267,6 +267,17 @@ jobs:
           previous_release_url: ${{ steps.previous-platform.outputs.previous_url }}
           github_token: ${{ github.token }}
 
+      # The release action invokes `roc`; setup exposes two named compilers.
+      - name: Select project compiler for release actions
+        env: *roc-environment
+        run: dirname "$ROC_NIGHTLY" >> "$GITHUB_PATH"
+
+      - name: Validate API comparison without publishing
+        if: github.event_name != 'workflow_dispatch' || inputs.nightly_validation
+        env:
+          PREVIOUS_URL: ${{ steps.previous.outputs.previous_url }}
+        run: roc bump --old "$PREVIOUS_URL" platform/main.roc
+
       - name: Check version bump
         uses: roc-lang/release-package/actions/run-bump-check@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
