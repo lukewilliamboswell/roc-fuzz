@@ -1,4 +1,4 @@
-app [target] { fuzz: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.1/FfSwkD2HdA63fcar5Z4EQpTBSGy4LcvEGenqzgiy9Mix.tar.zst", roc: "nightly-2026-09-26-d6267b4" }
+app [target] { fuzz: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.1/FfSwkD2HdA63fcar5Z4EQpTBSGy4LcvEGenqzgiy9Mix.tar.zst", roc: "nightly-2026-09-29-7f11a82" }
 
 import fuzz.Fuzz
 

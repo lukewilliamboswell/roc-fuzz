@@ -1,4 +1,4 @@
-app [target] { pf: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.1/FfSwkD2HdA63fcar5Z4EQpTBSGy4LcvEGenqzgiy9Mix.tar.zst", model: "../../../tests/set-model/main.roc", roc: "nightly-2026-09-26-d6267b4" }
+app [target] { pf: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.1/FfSwkD2HdA63fcar5Z4EQpTBSGy4LcvEGenqzgiy9Mix.tar.zst", model: "../../../tests/set-model/main.roc", roc: "nightly-2026-09-29-7f11a82" }
 
 import pf.Fuzz
 import model.Model
