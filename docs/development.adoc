@@ -27,7 +27,7 @@ stable runtime inputs. Source development and the explicitly dispatched producer
 require Zig 0.16.0. The builder uses `zig ar`.
 
 The setup action installs separate `roc-stable` and `roc-nightly` executables.
-Every workflow reads their exact selections from workspace metadata and checks
+The local `setup-workspace-roc` action reads their exact selections from workspace metadata and checks
 the installed versions. Tooling has its own fixed `roc_stable` selection; it does
 not advance with routine project nightly updates. `ROC_STABLE` and `ROC_NIGHTLY`
 allow explicit local overrides.

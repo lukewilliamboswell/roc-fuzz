@@ -66,8 +66,9 @@ class ReleaseExamplesTests(unittest.TestCase):
                     r.package(root,root/name,'1.2.3','a'*40,URL,OLD)
             self.assertEqual((root/'one.zip').read_bytes(),(root/'two.zip').read_bytes())
             self.assertEqual((root/'examples/nested/main.roc').read_text(),source)
-            out=root/'extracted';out.mkdir()
-            r.extract_zip((root/'one.zip').read_bytes(),out)
+            out=root/'extracted'
+            r.unpack_suite((root/'one.zip').read_bytes(),out)
+            with self.assertRaises(ValueError): r.unpack_suite((root/'one.zip').read_bytes(),out)
             r.validate_suite(out,URL)
             self.assertTrue((out/'examples/nested/Other.roc').is_file())
             self.assertTrue((out/'tests/set-model/main.roc').is_file())
@@ -79,6 +80,11 @@ class ReleaseExamplesTests(unittest.TestCase):
                 example.write_text(incorrect)
                 with self.assertRaises(ValueError): r.validate_release_suite(out)
             example.write_text(original)
+            r.rewrite_suite(out, compiler=NEW)
+            self.assertIn(NEW, example.read_text())
+            self.assertIn(URL, example.read_text())
+            self.assertEqual((out/'examples/nested/Other.roc').read_text(), 'answer = 42\n')
+            with self.assertRaises(ValueError): r.rewrite_suite(out, compiler='latest')
 
     def test_mismatched_release_manifest_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

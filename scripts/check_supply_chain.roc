@@ -64,7 +64,7 @@ validate_script_headers! = |root, dependencies| {
 }
 
 validate_actions! = |root, dependencies| {
-	workflows = Files.direct_files!(Path.join(root, ".github/workflows"))?.keep_if(
+	workflows = Files.files!(Path.join(root, ".github"))?.keep_if(
 		|path| {
 			extension = Path.ext(path).map_ok(Path.display)
 			extension == Ok("yml") or extension == Ok("yaml")

@@ -1,0 +1,40 @@
+name: Setup workspace Roc
+description: Install and verify the tooling and last validated project compilers from workspace metadata
+outputs:
+  nightly-tag:
+    description: Exact project compiler tag
+    value: ${{ steps.compilers.outputs.nightly }}
+  stable-executable:
+    description: Tooling compiler executable
+    value: ${{ steps.roc.outputs.stable-executable }}
+  nightly-executable:
+    description: Project compiler executable
+    value: ${{ steps.roc.outputs.nightly-executable }}
+runs:
+  using: composite
+  steps:
+    - name: Read compiler selections
+      id: compilers
+      shell: bash
+      run: |
+        selected_stable=$(jq -er .roc_stable scripts/workspace-deps.json)
+        selected_nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)
+        echo "stable=$selected_stable" >> "$GITHUB_OUTPUT"
+        echo "nightly=$selected_nightly" >> "$GITHUB_OUTPUT"
+    - name: Install selected compilers
+      id: roc
+      uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
+      with:
+        version: stable-and-nightly
+        stable-tag: ${{ steps.compilers.outputs.stable }}
+        nightly-tag: ${{ steps.compilers.outputs.nightly }}
+    - name: Verify installed compiler versions
+      shell: bash
+      env:
+        STABLE_EXE: ${{ steps.roc.outputs.stable-executable }}
+        NIGHTLY_EXE: ${{ steps.roc.outputs.nightly-executable }}
+        EXPECT_STABLE: ${{ steps.compilers.outputs.stable }}
+        EXPECT_NIGHTLY: ${{ steps.compilers.outputs.nightly }}
+      run: |
+        test "$("$STABLE_EXE" version)" = "Roc compiler version $EXPECT_STABLE"
+        test "$("$NIGHTLY_EXE" version)" = "Roc compiler version $EXPECT_NIGHTLY"

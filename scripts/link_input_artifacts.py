@@ -26,6 +26,7 @@ TARGET_FILES = {
 LICENSE_FILES = ("LICENSE", "THIRD_PARTY_LICENSES.md")
 FINGERPRINT_PATHS = (
     ".github/workflows/native-libraries.yml",
+    ".github/actions/setup-workspace-roc",
     "scripts/build_platform.roc",
     "scripts/run_tool",
     "scripts/link_input_artifacts.py",

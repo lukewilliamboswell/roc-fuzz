@@ -246,6 +246,21 @@ def extract_zip(data, destination):
                 path.write_bytes(archive.read(entry))
 
 
+def rewrite_suite(root, *, platform=None, compiler=None):
+    if compiler is not None and not NIGHTLY.fullmatch(compiler):
+        raise ValueError('Invalid compiler tag')
+    for path in (root / 'examples').rglob('*.roc'):
+        path.write_text(rewrite_app(path.read_text(), platform=platform, compiler=compiler))
+
+
+def unpack_suite(data, destination):
+    if destination.exists():
+        raise ValueError('Suite destination must be fresh')
+    destination.mkdir(parents=True)
+    extract_zip(data, destination)
+    return validate_release_suite(destination)
+
+
 def legacy_suite(selection, destination):
     data = subprocess.check_output(['gh', 'api', f"repos/{selection['repository']}/tarball/{selection['source_sha']}"])
     with tarfile.open(fileobj=io.BytesIO(data), mode='r:gz') as archive:
@@ -267,30 +282,27 @@ def legacy_suite(selection, destination):
             path.write_bytes(archive.extractfile(entry).read())
     # Legacy release tags can predate the manual URL follow-up. Bind their own
     # examples to their own immutable platform, not the preceding release URL.
-    for path in (destination / 'examples').rglob('*.roc'):
-        path.write_text(rewrite_app(path.read_text(), platform=selection['platform']['url']))
+    rewrite_suite(destination, platform=selection['platform']['url'])
 
 
 def fetch(selection, destination):
     if destination.exists():
         raise ValueError('Suite destination must be fresh')
-    destination.mkdir(parents=True)
     if selection['examples']:
-        extract_zip(download(selection['examples']), destination)
-        manifest = validate_release_suite(destination)
-        if (manifest.get('schema') != 1 or manifest['version'] != selection['version']
+        manifest = unpack_suite(download(selection['examples']), destination)
+        if (manifest['version'] != selection['version']
                 or manifest['source_sha'] != selection['source_sha'] or manifest['platform_url'] != selection['platform']['url']):
             raise ValueError('Examples manifest does not match selected release')
     else:
         if tuple(map(int, selection['version'].split('.'))) > (0, 4, 1):
             raise ValueError('Only legacy releases may use tag examples')
+        destination.mkdir(parents=True)
         legacy_suite(selection, destination)
-    validate_suite(destination, selection['platform']['url'])
+        validate_suite(destination, selection['platform']['url'])
     # Verify the exact published bundle too; Roc independently checks its
     # content-addressed identity when the examples download it in a fresh cache.
     download(selection['platform'])
-    for path in (destination / 'examples').rglob('*.roc'):
-        path.write_text(rewrite_app(path.read_text(), compiler=selection['compiler']))
+    rewrite_suite(destination, compiler=selection['compiler'])
     (destination / 'compatibility.json').write_text(json.dumps(selection, indent=2) + '\n')
 
 
@@ -325,16 +337,9 @@ def main():
     elif args.command == 'fetch':
         fetch(json.loads(args.selection.read_text()), args.output)
     else:
-        if args.output.exists():
-            raise ValueError('Suite destination must be fresh')
-        args.output.mkdir(parents=True)
-        extract_zip(args.archive.read_bytes(), args.output)
-        validate_release_suite(args.output)
+        unpack_suite(args.archive.read_bytes(), args.output)
         if args.compiler:
-            if not NIGHTLY.fullmatch(args.compiler):
-                raise ValueError('Invalid compiler tag')
-            for path in (args.output / 'examples').rglob('*.roc'):
-                path.write_text(rewrite_app(path.read_text(), compiler=args.compiler))
+            rewrite_suite(args.output, compiler=args.compiler)
 
 
 if __name__ == '__main__':
