@@ -14,6 +14,22 @@ SPEC.loader.exec_module(module)
 
 
 class LinkInputArtifactsTests(unittest.TestCase):
+    def test_project_nightly_does_not_invalidate_native_inputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "scripts").mkdir()
+            manifest = root / "scripts/workspace-deps.json"
+            dependencies = {"roc_nightly": "old", "roc_stable": "tooling", "zig_version": "0.16.0"}
+            manifest.write_text(json.dumps(dependencies))
+            with mock.patch.object(module, "tracked_inputs", return_value=[manifest]):
+                original = module.input_fingerprint(root)
+                dependencies["roc_nightly"] = "new"
+                manifest.write_text(json.dumps(dependencies))
+                self.assertEqual(module.input_fingerprint(root), original)
+                dependencies["roc_stable"] = "new tooling"
+                manifest.write_text(json.dumps(dependencies))
+                self.assertNotEqual(module.input_fingerprint(root), original)
+
     def test_fingerprint_changes_only_for_selected_inputs(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

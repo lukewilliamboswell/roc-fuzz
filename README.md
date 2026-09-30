@@ -60,6 +60,11 @@ release verification, and platform development. The site also provides the
 [generated API reference](https://lukewilliamboswell.github.io/roc-fuzz/api/)
 and a downloadable PDF manual.
 
+Repository examples use relative paths to the local platform. For applications
+using a published platform, download the examples archive attached to that
+release. Each released application records its platform URL and tested compiler;
+the platform itself does not pin a compiler.
+
 Examples under [`examples/`](examples/) demonstrate round trips, parser
 robustness, collection invariants, structured inputs, and multi-file targets.
 The focused compiler and builtin regressions remain under

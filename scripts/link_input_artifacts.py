@@ -27,6 +27,7 @@ LICENSE_FILES = ("LICENSE", "THIRD_PARTY_LICENSES.md")
 FINGERPRINT_PATHS = (
     ".github/workflows/native-libraries.yml",
     "scripts/build_platform.roc",
+    "scripts/run_tool",
     "scripts/link_input_artifacts.py",
     "scripts/src",
     "scripts/workspace-deps.json",
@@ -62,6 +63,13 @@ def input_fingerprint(root: Path = ROOT) -> str:
     for path in tracked_inputs(root):
         relative = path.relative_to(root).as_posix().encode()
         content = path.read_bytes()
+        if relative == b"scripts/workspace-deps.json":
+            # Project compiler validation does not build linker inputs. Keep the
+            # tooling compiler, Zig, package identities and native dependencies
+            # in this identity; advancing only roc_nightly must reuse the lock.
+            dependencies = json.loads(content)
+            del dependencies["roc_nightly"]
+            content = canonical(dependencies)
         state.update(len(relative).to_bytes(4, "big"))
         state.update(relative)
         state.update(len(content).to_bytes(8, "big"))

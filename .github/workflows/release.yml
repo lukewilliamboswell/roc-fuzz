@@ -15,6 +15,10 @@ on:
         description: Validate without publishing, follow-ups or deployment
         type: boolean
         default: false
+      compatibility_nightly:
+        description: Additional exact nightly to test against this bundle before publication
+        required: false
+        type: string
       release_version:
         description: "Release version with matching docs/releases/VERSION.adoc, for example 0.4.0 or 0.5.0-rc1"
         required: false
@@ -41,19 +45,37 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install stable tooling Roc and latest nightly
+      - name: Read compiler selections
+        id: compilers
+        shell: bash
+        run: |
+          echo "stable=$(jq -er .roc_stable scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+          echo "nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Install the selected tooling and project compilers
         id: roc
         uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
         with:
           version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-26-d6267b4
+          stable-tag: ${{ steps.compilers.outputs.stable }}
+          nightly-tag: ${{ steps.compilers.outputs.nightly }}
+
+      - name: Verify installed compiler versions
+        shell: bash
+        env:
+          STABLE_EXE: ${{ steps.roc.outputs.stable-executable }}
+          NIGHTLY_EXE: ${{ steps.roc.outputs.nightly-executable }}
+          EXPECT_STABLE: ${{ steps.compilers.outputs.stable }}
+          EXPECT_NIGHTLY: ${{ steps.compilers.outputs.nightly }}
+        run: |
+          test "$("$STABLE_EXE" version)" = "Roc compiler version $EXPECT_STABLE"
+          test "$("$NIGHTLY_EXE" version)" = "Roc compiler version $EXPECT_NIGHTLY"
 
       - name: Build and run the pinned libFuzzer with AddressSanitizer
         env:
           ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
         run: |
-          "$ROC_STABLE" --opt=dev scripts/test_native_sanitizers.roc
+          scripts/run_tool scripts/test_native_sanitizers.roc
 
   release-info:
     name: Validate release request
@@ -69,13 +91,31 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install stable tooling Roc and latest nightly
+      - name: Read compiler selections
+        id: compilers
+        shell: bash
+        run: |
+          echo "stable=$(jq -er .roc_stable scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+          echo "nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Install the selected tooling and project compilers
         id: roc
         uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
         with:
           version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-26-d6267b4
+          stable-tag: ${{ steps.compilers.outputs.stable }}
+          nightly-tag: ${{ steps.compilers.outputs.nightly }}
+
+      - name: Verify installed compiler versions
+        shell: bash
+        env:
+          STABLE_EXE: ${{ steps.roc.outputs.stable-executable }}
+          NIGHTLY_EXE: ${{ steps.roc.outputs.nightly-executable }}
+          EXPECT_STABLE: ${{ steps.compilers.outputs.stable }}
+          EXPECT_NIGHTLY: ${{ steps.compilers.outputs.nightly }}
+        run: |
+          test "$("$STABLE_EXE" version)" = "Roc compiler version $EXPECT_STABLE"
+          test "$("$NIGHTLY_EXE" version)" = "Roc compiler version $EXPECT_NIGHTLY"
 
       - name: Validate release request
         id: validate
@@ -87,10 +127,11 @@ jobs:
 
       - name: Check compiler release policy
         if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && !inputs.release_candidate
-        uses: lukewilliamboswell/roc-automation/actions/check-release@e5b83ace37e0d0cb4e9fadb93cefb364f2cd6611 # e5b83ac
+        uses: lukewilliamboswell/roc-automation/actions/check-release@da36cb354ccf501fc5fb140659a9f45f5445afa4 # compiler-manifest
         with:
           version: ${{ inputs.release_version }}
-          compiler-root: platform/main.roc
+          compiler-manifest: scripts/workspace-deps.json
+          compiler-key: roc_nightly
           allow-default-branch: 'true'
           allow-nightly-bootstrap: 'true'
 
@@ -150,13 +191,31 @@ jobs:
         id: dependencies
         run: echo "zig-version=$(jq -r .zig_version scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
 
-      - name: Install stable tooling Roc and latest nightly
+      - name: Read compiler selections
+        id: compilers
+        shell: bash
+        run: |
+          echo "stable=$(jq -er .roc_stable scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+          echo "nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Install the selected tooling and project compilers
         id: roc
         uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
         with:
           version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-26-d6267b4
+          stable-tag: ${{ steps.compilers.outputs.stable }}
+          nightly-tag: ${{ steps.compilers.outputs.nightly }}
+
+      - name: Verify installed compiler versions
+        shell: bash
+        env:
+          STABLE_EXE: ${{ steps.roc.outputs.stable-executable }}
+          NIGHTLY_EXE: ${{ steps.roc.outputs.nightly-executable }}
+          EXPECT_STABLE: ${{ steps.compilers.outputs.stable }}
+          EXPECT_NIGHTLY: ${{ steps.compilers.outputs.nightly }}
+        run: |
+          test "$("$STABLE_EXE" version)" = "Roc compiler version $EXPECT_STABLE"
+          test "$("$NIGHTLY_EXE" version)" = "Roc compiler version $EXPECT_NIGHTLY"
 
       - name: Install Zig
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
@@ -205,13 +264,31 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install stable tooling Roc and latest nightly
+      - name: Read compiler selections
+        id: compilers
+        shell: bash
+        run: |
+          echo "stable=$(jq -er .roc_stable scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+          echo "nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Install the selected tooling and project compilers
         id: roc
         uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
         with:
           version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-26-d6267b4
+          stable-tag: ${{ steps.compilers.outputs.stable }}
+          nightly-tag: ${{ steps.compilers.outputs.nightly }}
+
+      - name: Verify installed compiler versions
+        shell: bash
+        env:
+          STABLE_EXE: ${{ steps.roc.outputs.stable-executable }}
+          NIGHTLY_EXE: ${{ steps.roc.outputs.nightly-executable }}
+          EXPECT_STABLE: ${{ steps.compilers.outputs.stable }}
+          EXPECT_NIGHTLY: ${{ steps.compilers.outputs.nightly }}
+        run: |
+          test "$("$STABLE_EXE" version)" = "Roc compiler version $EXPECT_STABLE"
+          test "$("$NIGHTLY_EXE" version)" = "Roc compiler version $EXPECT_NIGHTLY"
 
       - name: Download x64-musl inputs
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -294,6 +371,24 @@ jobs:
           bundle_glob: dist/*.tar.zst
           test_os_json: '["ubuntu-22.04", "macos-26"]'
 
+      - name: Package frozen release examples
+        env:
+          EXAMPLE_VERSION: ${{ needs.release-info.outputs.release_version || '0.0.0-rc0' }}
+          COMPILER: ${{ steps.roc.outputs.nightly-tag }}
+        run: |
+          bundles=(.release/bundles/*.tar.zst)
+          test "${#bundles[@]}" -eq 1
+          python3 scripts/release_examples.py package \
+            --version "$EXAMPLE_VERSION" --source-sha "$GITHUB_SHA" --compiler "$COMPILER" \
+            --platform-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$EXAMPLE_VERSION/$(basename "${bundles[0]}")" \
+            --output ".release/examples/roc-fuzz-examples-$EXAMPLE_VERSION.zip"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-examples
+          path: .release/examples/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Upload release bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -341,13 +436,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Install stable tooling Roc and latest nightly
+      - name: Read compiler selections
+        id: compilers
+        shell: bash
+        run: |
+          echo "stable=$(jq -er .roc_stable scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+          echo "nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Install the selected tooling and project compilers
         id: roc
         uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
         with:
           version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-26-d6267b4
+          stable-tag: ${{ steps.compilers.outputs.stable }}
+          nightly-tag: ${{ steps.compilers.outputs.nightly }}
+
+      - name: Verify installed compiler versions
+        shell: bash
+        env:
+          STABLE_EXE: ${{ steps.roc.outputs.stable-executable }}
+          NIGHTLY_EXE: ${{ steps.roc.outputs.nightly-executable }}
+          EXPECT_STABLE: ${{ steps.compilers.outputs.stable }}
+          EXPECT_NIGHTLY: ${{ steps.compilers.outputs.nightly }}
+        run: |
+          test "$("$STABLE_EXE" version)" = "Roc compiler version $EXPECT_STABLE"
+          test "$("$NIGHTLY_EXE" version)" = "Roc compiler version $EXPECT_NIGHTLY"
 
       - name: Download release bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -355,8 +468,17 @@ jobs:
           name: release-bundles
           path: .release/test-bundles
 
+      - name: Download frozen release examples
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-examples
+          path: .release/examples
+      - name: Extract frozen release suite
+        run: python3 scripts/release_examples.py unpack .release/examples/*.zip --output .release/example-suite
+
       - name: Test release bundle
         env:
+          ROC_FUZZ_SUITE_ROOT: .release/example-suite
           ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
           ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
         uses: roc-lang/release-package/actions/test-bundle@d2560ead9f724bfaabfbc8134b8895e120171064 # main
@@ -365,6 +487,34 @@ jobs:
           bundle_path: .release/test-bundles/${{ matrix.artifact_file }}
           bundle_name: ${{ matrix.bundle_name }}
           release_version: ${{ needs.release-info.outputs.release_version }}
+
+      - name: Validate optional compatibility compiler selection
+        env:
+          COMPILER: ${{ inputs.compatibility_nightly }}
+        run: |
+          if [[ -n "$COMPILER" && ! "$COMPILER" =~ ^nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9a-f]{7,40}$ ]]; then
+            echo "compatibility_nightly must be an exact nightly tag" >&2
+            exit 1
+          fi
+      - name: Install the additional compatibility compiler
+        if: inputs.compatibility_nightly != ''
+        id: compatibility-roc
+        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ inputs.compatibility_nightly }}
+      - name: Test frozen examples and exact bundle with the pending compiler
+        if: inputs.compatibility_nightly != ''
+        env:
+          COMPILER: ${{ inputs.compatibility_nightly }}
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+          ROC_NIGHTLY: ${{ steps.compatibility-roc.outputs.executable }}
+          ROC_FUZZ_SUITE_ROOT: .release/compatibility-suite
+          BUNDLE: .release/test-bundles/${{ matrix.artifact_file }}
+        run: |
+          test "$("$ROC_NIGHTLY" version)" = "Roc compiler version $COMPILER"
+          python3 scripts/release_examples.py unpack .release/examples/*.zip --output "$ROC_FUZZ_SUITE_ROOT" --compiler "$COMPILER"
+          scripts/run_tool scripts/test_bundle.roc -- "$BUNDLE"
 
   generate-sbom:
     name: Generate release SBOM
@@ -378,13 +528,31 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install stable tooling Roc and latest nightly
+      - name: Read compiler selections
+        id: compilers
+        shell: bash
+        run: |
+          echo "stable=$(jq -er .roc_stable scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+          echo "nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Install the selected tooling and project compilers
         id: roc
         uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
         with:
           version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-26-d6267b4
+          stable-tag: ${{ steps.compilers.outputs.stable }}
+          nightly-tag: ${{ steps.compilers.outputs.nightly }}
+
+      - name: Verify installed compiler versions
+        shell: bash
+        env:
+          STABLE_EXE: ${{ steps.roc.outputs.stable-executable }}
+          NIGHTLY_EXE: ${{ steps.roc.outputs.nightly-executable }}
+          EXPECT_STABLE: ${{ steps.compilers.outputs.stable }}
+          EXPECT_NIGHTLY: ${{ steps.compilers.outputs.nightly }}
+        run: |
+          test "$("$STABLE_EXE" version)" = "Roc compiler version $EXPECT_STABLE"
+          test "$("$NIGHTLY_EXE" version)" = "Roc compiler version $EXPECT_NIGHTLY"
 
       - name: Download release bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -438,13 +606,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Install stable tooling Roc and latest nightly
+      - name: Read compiler selections
+        id: compilers
+        shell: bash
+        run: |
+          echo "stable=$(jq -er .roc_stable scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+          echo "nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Install the selected tooling and project compilers
         id: roc
         uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
         with:
           version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-26-d6267b4
+          stable-tag: ${{ steps.compilers.outputs.stable }}
+          nightly-tag: ${{ steps.compilers.outputs.nightly }}
+
+      - name: Verify installed compiler versions
+        shell: bash
+        env:
+          STABLE_EXE: ${{ steps.roc.outputs.stable-executable }}
+          NIGHTLY_EXE: ${{ steps.roc.outputs.nightly-executable }}
+          EXPECT_STABLE: ${{ steps.compilers.outputs.stable }}
+          EXPECT_NIGHTLY: ${{ steps.compilers.outputs.nightly }}
+        run: |
+          test "$("$STABLE_EXE" version)" = "Roc compiler version $EXPECT_STABLE"
+          test "$("$NIGHTLY_EXE" version)" = "Roc compiler version $EXPECT_NIGHTLY"
 
       - id: docs
         name: Build versioned HTML, PDF, and API documentation
@@ -493,6 +679,12 @@ jobs:
           name: release-bundles
           path: .release/bundles
 
+      - name: Download tested release examples
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-examples
+          path: .release/examples
+
       - name: Download the release SBOM
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -502,7 +694,9 @@ jobs:
       - name: Attest SLSA build provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
-          subject-path: .release/bundles/*.tar.zst
+          subject-path: |
+            .release/bundles/*.tar.zst
+            .release/examples/*.zip
 
       - name: Resolve the single SBOM file
         id: sbom-file
@@ -526,7 +720,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .release/supply-chain
-          for bundle in .release/bundles/*.tar.zst; do
+          for bundle in .release/bundles/*.tar.zst .release/examples/*.zip; do
             work="$RUNNER_TEMP/attestations-$(basename "$bundle")"
             mkdir -p "$work"
             (cd "$work" && gh attestation download "$GITHUB_WORKSPACE/$bundle" --repo "$GITHUB_REPOSITORY")
@@ -561,19 +755,43 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install stable tooling Roc and latest nightly
+      - name: Read compiler selections
+        id: compilers
+        shell: bash
+        run: |
+          echo "stable=$(jq -er .roc_stable scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+          echo "nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Install the selected tooling and project compilers
         id: roc
         uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
         with:
           version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-26-d6267b4
+          stable-tag: ${{ steps.compilers.outputs.stable }}
+          nightly-tag: ${{ steps.compilers.outputs.nightly }}
+
+      - name: Verify installed compiler versions
+        shell: bash
+        env:
+          STABLE_EXE: ${{ steps.roc.outputs.stable-executable }}
+          NIGHTLY_EXE: ${{ steps.roc.outputs.nightly-executable }}
+          EXPECT_STABLE: ${{ steps.compilers.outputs.stable }}
+          EXPECT_NIGHTLY: ${{ steps.compilers.outputs.nightly }}
+        run: |
+          test "$("$STABLE_EXE" version)" = "Roc compiler version $EXPECT_STABLE"
+          test "$("$NIGHTLY_EXE" version)" = "Roc compiler version $EXPECT_NIGHTLY"
 
       - name: Download release bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: release-bundles
           path: .release/bundles
+
+      - name: Download tested release examples
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-examples
+          path: .release/examples
 
       - name: Download release metadata
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -598,6 +816,7 @@ jobs:
         run: |
           {
             echo 'paths<<EOF'
+            find .release/examples -maxdepth 1 -type f -print | sort
             find .release/docs -maxdepth 1 -type f -print | sort
             find .release/supply-chain -maxdepth 1 -type f -print | sort
             echo 'EOF'
@@ -633,7 +852,7 @@ jobs:
           # gh release create refuses an existing release; refuse an existing tag too.
           refs="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$RELEASE_VERSION")"
           test "$(jq --arg tag "refs/tags/$RELEASE_VERSION" '[.[] | select(.ref == $tag)] | length' <<< "$refs")" -eq 0
-          gh release create "$RELEASE_VERSION" .release/bundles/*.tar.zst .release/supply-chain/* .release/docs/* --target "$GITHUB_SHA" --prerelease --latest=false --title "$RELEASE_VERSION" --notes-file .release/release-notes.md
+          gh release create "$RELEASE_VERSION" .release/bundles/*.tar.zst .release/examples/*.zip .release/supply-chain/* .release/docs/* --target "$GITHUB_SHA" --prerelease --latest=false --title "$RELEASE_VERSION" --notes-file .release/release-notes.md
 
   required:
     name: Release required

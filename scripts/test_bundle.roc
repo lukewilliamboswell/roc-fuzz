@@ -1,15 +1,14 @@
-#!/usr/bin/env roc-stable
+#!/usr/bin/env -S scripts/run_tool
 app [main!] {
 	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.23.0-rc1/3hT3SoHZ6qbEsa9qVFLUW3547U5LeoNd1KbpqLpz4r1i.tar.zst",
 	ascii: "https://github.com/Hasnep/roc-ascii/releases/download/v0.5.0/5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H.tar.zst",
 	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst",
 	arg_path: "https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
-	roc: "nightly-2026-09-18-1d982dc",
+	roc: "nightly-2026-09-29-7f11a82",
 }
 
 import cli.OsStr
-import cli.Env
 import cli.Path
 import cli.Stderr
 import weaver.Cli
@@ -25,29 +24,26 @@ main! = |raw_args| {
 		Exit => return Ok({})
 	}
 	bundle = Path.absolute!(bundle_path)?
-	roc_stable = Script.roc_stable!()?
-	filename = smoke_test!(bundle, roc_stable)?
+	suite_root = Script.env_path_or!("ROC_FUZZ_SUITE_ROOT", Path.utf8("."))?
+	filename = smoke_test!(bundle, suite_root)?
 	Script.pass!("Bundle smoke test passed: ${filename}")
 }
 
-smoke_test! = |bundle, roc_stable| {
+smoke_test! = |bundle, suite_root| {
 	if !Path.is_file!(bundle)? or !Script.ends_with(Path.display(bundle), ".tar.zst") {
 		return Err(ExpectedBundle(Path.display(bundle)))
 	}
 
 	filename = Path.filename(bundle).map_ok(Path.display).map_err(|_| InvalidBundlePath(Path.display(bundle)))?
-	if Env.platform!().os == MACOS {
-		Script.warn!("Skipping bundle execution because the pinned Roc compiler crashes while compiling the target runner on Apple Silicon.")?
-		return Ok(filename)
-	}
+
 	BundleServer.with!(
 		filename,
 		Path.read_bytes!(bundle)?,
 		|server| {
-			child = roc_stable.cmd([
-				"--opt=dev",
+			child = Script.tool.cmd([
 				"scripts/test_targets.roc",
-				"--",
+				"--suite-root",
+				Path.to_os_str(suite_root),
 				"--operation",
 				"all",
 				"--max-total-time",

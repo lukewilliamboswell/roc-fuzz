@@ -1,10 +1,10 @@
-#!/usr/bin/env roc-stable
+#!/usr/bin/env -S scripts/run_tool
 app [main!] {
 	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.23.0-rc1/3hT3SoHZ6qbEsa9qVFLUW3547U5LeoNd1KbpqLpz4r1i.tar.zst",
 	ascii: "https://github.com/Hasnep/roc-ascii/releases/download/v0.5.0/5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H.tar.zst",
 	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
-	roc: "nightly-2026-09-18-1d982dc",
+	roc: "nightly-2026-09-29-7f11a82",
 }
 
 import cli.Path
@@ -17,7 +17,7 @@ import src/Script
 import src/WeaverCli
 import src/WorkspaceDeps
 
-CompilerConfig : { compiler_roots : List(Str) }
+CompilerConfig : { compiler_manifest : { path : Str, key : Str } }
 
 TestCase : { path : Str }
 
@@ -35,7 +35,7 @@ main! = |raw_args| {
 	}
 	validate_actions!(root, dependencies)?
 	validate_script_headers!(root, dependencies)?
-	validate_compiler_roots!(root, dependencies.roc_nightly)?
+	validate_compiler_roots!(root)?
 	Script.pass!("Supply-chain metadata is pinned and internally consistent.")
 }
 
@@ -107,20 +107,25 @@ validate_managed_action = |reference, dependencies| {
 	}
 }
 
-validate_compiler_roots! = |root, roc_nightly| {
+validate_compiler_roots! = |root| {
 	config : CompilerConfig
 	config = Json.parse(Path.read_utf8!(Path.join(root, ".github/roc-nightly.json"))?).map_err(|err| InvalidCompilerConfig(err))?
 	spec : TestSpec
 	spec = Json.parse(Path.read_utf8!(Path.join(root, "tests/targets.json"))?).map_err(|err| InvalidTestSpecification(err))?
-	expected = ["platform/main.roc"].concat(spec.cases.map(|item| item.path))
-	if config.compiler_roots.len() != expected.len() or expected.any(|path| !config.compiler_roots.contains(path)) {
-		return Err(IncompleteCompilerRootInventory)
+	if config.compiler_manifest != { path: "scripts/workspace-deps.json", key: "roc_nightly" } {
+		return Err(IncorrectCompilerManifest)
 	}
-	exact_pin = "roc: \"${roc_nightly}\""
-	for relative in config.compiler_roots {
-		source = Path.read_utf8!(Path.join(root, relative))?
-		if Str.split_on(source, exact_pin).len() != 2 {
-			return Err(ExpectedExactlyOneCompilerPin(relative, exact_pin))
+	platform_source = Path.read_utf8!(Path.join(root, "platform/main.roc"))?
+	if platform_source.contains("roc:") {
+		return Err(PlatformMustNotPinCompiler)
+	}
+	for item in spec.cases {
+		source = Path.read_utf8!(Path.join(root, item.path))?
+		header = Str.split_on(source, "\n").first().map_err(|_| EmptyExample(item.path))?
+		depth = Str.split_on(item.path, "/").len() - 1
+		relative_platform = Str.repeat("../", depth).concat("platform/main.roc")
+		if header.contains("roc:") or !header.contains("platform \"${relative_platform}\"") {
+			return Err(ExampleMustUseLocalPlatformWithoutCompilerPin(item.path))
 		}
 	}
 	if Path.exists!(Path.join(root, ".roc-version"))? {

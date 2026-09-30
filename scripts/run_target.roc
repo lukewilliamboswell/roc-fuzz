@@ -1,11 +1,11 @@
-#!/usr/bin/env roc-stable
+#!/usr/bin/env -S scripts/run_tool
 app [main!] {
 	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.23.0-rc1/3hT3SoHZ6qbEsa9qVFLUW3547U5LeoNd1KbpqLpz4r1i.tar.zst",
 	ascii: "https://github.com/Hasnep/roc-ascii/releases/download/v0.5.0/5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H.tar.zst",
 	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst",
 	arg_path: "https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
-	roc: "nightly-2026-09-18-1d982dc",
+	roc: "nightly-2026-09-29-7f11a82",
 }
 
 import cli.Env
@@ -34,9 +34,8 @@ main! = |raw_args| {
 	if Path.ext(source_path).map_ok(Path.display) != Ok("roc") {
 		return Err(TargetMustBeRocSource(Path.display(source_path)))
 	}
-	stable = Script.roc_stable!()?
 	nightly = Script.roc_nightly!()?
-	run_target!(source_path, cli_options.libraries, runner_args(cli_options), stable, nightly)
+	run_target!(source_path, cli_options.libraries, runner_args(cli_options), nightly)
 }
 
 runner_args = |options| {
@@ -61,16 +60,16 @@ append_number = |args, name, value|
 		Err(NoValue) => args
 	}
 
-run_target! = |source_path, library_source, args, stable, nightly| {
+run_target! = |source_path, library_source, args, nightly| {
 	target_name = Project.host_target!()?.name()
 	Script.info!("PREPARE", "Building ${target_name} platform inputs from ${LibrarySource.to_str(library_source)} libraries")?
-	stable.run!(["scripts/build_platform.roc", "--", "--target", OsStr.from_str(target_name), "--libraries", OsStr.from_str(LibrarySource.to_str(library_source))])?
-	Env.with_temp_dir!(|temporary| run_in_workspace!(temporary, source_path, target_name, args, stable, nightly))
+	Script.tool.run!(["scripts/build_platform.roc", "--", "--target", OsStr.from_str(target_name), "--libraries", OsStr.from_str(LibrarySource.to_str(library_source))])?
+	Env.with_temp_dir!(|temporary| run_in_workspace!(temporary, source_path, target_name, args, nightly))
 }
 
-run_in_workspace! = |temporary, source_path, target_name, args, stable, nightly| {
+run_in_workspace! = |temporary, source_path, target_name, args, nightly| {
 	bundle_dir = Path.join(temporary, "bundle")
-	stable.run!(["scripts/build_bundle.roc", "--", "--target", OsStr.from_str(target_name), "--output-dir", Path.to_os_str(bundle_dir)])?
+	Script.tool.run!(["scripts/build_bundle.roc", "--", "--target", OsStr.from_str(target_name), "--output-dir", Path.to_os_str(bundle_dir)])?
 	bundles = Files.direct_files!(bundle_dir)?.keep_if(|path| Script.ends_with(Path.display(path), ".tar.zst"))
 	bundle = match bundles {
 		[only] => only
