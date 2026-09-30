@@ -72,6 +72,13 @@ class ReleaseExamplesTests(unittest.TestCase):
             self.assertTrue((out/'examples/nested/Other.roc').is_file())
             self.assertTrue((out/'tests/set-model/main.roc').is_file())
             self.assertEqual(json.loads((out/'release.json').read_text())['compiler'],OLD)
+            self.assertEqual(r.validate_release_suite(out)['compiler'],OLD)
+            example=out/'examples/nested/main.roc'
+            original=example.read_text()
+            for incorrect in (original.replace(OLD,NEW), original.replace(URL,URL.replace('1.2.3','1.2.2'))):
+                example.write_text(incorrect)
+                with self.assertRaises(ValueError): r.validate_release_suite(out)
+            example.write_text(original)
 
     def test_mismatched_release_manifest_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

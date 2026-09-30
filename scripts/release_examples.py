@@ -5,13 +5,10 @@ import argparse
 import hashlib
 import io
 import json
-import os
 from pathlib import Path, PurePosixPath
 import re
-import shutil
 import subprocess
 import tarfile
-import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -113,6 +110,29 @@ def validate_suite(root, platform_url=None):
             if type(case[flag]) is not bool:
                 raise ValueError('Invalid target flag: ' + flag)
     return inventory
+
+
+def validate_release_suite(root):
+    manifest = json.loads((root / 'release.json').read_text())
+    if (manifest.get('schema') != 1
+            or not re.fullmatch(VERSION.pattern + r'(?:-[0-9A-Za-z.-]+)?', manifest['version'])
+            or not re.fullmatch(r'[0-9a-f]{40}', manifest['source_sha'])
+            or not NIGHTLY.fullmatch(manifest['compiler'])
+            or not manifest['platform_url'].startswith('https://github.com/')
+            or f"/releases/download/{manifest['version']}/" not in manifest['platform_url']
+            or not manifest['platform_url'].endswith('.tar.zst')):
+        raise ValueError('Invalid release examples manifest')
+    validate_suite(root, manifest['platform_url'])
+    for path in (root / 'examples').rglob('*.roc'):
+        source = path.read_text()
+        parsed = app_fields(source)
+        if parsed is None:
+            continue
+        fields, _ = parsed
+        for name, expected in [('roc', manifest['compiler']), ('platform', manifest['platform_url'])]:
+            if name not in fields or json.loads(source[slice(*fields[name])]) != expected:
+                raise ValueError('Example header disagrees with release manifest: ' + str(path))
+    return manifest
 
 
 def package(root, output, version, sha, platform_url, compiler):
@@ -257,7 +277,7 @@ def fetch(selection, destination):
     destination.mkdir(parents=True)
     if selection['examples']:
         extract_zip(download(selection['examples']), destination)
-        manifest = json.loads((destination / 'release.json').read_text())
+        manifest = validate_release_suite(destination)
         if (manifest.get('schema') != 1 or manifest['version'] != selection['version']
                 or manifest['source_sha'] != selection['source_sha'] or manifest['platform_url'] != selection['platform']['url']):
             raise ValueError('Examples manifest does not match selected release')
@@ -309,7 +329,7 @@ def main():
             raise ValueError('Suite destination must be fresh')
         args.output.mkdir(parents=True)
         extract_zip(args.archive.read_bytes(), args.output)
-        validate_suite(args.output)
+        validate_release_suite(args.output)
         if args.compiler:
             if not NIGHTLY.fullmatch(args.compiler):
                 raise ValueError('Invalid compiler tag')
