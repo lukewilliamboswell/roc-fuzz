@@ -337,10 +337,13 @@ candidate bundle, then publishes and attests those same bytes. It does not rewri
 repository example URLs. Download the examples asset when using a published release;
 cloning the repository gives examples for local platform development.
 
-A routine nightly update never publishes a platform. If a new compiler breaks the
-latest release, the update remains blocked while a platform fix is prepared.
-Publish the repair explicitly, then retry the nightly updater against the newly
-released suite. The updater records the new compiler only after validation passes.
+A routine nightly update never fixes or publishes a platform. If a new compiler
+breaks the latest release, the updater reports the failure on its pull request
+and leaves the accepted compiler unchanged. GitHub check notifications (according
+to each maintainer's notification settings) and the PR report flag the failure.
+Maintainers manually investigate, fix, and release the platform. After that manual intervention, retry the nightly updater against the
+newly released suite. The updater records the new compiler only after validation
+passes; there is no automated platform-repair or release-recovery workflow.
 
 A tooling/compiler-recipe migration can require a one-time linker-input publication
 through the existing reviewed PR publisher. The linker fingerprint includes the
