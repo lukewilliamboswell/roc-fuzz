@@ -1,9 +1,9 @@
-app [target] { pf: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.0-rc1/9k2cfuAWoBfcRBRiVbriXFf1dHktoRBbieifYN7NmTHc.tar.zst", roc: "nightly-2026-09-19-d025939" }
+app [target] { pf: platform "../../platform/main.roc" }
 
 import pf.Fuzz
 
-## Laziness and `map`/`map!` over `Stream.custom` (roc-lang/roc#11695).
-## Building a stream, reading its size hint, and wrapping it in `map`/`map!`
+## Laziness and `map` over `Stream.custom` (roc-lang/roc#11695).
+## Building a stream, reading its size hint, and wrapping it in `map`
 ## layers must never run `advance!` (the probe source crashes if it does).
 ## Driving a mapped list-backed source for `pulls` steps must yield the
 ## transformed items in source order, one source index per pull, and stopping
@@ -48,7 +48,7 @@ test! = |{ items, layers, pulls, known }| {
 		crash "size_hint changed the probe hint"
 	}
 	_ = wrap(probe, layers, known)
-	_ = Stream.map!(probe, |s| Str.concat(s, "#"))
+	_ = Stream.map(probe, |s| Str.concat(s, "#"))
 
 	hint = if known Known(items.len()) else Unknown
 	indexed = Stream.custom(

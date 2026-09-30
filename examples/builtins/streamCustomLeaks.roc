@@ -1,4 +1,4 @@
-app [target] { pf: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.0-rc1/9k2cfuAWoBfcRBRiVbriXFf1dHktoRBbieifYN7NmTHc.tar.zst", roc: "nightly-2026-09-19-d025939" }
+app [target] { pf: platform "../../platform/main.roc" }
 
 import pf.Fuzz
 
@@ -89,18 +89,20 @@ test! = |{ items, pulls, fail_at, known }| {
 	Fuzz.expect_no_leaks!(|{}| Stream.collect!(finite(items, known)))
 	Fuzz.expect_no_leaks!(|{}| drop_after!(finite(items, known), pulls.to_u64()))
 	Fuzz.expect_no_leaks!(|{}| drop_after!(infinite(items), pulls.to_u64()))
-	Fuzz.expect_no_leaks!(|{}| {
-		out = Stream.collect!(failing(items, fail_at.to_u64()))
-		if fail_at.to_u64() < items.len() {
-			match out.last() {
-				Ok(Err(SourceFailed(i))) if i == fail_at.to_u64() => {}
-				_ => {
-					crash "failing source did not end with its error item"
+	Fuzz.expect_no_leaks!(
+		|{}| {
+			out = Stream.collect!(failing(items, fail_at.to_u64()))
+			if fail_at.to_u64() < items.len() {
+				match out.last() {
+					Ok(Err(SourceFailed(i))) if i == fail_at.to_u64() => {}
+					_ => {
+						crash "failing source did not end with its error item"
+					}
 				}
 			}
-		}
-		out
-	})
+			out
+		},
+	)
 	Fuzz.keep
 }
 

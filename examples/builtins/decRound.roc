@@ -1,6 +1,6 @@
-app [target] { fuzz: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.0-rc1/9k2cfuAWoBfcRBRiVbriXFf1dHktoRBbieifYN7NmTHc.tar.zst", roc: "nightly-2026-09-19-d025939" }
+app [target] { pf: platform "../../platform/main.roc" }
 
-import fuzz.Fuzz
+import pf.Fuzz
 
 Input := { hi : U64, lo : U64, mode : U8, fraction : U64 }.{
 	generator_for : Fuzz.FuzzEncoding -> Fuzz.Generator(Input)
