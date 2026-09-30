@@ -338,11 +338,9 @@ repository example URLs. Download the examples asset when using a published rele
 cloning the repository gives examples for local platform development.
 
 A routine nightly update never publishes a platform. If a new compiler breaks the
-latest release, the update remains blocked while a platform fix is prepared. The
-Release workflow's optional `compatibility_nightly` input tests that same candidate
-bundle with the pending compiler in addition to the accepted compiler. Publish the
-repair explicitly, then retry the nightly updater against the newly released suite.
-This input does not silently change the repository's accepted compiler.
+latest release, the update remains blocked while a platform fix is prepared.
+Publish the repair explicitly, then retry the nightly updater against the newly
+released suite. The updater records the new compiler only after validation passes.
 
 A tooling/compiler-recipe migration can require a one-time linker-input publication
 through the existing reviewed PR publisher. The linker fingerprint includes the

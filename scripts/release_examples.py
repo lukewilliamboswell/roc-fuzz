@@ -325,7 +325,6 @@ def main():
     unpack = sub.add_parser('unpack')
     unpack.add_argument('archive', type=Path)
     unpack.add_argument('--output', type=Path, required=True)
-    unpack.add_argument('--compiler')
     args = parser.parse_args()
     if args.command == 'package':
         package(ROOT, args.output, args.version, args.source_sha, args.platform_url, args.compiler)
@@ -338,8 +337,6 @@ def main():
         fetch(json.loads(args.selection.read_text()), args.output)
     else:
         unpack_suite(args.archive.read_bytes(), args.output)
-        if args.compiler:
-            rewrite_suite(args.output, compiler=args.compiler)
 
 
 if __name__ == '__main__':

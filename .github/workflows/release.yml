@@ -15,10 +15,6 @@ on:
         description: Validate without publishing, follow-ups or deployment
         type: boolean
         default: false
-      compatibility_nightly:
-        description: Additional exact nightly to test against this bundle before publication
-        required: false
-        type: string
       release_version:
         description: "Release version with matching docs/releases/VERSION.adoc, for example 0.4.0 or 0.5.0-rc1"
         required: false
@@ -379,34 +375,6 @@ jobs:
           bundle_path: .release/test-bundles/${{ matrix.artifact_file }}
           bundle_name: ${{ matrix.bundle_name }}
           release_version: ${{ needs.release-info.outputs.release_version }}
-
-      - name: Validate optional compatibility compiler selection
-        env:
-          COMPILER: ${{ inputs.compatibility_nightly }}
-        run: |
-          if [[ -n "$COMPILER" && ! "$COMPILER" =~ ^nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9a-f]{7,40}$ ]]; then
-            echo "compatibility_nightly must be an exact nightly tag" >&2
-            exit 1
-          fi
-      - name: Install the additional compatibility compiler
-        if: inputs.compatibility_nightly != ''
-        id: compatibility-roc
-        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
-        with:
-          version: nightly-new-compiler
-          nightly-tag: ${{ inputs.compatibility_nightly }}
-      - name: Test frozen examples and exact bundle with the pending compiler
-        if: inputs.compatibility_nightly != ''
-        env:
-          COMPILER: ${{ inputs.compatibility_nightly }}
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.compatibility-roc.outputs.executable }}
-          ROC_FUZZ_SUITE_ROOT: .release/compatibility-suite
-          BUNDLE: .release/test-bundles/${{ matrix.artifact_file }}
-        run: |
-          test "$("$ROC_NIGHTLY" version)" = "Roc compiler version $COMPILER"
-          python3 scripts/release_examples.py unpack .release/examples/*.zip --output "$ROC_FUZZ_SUITE_ROOT" --compiler "$COMPILER"
-          scripts/run_tool scripts/test_bundle.roc -- "$BUNDLE"
 
   generate-sbom:
     name: Generate release SBOM
