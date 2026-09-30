@@ -138,3 +138,39 @@ historical reproduction is important.
 The link:api/index.html[generated API reference] lists all generators and
 combinators. Continue with xref:campaigns.adoc[Run and maintain fuzzing campaigns]
 when the target produces useful values and passes a short smoke run.
+
+== Arctangent builtin properties
+
+The `examples/builtins/arctangentDec.roc`, `arctangentF32.roc`, and
+`arctangentF64.roc` targets check `atan` and `atan2` with composed numeric
+generators. They also assert that the numeric checks allocate no heap memory;
+input generation and diagnostic rendering are outside that measurement.
+
+The float targets check NaN propagation, signed zeros, infinities, range,
+quadrants, and odd symmetry. F32 results are compared with F64 results rounded
+to F32, allowing two ULP. F64 angles are checked against normalized input
+coordinates using sine and cosine, with absolute tolerance `3e-15`. Quadrant
+checks allow two ULP at the rounded half-pi boundary, while zero and infinity
+cases require exact result bits.
+
+The Dec generator composes two U64 values into a signed 128-bit attosecond
+payload and varies its magnitude with a shift. It checks axes, range, symmetry,
+and agreement between `atan(y)` and `atan2({ x: 1, y })`, allowing 128 attoseconds.
+Comparison with the separate F64 implementation allows `4e-15` for conversion
+and floating-point error. `Dec.lowest` is tested but excluded from negation
+checks because its negation overflows.
+
+These checks supplement the compiler's high-precision unit tests; shared
+algorithms and finite tolerances mean they do not prove correct rounding.
+To run just these inventory entries with a compiler that includes the `atan2`
+builtins:
+
+[source,sh]
+----
+export ROC_NIGHTLY=/path/to/roc
+scripts/test_targets.roc -- --operation all --max-total-time 60 \
+  --target arctangentDec --target arctangentF32 --target arctangentF64
+----
+
+Use the normal runner's `show`, `replay`, and `minimize` commands to investigate
+saved failures, as described in the campaign chapter.

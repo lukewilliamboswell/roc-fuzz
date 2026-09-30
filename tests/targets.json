@@ -520,6 +520,33 @@
       "expected_failure": false,
       "skip_seed": false,
       "skip_fuzz": false
+    },
+    {
+      "name": "arctangentDec",
+      "path": "examples/builtins/arctangentDec.roc",
+      "seed_hex": "00000000000000000000000000000000000000000000000000000000000000000000",
+      "libfuzzer_seed": 1052,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "arctangentF32",
+      "path": "examples/builtins/arctangentF32.roc",
+      "seed_hex": "00000000000000000000",
+      "libfuzzer_seed": 1053,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "arctangentF64",
+      "path": "examples/builtins/arctangentF64.roc",
+      "seed_hex": "000000000000000000000000000000000000",
+      "libfuzzer_seed": 1054,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
     }
   ],
   "retired": [
