@@ -18,7 +18,7 @@ Normal documentation, Roc source validation, target builds, and
 packaging require only:
 
 * stable Roc for the repository's typed tooling; and
-* the nightly Roc compiler selected by the platform and application headers.
+* the last validated nightly selected by `roc_nightly` in `scripts/workspace-deps.json`.
 
 Linker inputs have an independent, content-addressed release cycle;
 `libhost.a` is deliberately outside that cycle and is built with each platform
@@ -26,17 +26,53 @@ update. This separation means a host or Roc source change does not rebuild large
 stable runtime inputs. Source development and the explicitly dispatched producer
 require Zig 0.16.0. The builder uses `zig ar`.
 
-Exact project compiler versions live in the platform and application header
-`roc` fields. The shared updater changes only those pins, preserving published
-URLs. Repository scripts use `ROC_STABLE` and `ROC_NIGHTLY` when set, then fall
-back to the `roc-stable` and `roc-nightly` commands installed by
-`lukewilliamboswell/setup-roc`.
+The setup action installs separate `roc-stable` and `roc-nightly` executables.
+The local `setup-workspace-roc` action reads their exact selections from workspace metadata and checks
+the installed versions. Tooling has its own fixed `roc_stable` selection; it does
+not advance with routine project nightly updates. `ROC_STABLE` and `ROC_NIGHTLY`
+allow explicit local overrides.
 
-Downstream builds that require warning-free compiler output must select a
-platform release with the matching compiler pin. September 26 Roc checks pins
-inside downloaded dependencies too; API compatibility alone does not suppress
-that diagnostic. Validate a release archive with the downstream compiler before
-updating its content-addressed URL.
+The shared nightly updater resolves the latest published compiler once, tests
+that exact candidate on both hosts, then advances only `roc_nightly` after all
+required checks pass. The platform and local examples contain no compiler pins.
+This metadata records a tested compiler, not an exclusive compatibility claim
+for a released platform.
+
+Repository examples use relative paths to the working-tree platform. Each new
+release provides `roc-fuzz-examples-VERSION.zip` with complete applications,
+supporting modules, seeds/test inventory, an exact platform release URL, and the
+publication compiler in application headers. Newer compilers are checked against
+that frozen suite, independently of APIs added to the current repository examples.
+Only temporary application compiler pins are updated for these compatibility runs;
+the released platform bytes and URLs remain unchanged.
+
+== Repository scripting convention
+
+Repository-owned automation is written in Roc. Put executable entry points in
+`scripts/*.roc` and reusable logic in `scripts/src/*.roc`. Use the existing shared
+modules for commands, paths, hashing, source edits, archives, and release metadata.
+Do not add Python scripts, shell launchers, or build-before-run wrappers to work
+around compiler behavior. Keep workflow YAML limited to job orchestration and
+small environment/output plumbing; substantive automation belongs in Roc.
+
+Run scripts directly with `roc-stable scripts/NAME.roc -- ARGUMENTS`, or their
+`#!/usr/bin/env roc-stable` shebang. Nested tooling calls use `ROC_STABLE` through
+`Script.roc_stable!`; project validation uses `ROC_NIGHTLY` separately. The fixed
+`roc_stable` selection must execute the tooling and its dependencies without
+warning-exit workarounds. Upgrade it deliberately when a compatible compiler and
+dependencies are available. A successful script must return zero, and a failed
+script must remain a failure.
+
+Roc scripts may invoke standard tools such as Git, curl, tar, zip, and unzip via
+argument lists, without shell evaluation. Roc owns selection, validation, and
+control flow. Pinned external tools and shared actions remain external dependencies;
+for example, the shared documentation builder currently uses Python internally.
+That does not justify adding repository-owned Python orchestration.
+
+Pure regression checks belong in shared-module `expect`s imported by
+`scripts/tooling_tests.roc`. Filesystem and process checks belong in
+`scripts/tooling_integration_tests.roc`; both run from `scripts/check_all.roc`.
+The archive tools require Git, curl, tar, zip, and unzip on local and CI hosts.
 
 == Generate platform inputs
 
@@ -159,11 +195,11 @@ scripts/test_targets.roc -- --operation seed
 scripts/test_targets.roc -- --operation fuzz --max-total-time 2
 ----
 
-`check_all.roc` prepares the current host inputs and validates the working-tree
+After native inputs are prepared, `check_all.roc` validates the working-tree
 platform and every example. `test_targets.roc` provides the focused operations
 shown above.
-Checked-in example declarations remain pinned to a published release,
-while local and CI runs exercise unreleased platform changes. Validation
+Checked-in examples use the local platform. The published compatibility lane
+uses the selected release’s own frozen examples and immutable bundle. Validation
 checks the exact example inventory, Roc formatting and types. After
 generating the current host inputs, building creates every
 self-contained executable and verifies a static x86-64 ELF on Linux or
@@ -192,8 +228,9 @@ stages by default. A temporary exception must use a `skip` entry in
 URL. The driver rejects unexplained skips; skipping a prerequisite also
 requires skipping its dependent stages.
 
-CI has two explicit lanes: public downloads use committed URLs on fresh
-runners, and development tests use the working-tree bundle. Both run on
+CI separates published compatibility, working-tree execution and packaged-platform
+execution. Published checks use the selected release’s frozen suite on fresh
+runners; development checks use local examples and current source. Both run on
 every PR and manual/nightly dispatch; there is no change classifier or
 migration exception. The release workflow additionally tests the exact
 candidate archives. `nightly_validation: true` never publishes or
@@ -204,15 +241,27 @@ AddressSanitizer and runs a short native smoke campaign. This detects heap,
 stack, use-after-free, and leak errors in the embedded C++ fuzzing engine on
 every pull request, every `trunk` update, and before release publication. Run
 the same check locally with
-`roc-stable --opt=dev scripts/test_native_sanitizers.roc`; it requires Clang,
+`roc-stable scripts/test_native_sanitizers.roc`; it requires Clang,
 `curl`, and `tar`. The sanitizer executable is CI-only and does not change the
 static release artifacts.
 
-When checking, testing, or building with a newer compiler, the runner
-permits Roc's warning-only exit code only if every diagnostic is a
-compiler-pin mismatch. The warnings remain visible. Errors, other
-warnings, and runtime failures still fail validation; published URLs and
-downloaded compiler pins are never rewritten.
+The Roc driver runs on Linux and Apple Silicon without platform skips. Scripts
+execute directly with the fixed tooling compiler; compilation errors, warnings,
+and application failures retain their normal Roc exit status.
+
+Use `--suite-root PATH` to run a frozen examples tree containing `examples/` and
+`tests/targets.json`. Each invocation has fresh temporary executables and corpora.
+Fuzz smoke tests pass corpus directories to libFuzzer; passing an individual seed
+file would only replay it. Repository formatting is checked separately, not against
+an older release's frozen source.
+
+Published compatibility selects the highest stable semantic-version platform
+release, ignoring native-library releases and RCs. Both hosts consume the same
+selection and verify asset hashes. Releases through 0.4.1 use examples from the
+exact tag commit, rebound to that release's own bundle (the old manual URL follow-up
+could occur after tagging). Newer releases must include the examples archive.
+The compatibility artifact records the release, source commit, compiler and asset
+identities used; a missing archive or failed download cannot become a passing test.
 
 Every target asserts on allocation behaviour as well as on results. A
 property can check what an operation computes but not what it costs, so
@@ -306,33 +355,31 @@ and the full source SHA in `expected_sha`. Both target bundles must pass
 before the workflow attests and publishes the RC. Only this explicit RC
 path permits source-built libraries. It preserves the latest stable
 release and the trunk-tracking Pages site, and does not create a default-branch URL follow-up.
-Verify the published archive and adopt its URL in the originating PR.
+Verify the published archive and its frozen examples before use.
 Stable releases still require the independent library lock.
 
-URL follow-ups are a maintainer task, not another release workflow:
+Release preparation generates and tests the examples archive against the exact
+candidate bundle, then publishes and attests those same bytes. It does not rewrite
+repository example URLs. Download the examples asset when using a published release;
+cloning the repository gives examples for local platform development.
 
-[arabic]
-. Download the published archive, compare its digest with the tested
-artifact, and verify its attestation with
-`gh attestation verify --repo lukewilliamboswell/roc-fuzz --signer-workflow lukewilliamboswell/roc-fuzz/.github/workflows/release.yml <archive>`.
-. Update the example and README platform URLs without changing compiler
-pins. Commit with a verified signature and open a reviewed PR.
-. Require current-head CI (including Linux/macOS public-download tests)
-before merging. If workflows do not start automatically, dispatch CI on
-that branch with `nightly_validation=true` and check that branch
-protection accepts it.
+A routine nightly update never fixes or publishes a platform. If a new compiler
+breaks the latest release, the updater reports the failure on its pull request
+and leaves the accepted compiler unchanged. GitHub check notifications (according
+to each maintainer's notification settings) and the PR report flag the failure.
+Maintainers manually investigate, fix, and release the platform. After that manual intervention, retry the nightly updater against the
+newly released suite. The updater records the new compiler only after validation
+passes; there is no automated platform-repair or release-recovery workflow.
 
-If new examples need unpublished APIs, use a tested RC and adopt its URL
-before merging. The nightly updater remains pin-only and must not repair
-release URLs. Inspect partial publication before recovery; never replace
-existing tags or assets or rebuild an already-published release from a
-moving branch. Preserve the run's exact tested artifacts and inspect the
-tag SHA and uploaded digests before recovery; do not blindly rerun a
-publishing job.
+A tooling/compiler-recipe migration can require a one-time linker-input publication
+through the existing reviewed PR publisher. The linker fingerprint includes the
+fixed tooling compiler and recipe, but excludes `roc_nightly`: subsequent project
+compiler-only updates reuse the admitted native libraries.
 
-After an interrupted URL follow-up, resume the existing reviewed PR and
-rerun validation on its current head; do not create a duplicate PR or
-republish assets.
+Inspect partial publication before recovery; never replace existing tags or assets
+or rebuild an already-published release from a moving branch. Preserve the exact
+tested artifacts, tag SHA and uploaded digests. No changes to historical releases
+are required to adopt this workflow.
 
 == Design constraints
 

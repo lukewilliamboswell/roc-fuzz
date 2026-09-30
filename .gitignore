@@ -16,3 +16,7 @@
 /platform/targets/*/SHA256SUMS
 /platform/targets/*/NATIVE_LIBRARIES.json
 /examples/**/main
+
+# Generated tooling bytecode and release staging.
+__pycache__/
+/.release/

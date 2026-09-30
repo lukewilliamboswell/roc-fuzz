@@ -26,22 +26,42 @@ jobs:
       - name: Checkout roc-fuzz
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install stable tooling Roc and latest nightly
+      - name: Install and verify workspace compilers
         id: roc
-        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
-        with:
-          version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-26-d6267b4
+        uses: ./.github/actions/setup-workspace-roc
 
       - name: Build and run the pinned libFuzzer with AddressSanitizer
         env:
           ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
         run: |
-          "$ROC_STABLE" --opt=dev scripts/test_native_sanitizers.roc
+          roc-stable scripts/test_native_sanitizers.roc
+
+  published-release:
+    name: Select published compatibility baseline
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install workspace compilers
+        uses: ./.github/actions/setup-workspace-roc
+      - name: Resolve one release and compiler for both hosts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          roc-stable scripts/release_examples.roc -- --operation resolve --repository "$GITHUB_REPOSITORY" \
+            --compiler "$(jq -er .roc_nightly scripts/workspace-deps.json)" \
+            --output .release/published-selection.json
+          cat .release/published-selection.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: published-selection
+          path: .release/published-selection.json
+          if-no-files-found: error
 
   published-examples:
-    name: Public downloads (${{ matrix.os }})
+    name: Published release compatibility (${{ matrix.os }})
+    needs: published-release
     strategy:
       fail-fast: false
       matrix:
@@ -51,28 +71,34 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - name: Install stable tooling Roc and latest nightly
+      - name: Install and verify workspace compilers
         id: roc
-        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
+        uses: ./.github/actions/setup-workspace-roc
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-26-d6267b4
-      - name: Test committed URLs from a fresh cache
-        if: runner.os != 'macOS'
+          name: published-selection
+          path: .release
+      - name: Fetch the frozen release examples
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(jq -er .compiler .release/published-selection.json)" = "$(jq -er .roc_nightly scripts/workspace-deps.json)"
+          roc-stable scripts/release_examples.roc -- --operation fetch --selection .release/published-selection.json --output .release/published-suite
+      - name: Build and exercise published examples on this host
         env:
           ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
           ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
+          XDG_CACHE_HOME: ${{ runner.temp }}/roc-published-cache
         run: >-
-          "$ROC_STABLE" --opt=dev scripts/test_targets.roc --
+          roc-stable scripts/test_targets.roc -- --suite-root .release/published-suite
           --operation all --max-total-time 1 --verbose
-
-      - name: Type-check the target runner on macOS
-        if: runner.os == 'macOS'
-        env:
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-        run: |
-          "$ROC_STABLE" check scripts/test_targets.roc
+      - name: Preserve compatibility evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: compatibility-${{ matrix.os }}
+          path: .release/published-suite/compatibility.json
+          if-no-files-found: error
 
   self-contained-runner:
     strategy:
@@ -93,13 +119,9 @@ jobs:
         id: dependencies
         run: echo "zig-version=$(jq -r .zig_version scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
 
-      - name: Install stable tooling Roc and latest nightly
+      - name: Install and verify workspace compilers
         id: roc
-        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
-        with:
-          version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-26-d6267b4
+        uses: ./.github/actions/setup-workspace-roc
 
       - name: Install Zig
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
@@ -119,7 +141,9 @@ jobs:
         id: linker-inputs
         env:
           TARGET: ${{ matrix.platform-target }}
-        run: echo "identity=$(python3 scripts/link_input_artifacts.py cache-identity --target "$TARGET")" >> "$GITHUB_OUTPUT"
+        run: |
+          identity=$(roc-stable scripts/link_input_artifacts.roc -- --operation cache-identity --target "$TARGET")
+          echo "identity=$identity" >> "$GITHUB_OUTPUT"
 
       - name: Restore the content-addressed linker-input download cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -140,7 +164,13 @@ jobs:
           ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
         run: scripts/check_all.roc
 
-      - name: Test examples against the working-tree platform
+      - name: Exercise local examples against the working-tree platform
+        env:
+          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
+          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
+        run: roc-stable scripts/test_targets.roc -- --operation all --max-total-time 1
+
+      - name: Test examples against the packaged working-tree platform
         env:
           ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
           ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
@@ -160,7 +190,7 @@ jobs:
   required:
     name: CI required
     if: always()
-    needs: [native-sanitizers, self-contained-runner, published-examples]
+    needs: [native-sanitizers, self-contained-runner, published-release, published-examples]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:

@@ -23,13 +23,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install stable tooling Roc and latest nightly
+      - name: Install and verify workspace compilers
         id: roc
-        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
-        with:
-          version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-26-d6267b4
+        uses: ./.github/actions/setup-workspace-roc
 
       - id: docs
         name: Build HTML, PDF, and API documentation

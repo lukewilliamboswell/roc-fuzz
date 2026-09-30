@@ -41,19 +41,15 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install stable tooling Roc and latest nightly
+      - name: Install and verify workspace compilers
         id: roc
-        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
-        with:
-          version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-26-d6267b4
+        uses: ./.github/actions/setup-workspace-roc
 
       - name: Build and run the pinned libFuzzer with AddressSanitizer
         env:
           ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
         run: |
-          "$ROC_STABLE" --opt=dev scripts/test_native_sanitizers.roc
+          roc-stable scripts/test_native_sanitizers.roc
 
   release-info:
     name: Validate release request
@@ -69,13 +65,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install stable tooling Roc and latest nightly
+      - name: Install and verify workspace compilers
         id: roc
-        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
-        with:
-          version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-26-d6267b4
+        uses: ./.github/actions/setup-workspace-roc
 
       - name: Validate release request
         id: validate
@@ -87,10 +79,11 @@ jobs:
 
       - name: Check compiler release policy
         if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && !inputs.release_candidate
-        uses: lukewilliamboswell/roc-automation/actions/check-release@e5b83ace37e0d0cb4e9fadb93cefb364f2cd6611 # e5b83ac
+        uses: lukewilliamboswell/roc-automation/actions/check-release@5af80ef9d9cf93f4000633adf4e33828d0ee88c8 # compiler-manifest
         with:
           version: ${{ inputs.release_version }}
-          compiler-root: platform/main.roc
+          compiler-manifest: scripts/workspace-deps.json
+          compiler-key: roc_nightly
           allow-default-branch: 'true'
           allow-nightly-bootstrap: 'true'
 
@@ -150,13 +143,9 @@ jobs:
         id: dependencies
         run: echo "zig-version=$(jq -r .zig_version scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
 
-      - name: Install stable tooling Roc and latest nightly
+      - name: Install and verify workspace compilers
         id: roc
-        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
-        with:
-          version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-26-d6267b4
+        uses: ./.github/actions/setup-workspace-roc
 
       - name: Install Zig
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
@@ -167,7 +156,9 @@ jobs:
         id: linker-inputs
         env:
           TARGET: ${{ matrix.platform_target }}
-        run: echo "identity=$(python3 scripts/link_input_artifacts.py cache-identity --target "$TARGET")" >> "$GITHUB_OUTPUT"
+        run: |
+          identity=$(roc-stable scripts/link_input_artifacts.roc -- --operation cache-identity --target "$TARGET")
+          echo "identity=$identity" >> "$GITHUB_OUTPUT"
 
       - name: Restore the content-addressed linker-input download cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -205,13 +196,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install stable tooling Roc and latest nightly
+      - name: Install and verify workspace compilers
         id: roc
-        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
-        with:
-          version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-26-d6267b4
+        uses: ./.github/actions/setup-workspace-roc
 
       - name: Download x64-musl inputs
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -294,6 +281,24 @@ jobs:
           bundle_glob: dist/*.tar.zst
           test_os_json: '["ubuntu-22.04", "macos-26"]'
 
+      - name: Package frozen release examples
+        env:
+          EXAMPLE_VERSION: ${{ needs.release-info.outputs.release_version || '0.0.0-rc0' }}
+          COMPILER: ${{ steps.roc.outputs.nightly-tag }}
+        run: |
+          bundles=(.release/bundles/*.tar.zst)
+          test "${#bundles[@]}" -eq 1
+          roc-stable scripts/release_examples.roc -- --operation package \
+            --release-version "$EXAMPLE_VERSION" --source-sha "$GITHUB_SHA" --compiler "$COMPILER" \
+            --platform-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$EXAMPLE_VERSION/$(basename "${bundles[0]}")" \
+            --output ".release/examples/roc-fuzz-examples-$EXAMPLE_VERSION.zip"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-examples
+          path: .release/examples/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Upload release bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -341,13 +346,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Install stable tooling Roc and latest nightly
+      - name: Install and verify workspace compilers
         id: roc
-        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
-        with:
-          version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-26-d6267b4
+        uses: ./.github/actions/setup-workspace-roc
 
       - name: Download release bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -355,8 +356,17 @@ jobs:
           name: release-bundles
           path: .release/test-bundles
 
+      - name: Download frozen release examples
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-examples
+          path: .release/examples
+      - name: Extract frozen release suite
+        run: roc-stable scripts/release_examples.roc -- --operation unpack --archive .release/examples/*.zip --output .release/example-suite
+
       - name: Test release bundle
         env:
+          ROC_FUZZ_SUITE_ROOT: .release/example-suite
           ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
           ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
         uses: roc-lang/release-package/actions/test-bundle@d2560ead9f724bfaabfbc8134b8895e120171064 # main
@@ -378,13 +388,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install stable tooling Roc and latest nightly
+      - name: Install and verify workspace compilers
         id: roc
-        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
-        with:
-          version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-26-d6267b4
+        uses: ./.github/actions/setup-workspace-roc
 
       - name: Download release bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -438,13 +444,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Install stable tooling Roc and latest nightly
+      - name: Install and verify workspace compilers
         id: roc
-        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
-        with:
-          version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-26-d6267b4
+        uses: ./.github/actions/setup-workspace-roc
 
       - id: docs
         name: Build versioned HTML, PDF, and API documentation
@@ -493,6 +495,12 @@ jobs:
           name: release-bundles
           path: .release/bundles
 
+      - name: Download tested release examples
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-examples
+          path: .release/examples
+
       - name: Download the release SBOM
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -502,7 +510,9 @@ jobs:
       - name: Attest SLSA build provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
-          subject-path: .release/bundles/*.tar.zst
+          subject-path: |
+            .release/bundles/*.tar.zst
+            .release/examples/*.zip
 
       - name: Resolve the single SBOM file
         id: sbom-file
@@ -526,7 +536,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .release/supply-chain
-          for bundle in .release/bundles/*.tar.zst; do
+          for bundle in .release/bundles/*.tar.zst .release/examples/*.zip; do
             work="$RUNNER_TEMP/attestations-$(basename "$bundle")"
             mkdir -p "$work"
             (cd "$work" && gh attestation download "$GITHUB_WORKSPACE/$bundle" --repo "$GITHUB_REPOSITORY")
@@ -561,19 +571,21 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install stable tooling Roc and latest nightly
+      - name: Install and verify workspace compilers
         id: roc
-        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
-        with:
-          version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-26-d6267b4
+        uses: ./.github/actions/setup-workspace-roc
 
       - name: Download release bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: release-bundles
           path: .release/bundles
+
+      - name: Download tested release examples
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-examples
+          path: .release/examples
 
       - name: Download release metadata
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -598,6 +610,7 @@ jobs:
         run: |
           {
             echo 'paths<<EOF'
+            find .release/examples -maxdepth 1 -type f -print | sort
             find .release/docs -maxdepth 1 -type f -print | sort
             find .release/supply-chain -maxdepth 1 -type f -print | sort
             echo 'EOF'
@@ -633,7 +646,7 @@ jobs:
           # gh release create refuses an existing release; refuse an existing tag too.
           refs="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$RELEASE_VERSION")"
           test "$(jq --arg tag "refs/tags/$RELEASE_VERSION" '[.[] | select(.ref == $tag)] | length' <<< "$refs")" -eq 0
-          gh release create "$RELEASE_VERSION" .release/bundles/*.tar.zst .release/supply-chain/* .release/docs/* --target "$GITHUB_SHA" --prerelease --latest=false --title "$RELEASE_VERSION" --notes-file .release/release-notes.md
+          gh release create "$RELEASE_VERSION" .release/bundles/*.tar.zst .release/examples/*.zip .release/supply-chain/* .release/docs/* --target "$GITHUB_SHA" --prerelease --latest=false --title "$RELEASE_VERSION" --notes-file .release/release-notes.md
 
   required:
     name: Release required

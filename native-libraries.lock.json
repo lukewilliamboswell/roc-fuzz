@@ -2,27 +2,27 @@
   "schema_version": 1,
   "kind": "link-inputs",
   "repository": "lukewilliamboswell/roc-fuzz",
-  "release": "linker-inputs-sha256-66f81529f68d26b10be1212e854234b606785efdcd207f5445b858687cd46455",
+  "release": "linker-inputs-sha256-1121bbac29a273b69f974982fdbcaf49d4f66d79ce2de9758eeb70d055fc6a4e",
   "manifest": {
     "asset": "build-input-release.json",
-    "sha256": "66f81529f68d26b10be1212e854234b606785efdcd207f5445b858687cd46455"
+    "sha256": "1121bbac29a273b69f974982fdbcaf49d4f66d79ce2de9758eeb70d055fc6a4e"
   },
   "source": {
-    "input_fingerprint": "0237d24ef018fe78d9053266c6c4682fb3c32d31f23b3c4b831fe4b8b2626597",
-    "ref": "refs/heads/fix/september26-compiler",
+    "input_fingerprint": "684a1aa9622ae00bcbf3059e581c0e9ab11b3315d4c1a5326f514c1fc42e69ec",
+    "ref": "refs/heads/fix/compiler-release-compatibility",
     "repository": "lukewilliamboswell/roc-fuzz",
-    "sha": "e06e3fd505bc34bc4f8dbd5bbffbb1f342402ede",
+    "sha": "5e7d88cd7ff3fe5d33dcf360d35a1968ca2fa17f",
     "workflow": "lukewilliamboswell/roc-fuzz/.github/workflows/native-libraries.yml"
   },
   "targets": {
     "arm64mac": {
       "asset": "link-inputs-arm64mac.tar",
-      "sha256": "8a0026fe686db1c9829a26af0d4c81c942b5d561a50700f807dd90de97ccb438",
+      "sha256": "1c8b863b18a8a874b87b3c5ad3922435ff06af7d3ea1f1b7e9194316058a49c1",
       "size": 22835200
     },
     "x64musl": {
       "asset": "link-inputs-x64musl.tar",
-      "sha256": "f1e3990f5e78e7f2c989304cd057712be6c4c9cf03f7899098ecfdef78f726f0",
+      "sha256": "e2c425419ccd097c770a15d5484f41f3ea01fb05af9af1d8c9b9fd4d644eaebe",
       "size": 36823040
     }
   }

@@ -59,13 +59,9 @@ jobs:
         with:
           version: ${{ steps.dependencies.outputs.zig-version }}
           use-cache: false
-      - name: Install Roc toolchains
+      - name: Install and verify workspace compilers
         id: roc
-        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
-        with:
-          version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-26-d6267b4
+        uses: ./.github/actions/setup-workspace-roc
       - name: Build linker inputs from source
         env:
           ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
@@ -103,9 +99,11 @@ jobs:
         run: |
           cp -R built/built-x64musl/. platform/targets/x64musl/
           cp -R built/built-arm64mac/. platform/targets/arm64mac/
+      - name: Install workspace compilers
+        uses: ./.github/actions/setup-workspace-roc
       - name: Create deterministic target archives and canonical manifest
         run: >-
-          python3 scripts/link_input_artifacts.py package
+          roc-stable scripts/link_input_artifacts.roc -- --operation package
           --output candidate
           --repository "$GITHUB_REPOSITORY"
           --sha "$GITHUB_SHA"
