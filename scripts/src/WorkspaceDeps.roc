@@ -43,6 +43,13 @@ WorkspaceDeps := {
 		|value| value,
 	)
 
+	## Fingerprint all tooling dependencies without coupling native inputs to the project nightly.
+	fingerprint_source = |source| {
+		decoded : RawWorkspaceDeps
+		decoded = Json.parse(source)?
+		Ok(Json.to_str({ ..decoded, roc_nightly: "" }))
+	}
+
 	parse = |source| {
 		decoded : RawWorkspaceDeps
 		decoded = Json.parse(source).map_err(|err| InvalidWorkspaceDependenciesJson(err))?

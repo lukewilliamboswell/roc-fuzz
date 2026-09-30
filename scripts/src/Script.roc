@@ -27,15 +27,6 @@ Script := [].{
 
 	command = |program| Command.{ base: Cmd.new(program), program }
 
-	## Compiler verbs reserve status 2 for a completed operation with warnings.
-	## Never use this for application execution: its exit status is authoritative.
-	compile! = |compiler, args| {
-		code = compiler.cmd(args).exec_exit_code!()?
-		if code == 0 or code == 2 Ok({}) else Err(CompilerCommandExited(code))
-	}
-
-	tool = command("scripts/run_tool")
-
 	roc_stable! = || command_from_env!("ROC_STABLE", "roc-stable")
 	roc_nightly! = || command_from_env!("ROC_NIGHTLY", "roc-nightly")
 	env_str! = |name|

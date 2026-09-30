@@ -49,7 +49,7 @@ jobs:
         env:
           ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
         run: |
-          scripts/run_tool scripts/test_native_sanitizers.roc
+          roc-stable scripts/test_native_sanitizers.roc
 
   release-info:
     name: Validate release request
@@ -157,7 +157,7 @@ jobs:
         env:
           TARGET: ${{ matrix.platform_target }}
         run: |
-          identity=$(python3 scripts/link_input_artifacts.py cache-identity --target "$TARGET")
+          identity=$(roc-stable scripts/link_input_artifacts.roc -- --operation cache-identity --target "$TARGET")
           echo "identity=$identity" >> "$GITHUB_OUTPUT"
 
       - name: Restore the content-addressed linker-input download cache
@@ -288,8 +288,8 @@ jobs:
         run: |
           bundles=(.release/bundles/*.tar.zst)
           test "${#bundles[@]}" -eq 1
-          python3 scripts/release_examples.py package \
-            --version "$EXAMPLE_VERSION" --source-sha "$GITHUB_SHA" --compiler "$COMPILER" \
+          roc-stable scripts/release_examples.roc -- --operation package \
+            --release-version "$EXAMPLE_VERSION" --source-sha "$GITHUB_SHA" --compiler "$COMPILER" \
             --platform-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$EXAMPLE_VERSION/$(basename "${bundles[0]}")" \
             --output ".release/examples/roc-fuzz-examples-$EXAMPLE_VERSION.zip"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -362,7 +362,7 @@ jobs:
           name: release-examples
           path: .release/examples
       - name: Extract frozen release suite
-        run: python3 scripts/release_examples.py unpack .release/examples/*.zip --output .release/example-suite
+        run: roc-stable scripts/release_examples.roc -- --operation unpack --archive .release/examples/*.zip --output .release/example-suite
 
       - name: Test release bundle
         env:

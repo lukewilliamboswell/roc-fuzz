@@ -46,6 +46,34 @@ that frozen suite, independently of APIs added to the current repository example
 Only temporary application compiler pins are updated for these compatibility runs;
 the released platform bytes and URLs remain unchanged.
 
+== Repository scripting convention
+
+Repository-owned automation is written in Roc. Put executable entry points in
+`scripts/*.roc` and reusable logic in `scripts/src/*.roc`. Use the existing shared
+modules for commands, paths, hashing, source edits, archives, and release metadata.
+Do not add Python scripts, shell launchers, or build-before-run wrappers to work
+around compiler behavior. Keep workflow YAML limited to job orchestration and
+small environment/output plumbing; substantive automation belongs in Roc.
+
+Run scripts directly with `roc-stable scripts/NAME.roc -- ARGUMENTS`, or their
+`#!/usr/bin/env roc-stable` shebang. Nested tooling calls use `ROC_STABLE` through
+`Script.roc_stable!`; project validation uses `ROC_NIGHTLY` separately. The fixed
+`roc_stable` selection must execute the tooling and its dependencies without
+warning-exit workarounds. Upgrade it deliberately when a compatible compiler and
+dependencies are available. A successful script must return zero, and a failed
+script must remain a failure.
+
+Roc scripts may invoke standard tools such as Git, curl, tar, zip, and unzip via
+argument lists, without shell evaluation. Roc owns selection, validation, and
+control flow. Pinned external tools and shared actions remain external dependencies;
+for example, the shared documentation builder currently uses Python internally.
+That does not justify adding repository-owned Python orchestration.
+
+Pure regression checks belong in shared-module `expect`s imported by
+`scripts/tooling_tests.roc`. Filesystem and process checks belong in
+`scripts/tooling_integration_tests.roc`; both run from `scripts/check_all.roc`.
+The archive tools require Git, curl, tar, zip, and unzip on local and CI hosts.
+
 == Generate platform inputs
 
 Generate the current host's ignored inputs with:
@@ -213,15 +241,13 @@ AddressSanitizer and runs a short native smoke campaign. This detects heap,
 stack, use-after-free, and leak errors in the embedded C++ fuzzing engine on
 every pull request, every `trunk` update, and before release publication. Run
 the same check locally with
-`scripts/run_tool scripts/test_native_sanitizers.roc`; it requires Clang,
+`roc-stable scripts/test_native_sanitizers.roc`; it requires Clang,
 `curl`, and `tar`. The sanitizer executable is CI-only and does not change the
 static release artifacts.
 
-The Roc driver runs on Linux and Apple Silicon without platform skips. Compiler
-verbs permit Roc's documented warning-only status 2 and retain all diagnostics;
-compilation errors and executable failures fail validation. Tooling is built with
-`--opt=dev` before execution so compiler warnings cannot hide the program's exit
-status. `scripts/run_tool` provides the same build-then-run path locally and in CI.
+The Roc driver runs on Linux and Apple Silicon without platform skips. Scripts
+execute directly with the fixed tooling compiler; compilation errors, warnings,
+and application failures retain their normal Roc exit status.
 
 Use `--suite-root PATH` to run a frozen examples tree containing `examples/` and
 `tests/targets.json`. Each invocation has fresh temporary executables and corpora.

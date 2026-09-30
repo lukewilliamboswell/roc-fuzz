@@ -1,6 +1,6 @@
-#!/usr/bin/env -S scripts/run_tool
+#!/usr/bin/env roc-stable
 app [main!] {
-	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.23.0-rc1/3hT3SoHZ6qbEsa9qVFLUW3547U5LeoNd1KbpqLpz4r1i.tar.zst",
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.23.0/GNN5tt2gKdX4dhawg4915C4YB193woHFdcCkz31fhGxv.tar.zst",
 	ascii: "https://github.com/Hasnep/roc-ascii/releases/download/v0.5.0/5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H.tar.zst",
 	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
@@ -43,6 +43,9 @@ validate_script_headers! = |root, dependencies| {
 	scripts = Files.direct_files!(Path.join(root, "scripts"))?.keep_if(|path| Path.ext(path).map_ok(Path.display) == Ok("roc"))
 	for path in scripts {
 		source = Path.read_utf8!(path)?
+		if !Script.starts_with(source, "#!/usr/bin/env roc-stable\n") {
+			return Err(ScriptMustRunDirectlyWithRoc(Path.display(path)))
+		}
 		tooling_roc = dependencies.roc_stable
 		for (label, identity) in [
 			("cli: platform", dependencies.package_urls.basic_cli),
