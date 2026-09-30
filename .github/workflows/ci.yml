@@ -30,8 +30,10 @@ jobs:
         id: compilers
         shell: bash
         run: |
-          echo "stable=$(jq -er .roc_stable scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
-          echo "nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+          selected_stable=$(jq -er .roc_stable scripts/workspace-deps.json)
+          selected_nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)
+          echo "stable=$selected_stable" >> "$GITHUB_OUTPUT"
+          echo "nightly=$selected_nightly" >> "$GITHUB_OUTPUT"
 
       - name: Install the selected tooling and project compilers
         id: roc
@@ -95,8 +97,10 @@ jobs:
         id: compilers
         shell: bash
         run: |
-          echo "stable=$(jq -er .roc_stable scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
-          echo "nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+          selected_stable=$(jq -er .roc_stable scripts/workspace-deps.json)
+          selected_nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)
+          echo "stable=$selected_stable" >> "$GITHUB_OUTPUT"
+          echo "nightly=$selected_nightly" >> "$GITHUB_OUTPUT"
 
       - name: Install the selected tooling and project compilers
         id: roc
@@ -165,8 +169,10 @@ jobs:
         id: compilers
         shell: bash
         run: |
-          echo "stable=$(jq -er .roc_stable scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
-          echo "nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+          selected_stable=$(jq -er .roc_stable scripts/workspace-deps.json)
+          selected_nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)
+          echo "stable=$selected_stable" >> "$GITHUB_OUTPUT"
+          echo "nightly=$selected_nightly" >> "$GITHUB_OUTPUT"
 
       - name: Install the selected tooling and project compilers
         id: roc
@@ -205,7 +211,9 @@ jobs:
         id: linker-inputs
         env:
           TARGET: ${{ matrix.platform-target }}
-        run: echo "identity=$(python3 scripts/link_input_artifacts.py cache-identity --target "$TARGET")" >> "$GITHUB_OUTPUT"
+        run: |
+          identity=$(python3 scripts/link_input_artifacts.py cache-identity --target "$TARGET")
+          echo "identity=$identity" >> "$GITHUB_OUTPUT"
 
       - name: Restore the content-addressed linker-input download cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

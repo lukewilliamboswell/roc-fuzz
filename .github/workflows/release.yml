@@ -49,8 +49,10 @@ jobs:
         id: compilers
         shell: bash
         run: |
-          echo "stable=$(jq -er .roc_stable scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
-          echo "nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+          selected_stable=$(jq -er .roc_stable scripts/workspace-deps.json)
+          selected_nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)
+          echo "stable=$selected_stable" >> "$GITHUB_OUTPUT"
+          echo "nightly=$selected_nightly" >> "$GITHUB_OUTPUT"
 
       - name: Install the selected tooling and project compilers
         id: roc
@@ -95,8 +97,10 @@ jobs:
         id: compilers
         shell: bash
         run: |
-          echo "stable=$(jq -er .roc_stable scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
-          echo "nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+          selected_stable=$(jq -er .roc_stable scripts/workspace-deps.json)
+          selected_nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)
+          echo "stable=$selected_stable" >> "$GITHUB_OUTPUT"
+          echo "nightly=$selected_nightly" >> "$GITHUB_OUTPUT"
 
       - name: Install the selected tooling and project compilers
         id: roc
@@ -127,7 +131,7 @@ jobs:
 
       - name: Check compiler release policy
         if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && !inputs.release_candidate
-        uses: lukewilliamboswell/roc-automation/actions/check-release@da36cb354ccf501fc5fb140659a9f45f5445afa4 # compiler-manifest
+        uses: lukewilliamboswell/roc-automation/actions/check-release@5af80ef9d9cf93f4000633adf4e33828d0ee88c8 # compiler-manifest
         with:
           version: ${{ inputs.release_version }}
           compiler-manifest: scripts/workspace-deps.json
@@ -195,8 +199,10 @@ jobs:
         id: compilers
         shell: bash
         run: |
-          echo "stable=$(jq -er .roc_stable scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
-          echo "nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+          selected_stable=$(jq -er .roc_stable scripts/workspace-deps.json)
+          selected_nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)
+          echo "stable=$selected_stable" >> "$GITHUB_OUTPUT"
+          echo "nightly=$selected_nightly" >> "$GITHUB_OUTPUT"
 
       - name: Install the selected tooling and project compilers
         id: roc
@@ -226,7 +232,9 @@ jobs:
         id: linker-inputs
         env:
           TARGET: ${{ matrix.platform_target }}
-        run: echo "identity=$(python3 scripts/link_input_artifacts.py cache-identity --target "$TARGET")" >> "$GITHUB_OUTPUT"
+        run: |
+          identity=$(python3 scripts/link_input_artifacts.py cache-identity --target "$TARGET")
+          echo "identity=$identity" >> "$GITHUB_OUTPUT"
 
       - name: Restore the content-addressed linker-input download cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -268,8 +276,10 @@ jobs:
         id: compilers
         shell: bash
         run: |
-          echo "stable=$(jq -er .roc_stable scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
-          echo "nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+          selected_stable=$(jq -er .roc_stable scripts/workspace-deps.json)
+          selected_nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)
+          echo "stable=$selected_stable" >> "$GITHUB_OUTPUT"
+          echo "nightly=$selected_nightly" >> "$GITHUB_OUTPUT"
 
       - name: Install the selected tooling and project compilers
         id: roc
@@ -440,8 +450,10 @@ jobs:
         id: compilers
         shell: bash
         run: |
-          echo "stable=$(jq -er .roc_stable scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
-          echo "nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+          selected_stable=$(jq -er .roc_stable scripts/workspace-deps.json)
+          selected_nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)
+          echo "stable=$selected_stable" >> "$GITHUB_OUTPUT"
+          echo "nightly=$selected_nightly" >> "$GITHUB_OUTPUT"
 
       - name: Install the selected tooling and project compilers
         id: roc
@@ -532,8 +544,10 @@ jobs:
         id: compilers
         shell: bash
         run: |
-          echo "stable=$(jq -er .roc_stable scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
-          echo "nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+          selected_stable=$(jq -er .roc_stable scripts/workspace-deps.json)
+          selected_nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)
+          echo "stable=$selected_stable" >> "$GITHUB_OUTPUT"
+          echo "nightly=$selected_nightly" >> "$GITHUB_OUTPUT"
 
       - name: Install the selected tooling and project compilers
         id: roc
@@ -610,8 +624,10 @@ jobs:
         id: compilers
         shell: bash
         run: |
-          echo "stable=$(jq -er .roc_stable scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
-          echo "nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+          selected_stable=$(jq -er .roc_stable scripts/workspace-deps.json)
+          selected_nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)
+          echo "stable=$selected_stable" >> "$GITHUB_OUTPUT"
+          echo "nightly=$selected_nightly" >> "$GITHUB_OUTPUT"
 
       - name: Install the selected tooling and project compilers
         id: roc
@@ -759,8 +775,10 @@ jobs:
         id: compilers
         shell: bash
         run: |
-          echo "stable=$(jq -er .roc_stable scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
-          echo "nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+          selected_stable=$(jq -er .roc_stable scripts/workspace-deps.json)
+          selected_nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)
+          echo "stable=$selected_stable" >> "$GITHUB_OUTPUT"
+          echo "nightly=$selected_nightly" >> "$GITHUB_OUTPUT"
 
       - name: Install the selected tooling and project compilers
         id: roc

@@ -27,8 +27,10 @@ jobs:
         id: compilers
         shell: bash
         run: |
-          echo "stable=$(jq -er .roc_stable scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
-          echo "nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+          selected_stable=$(jq -er .roc_stable scripts/workspace-deps.json)
+          selected_nightly=$(jq -er .roc_nightly scripts/workspace-deps.json)
+          echo "stable=$selected_stable" >> "$GITHUB_OUTPUT"
+          echo "nightly=$selected_nightly" >> "$GITHUB_OUTPUT"
 
       - name: Install the selected tooling and project compilers
         id: roc
