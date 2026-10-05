@@ -1,4 +1,4 @@
-app [target] { pf: platform "../../../platform/main.roc", model: "../../../tests/set-model/main.roc" }
+app [target] { model: "../../../tests/set-model/main.roc", pf: platform "../../../platform/main.roc" }
 
 import pf.Fuzz
 import model.Model

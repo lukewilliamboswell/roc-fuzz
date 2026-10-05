@@ -24,7 +24,7 @@ platform "roc-fuzz"
 
 import Arbitrary
 import Fuzz
-import Target exposing [Target]
+import Target
 
 name_for_host : {} -> Str
 name_for_host = |_| target.name()
