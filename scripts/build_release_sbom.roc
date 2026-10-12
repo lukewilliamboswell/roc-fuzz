@@ -80,7 +80,7 @@ parse_release_version = |argument|
 		Err(_) => Err(InvalidUtf8)
 	}
 
-valid_release_version = |value| Version.semantic(value) or (ReleaseCandidate.parse(value) |> Try.is_ok)
+valid_release_version = |value| Version.semantic(value) or value == Version.dry_run or (ReleaseCandidate.parse(value) |> Try.is_ok)
 
 generate! = |bundle, release, native_manifests, library_manifest_paths, dependencies| {
 	if !Path.is_file!(bundle)? or !Script.ends_with(Path.display(bundle), ".tar.zst") {

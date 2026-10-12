@@ -273,11 +273,7 @@ legacy = |version| match semantic(version) {
 	Err(_) => Bool.False
 }
 
-## A pull request runs the release steps as a dry run under this version. Roc
-## rejects `0.0.0` in a package URL.
-dry_run_version = "0.0.1-dry-run"
-
-valid_version = |version| if version == dry_run_version Bool.True else match Str.split_on(version, "-rc") {
+valid_version = |version| if version == Version.dry_run Bool.True else match Str.split_on(version, "-rc") {
 	[base] => semantic(base) |> Try.is_ok
 	[base, rc] => (semantic(base) |> Try.is_ok) and (U64.from_str(rc) |> Try.is_ok)
 	_ => Bool.False
