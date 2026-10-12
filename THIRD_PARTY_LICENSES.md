@@ -19,6 +19,6 @@ including `libSystem`; no Apple SDK library is redistributed.
 
 The generated HTML and PDF documentation uses the shared documentation action
 from roc-automation at revision
-`a2b4d8abc967952b59fc751345efd144cbc0fbfc`. Its Space Grotesk and Plus
+`26b692c5ce341efd5633793079d70c9e04559eac`. Its Space Grotesk and Plus
 Jakarta Sans fonts are licensed under the SIL Open Font License 1.1. Generated
 sites retain both complete font license texts beside the redistributed files.

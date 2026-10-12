@@ -1,0 +1,9 @@
+= roc-fuzz 0.4.3
+
+This patch removes redundant type exposures from the platform imports so the
+platform compiles with Roc `nightly-2026-10-04-130536d`. The public API and native
+linker inputs are unchanged from 0.4.2. Release validation and the frozen example
+suite retain the accepted compiler `nightly-2026-09-29-7f11a82`.
+
+The compiler upgrade and basic-cli 0.24.0 tooling migration are validated
+separately against this compatibility release.

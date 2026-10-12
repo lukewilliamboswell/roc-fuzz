@@ -1,5 +1,5 @@
-import Arbitrary exposing [Arbitrary]
-import Target exposing [Target]
+import Arbitrary
+import Target
 
 ## Define typed, deterministic inputs and the pure property that roc-fuzz tests.
 ##

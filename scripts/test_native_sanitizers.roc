@@ -1,9 +1,9 @@
 #!/usr/bin/env roc-stable
 app [main!] {
-	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.23.0-rc1/3hT3SoHZ6qbEsa9qVFLUW3547U5LeoNd1KbpqLpz4r1i.tar.zst",
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.24.0/AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH.tar.zst",
 	ascii: "https://github.com/Hasnep/roc-ascii/releases/download/v0.5.0/5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H.tar.zst",
 	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst",
-	roc: "nightly-2026-09-18-1d982dc",
+	roc: "nightly-2026-09-29-7f11a82",
 }
 
 import cli.Env
@@ -13,11 +13,11 @@ import src/Files
 import src/Integrity
 import src/Project
 import src/Script
-import src/WorkspaceDeps
+import src/NativeDeps
 
 main! = |_| {
 	root = Project.root!()?
-	dependency = WorkspaceDeps.current.libfuzzer
+	dependency = NativeDeps.current.libfuzzer
 	compiler = Script.env_str_or!("CXX", "clang++")?
 	Env.with_temp_dir!(|work| run_sanitizer_smoke!(root, work, dependency, compiler))?
 	Script.pass!("Pinned libFuzzer completed its AddressSanitizer smoke campaign.")

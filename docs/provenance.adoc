@@ -1,7 +1,7 @@
 = Release bundle provenance
 
-roc-fuzz does not store native archives or objects in Git. The independent,
-workflow-dispatch-only `native-libraries.yml` producer builds x64-musl and Apple
+roc-fuzz does not store native archives or objects in Git. The independent
+`link-inputs.yml` producer builds x64-musl and Apple
 Silicon inputs on native GitHub-hosted runners, packages them without
 `libhost.a`, and tests the exact archives with fresh hosts and final bundles. It
 attests a canonical manifest and each archive but cannot publish. The trusted
@@ -10,7 +10,7 @@ pull-request ref and SHA before creating an immutable release.
 
 Platform builds restore the reviewed `native-libraries.lock.json` manifest and
 archives, verify sizes and SHA-256 digests on downloads and cache hits, validate
-their locked release, source, fingerprint and inventory, and build fresh hosts.
+their locked release, source and inventory, and build fresh hosts.
 The reviewed content hash is the routine trust anchor, so a valid cache hit uses
 zero network and does not contact GitHub's attestation service. A corrupt cache
 entry is discarded and only the exact locked asset may be downloaded again. The
@@ -35,8 +35,10 @@ clear these records to avoid claiming provenance from previously
 restored archives.
 
 The build pins Zig 0.16.0 and the SHA-256 of the `libfuzzer-sys` 0.4.5
-source archive. The macOS build necessarily uses the SDK supplied by the
-selected GitHub-hosted macOS runner. Native-library archives and the
+source archive. Both targets are compiled against the headers Zig bundles; the
+build reads no installed Apple SDK. The libraries are byte-reproducible, so
+anyone with that Zig release can rebuild them from the recorded source revision
+and compare digests. Native-library archives and the
 final platform bundle are separate published and attested subjects, with
 independent versions.
 

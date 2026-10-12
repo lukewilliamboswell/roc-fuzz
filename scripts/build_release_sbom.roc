@@ -1,11 +1,11 @@
 #!/usr/bin/env roc-stable
 app [main!] {
-	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.23.0-rc1/3hT3SoHZ6qbEsa9qVFLUW3547U5LeoNd1KbpqLpz4r1i.tar.zst",
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.24.0/AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH.tar.zst",
 	ascii: "https://github.com/Hasnep/roc-ascii/releases/download/v0.5.0/5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H.tar.zst",
 	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst",
 	arg_path: "https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
-	roc: "nightly-2026-09-18-1d982dc",
+	roc: "nightly-2026-09-29-7f11a82",
 }
 
 import cli.Path
@@ -20,7 +20,7 @@ import src/ReleaseCandidate
 import src/Script
 import src/Version
 import src/WeaverCli
-import src/WorkspaceDeps
+import src/NativeDeps
 
 Package := { checksum : [Checksum(Str), NoChecksum], download : Str, identifier : Str, license : Str, name : Str, version : Str }.{}
 
@@ -38,7 +38,7 @@ main! = |raw_args| {
 		Ok(path) => Path.absolute!(path)?
 		Err(NoValue) => Path.utf8("${Path.display(bundle)}.spdx.json")
 	}
-	document = generate!(bundle, options.release_version, options.native_manifests, options.library_manifests, WorkspaceDeps.current)?
+	document = generate!(bundle, options.release_version, options.native_manifests, options.library_manifests, NativeDeps.current)?
 	Path.write_utf8!(output, document)?
 	Script.pass!("SPDX release SBOM written to ${Path.display(output)}")
 }
@@ -80,7 +80,7 @@ parse_release_version = |argument|
 		Err(_) => Err(InvalidUtf8)
 	}
 
-valid_release_version = |value| Version.semantic(value) or (ReleaseCandidate.parse(value) |> Try.is_ok)
+valid_release_version = |value| Version.semantic(value) or value == Version.dry_run or (ReleaseCandidate.parse(value) |> Try.is_ok)
 
 generate! = |bundle, release, native_manifests, library_manifest_paths, dependencies| {
 	if !Path.is_file!(bundle)? or !Script.ends_with(Path.display(bundle), ".tar.zst") {

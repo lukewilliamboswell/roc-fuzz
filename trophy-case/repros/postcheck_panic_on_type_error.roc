@@ -2,7 +2,8 @@ app [target] { pf: platform "../../platform/main.roc" }
 
 import pf.Fuzz
 
-# `roc check` on this file panics instead of reporting a type error:
+# This file is a deliberate type error. `roc check` used to panic on it instead
+# of reporting one, and the check script requires the report:
 #
 #     thread N panic: postcheck invariant violated:
 #     erroneous checked type reached Monotype instantiation

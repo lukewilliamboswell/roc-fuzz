@@ -1,0 +1,22 @@
+= roc-fuzz 0.4.1
+
+This patch pins the platform and project validation to Roc
+`nightly-2026-09-26-d6267b4`. The September 26 compiler reports a warning for
+an older compiler pin even inside a downloaded platform dependency, so 0.4.0
+cannot be used by warning-free builds with that compiler. This release aligns
+the platform pin with those downstream builds without changing the Roc API.
+
+== Use this release
+
+[source,roc]
+----
+app [target] { fuzz: platform "{platform-url}", roc: "nightly-2026-09-26-d6267b4" }
+----
+
+Linux x86-64 with musl and Apple Silicon macOS remain supported. The native
+inputs are regenerated and attested under the updated workspace fingerprint;
+packaged-platform tests run on both supported hosts before publication.
+Repository tooling retains its separate September 18 compiler pin.
+
+The versioned manual is available at {manual-url}. See the 0.4.0 notes for the
+allocation properties, CI evidence command, and migration from 0.3.0.

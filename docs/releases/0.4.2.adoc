@@ -1,0 +1,50 @@
+= roc-fuzz 0.4.2
+
+This release expands builtin fuzz coverage and makes published examples
+reproducible independently of the repository's development branch. The platform
+API is unchanged from 0.4.1. Project validation and repository tooling now use Roc
+`nightly-2026-09-29-7f11a82`.
+
+== Expanded builtin coverage
+
+The registered suite now contains 75 targets, including new checks for:
+
+* `atan2` for decimal and floating-point numbers;
+* approximate equality for `F32`, `F64`, and `Dec`;
+* decimal rounding and rounding to a step;
+* custom iterators and streams, including laziness, size hints, and leaks; and
+* numeric prefix parsing, round trips, ownership, and JSON number decoding.
+
+These targets run through type checks, unit tests, builds, seed replay, and short
+fuzz campaigns. Wide UTF-16/UTF-32 decoding targets remain deferred because their
+APIs are not available in the selected compiler.
+
+== Use this release
+
+[source,roc]
+----
+app [target] { fuzz: platform "{platform-url}", roc: "nightly-2026-09-29-7f11a82" }
+----
+
+Download `roc-fuzz-examples-0.4.2.zip` from the release assets for the complete
+example suite, supporting modules, and test inventory bound to this exact
+platform bundle. Repository examples instead use the local working-tree
+platform. The platform no longer embeds a compiler pin; the examples record the
+compiler used for publication, and workspace metadata selects the compiler for
+development and CI.
+
+Linux x86-64 with musl and Apple Silicon macOS remain supported. Both hosts test
+the packaged platform and frozen examples before publication. Reviewed native
+linker inputs retain their independent content-addressed release and lock.
+
+== Upgrade and verification
+
+Update your application's platform URL to the one above and use the selected
+compiler. No platform API migration is required from 0.4.1. Compatibility with
+other compiler versions is not implied by this release.
+
+The release includes the versioned manual at {manual-url}, a zipped documentation
+site, an SPDX SBOM, and provenance attestations for the platform and examples.
+Use these assets to inspect the published inputs and verify the downloaded
+artifacts. Report regressions through the repository's issue tracker with the
+compiler version, target, and reproducing input.

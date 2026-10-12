@@ -41,7 +41,7 @@ BundleServer := {
 					Err(TcpListenErr(TimedOut)) => self.serve_child!(child)
 					Err(err) => Err(BundleServeFailed(err))
 				}
-			}
+		}
 
 	close! = |self| self.listener.close!()
 

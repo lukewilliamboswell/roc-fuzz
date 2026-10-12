@@ -1,11 +1,11 @@
 #!/usr/bin/env roc-stable
 app [main!] {
-	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.23.0-rc1/3hT3SoHZ6qbEsa9qVFLUW3547U5LeoNd1KbpqLpz4r1i.tar.zst",
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.24.0/AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH.tar.zst",
 	ascii: "https://github.com/Hasnep/roc-ascii/releases/download/v0.5.0/5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H.tar.zst",
 	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst",
 	arg_path: "https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
-	roc: "nightly-2026-09-18-1d982dc",
+	roc: "nightly-2026-09-29-7f11a82",
 }
 
 import cli.Env
@@ -29,8 +29,8 @@ main! = |raw_args| {
 	root = Project.root!()?
 	specs = if options.target_specs.is_empty() Project.target_specs else options.target_specs
 	output = Path.absolute!(options.output_dir)?
-	roc_nightly = Script.roc_nightly!()?
-	bundles = build_bundles!(root, specs, output, options.compression, roc_nightly)?
+	roc = Script.roc!()?
+	bundles = build_bundles!(root, specs, output, options.compression, roc)?
 	for bundle in bundles {
 		Script.pass!("Created ${Path.display(bundle)}")?
 	}
@@ -41,7 +41,7 @@ main! = |raw_args| {
 max_bundle_bytes : U64
 max_bundle_bytes = 104857600
 
-build_bundles! = |root, specs, output, compression, roc_nightly| {
+build_bundles! = |root, specs, output, compression, roc| {
 	if compression < 1 or compression > 22 {
 		return Err(InvalidCompressionLevel(compression))
 	}
@@ -67,7 +67,7 @@ build_bundles! = |root, specs, output, compression, roc_nightly| {
 			files = Files.files!(bundle_root)?
 			prefix_len = Path.display(bundle_root).to_utf8().len() + 1
 			relative_files = files.map(|path| OsStr.from_str(Str.from_utf8_lossy(Path.display(path).to_utf8().drop_first(prefix_len))))
-			roc_nightly.cmd(
+			roc.cmd(
 				[
 					"bundle",
 				].concat(relative_files).concat([

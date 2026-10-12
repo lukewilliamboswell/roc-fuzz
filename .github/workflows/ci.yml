@@ -1,175 +1,306 @@
 name: CI
 
+# Tests the working tree. The scripts run on the tooling compiler that
+# Blueprint.roc names; the platform, its targets and the bundle a release would
+# publish are checked with the latest Roc nightly, which is not pinned. A new
+# nightly can therefore fail an untouched pull request: compare with the latest
+# Nightly compatibility run and with trunk before treating a failure as a
+# regression in the change.
 on:
   pull_request:
   push:
     branches: [trunk]
   workflow_dispatch:
-    inputs:
-      nightly_validation:
-        description: Validate a nightly candidate without publication
-        type: boolean
-        default: false
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # One run uses one compiler: the tag is resolved here and passed to every job.
+  resolve:
+    name: Resolve the latest Roc nightly
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      nightly-tag: ${{ steps.nightly.outputs.tag }}
+    steps:
+      - id: nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "tag=$(gh api repos/roc-lang/nightlies/releases/latest --jq .tag_name)" >> "$GITHUB_OUTPUT"
+
   native-sanitizers:
     name: Native sanitizers
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
     steps:
       - name: Checkout roc-fuzz
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Install stable tooling Roc and latest nightly
-        id: roc
-        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
         with:
-          version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-19-d025939
+          persist-credentials: false
+
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.1"
+          sha256-x86_64-linux: 4ad2477b11211e963f4844554d909b939bd3419e94a8faec335ca619d41e37b6
+          sha256-aarch64-linux: 7ba164c03bdda8323b1a8edb315ded20549f31b4683429a6a0f9e96ba9d12301
+          sha256-aarch64-darwin: 7d9060a50c0e52960499ea6a4cb6aa5fd0bcccb14485d4c02829b56b4d8fcdaa
 
       - name: Build and run the pinned libFuzzer with AddressSanitizer
-        env:
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
         run: |
-          "$ROC_STABLE" --opt=dev scripts/test_native_sanitizers.roc
+          blueprint run native-sanitizers
 
-  published-examples:
-    name: Public downloads (${{ matrix.os }})
+  # A new nightly can change the generated bindings when nothing here changed.
+  # This job then fails on every pull request until the bindings are upgraded.
+  host-bindings:
+    name: Host bindings
+    needs: resolve
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout roc-fuzz
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.1"
+          sha256-x86_64-linux: 4ad2477b11211e963f4844554d909b939bd3419e94a8faec335ca619d41e37b6
+          sha256-aarch64-linux: 7ba164c03bdda8323b1a8edb315ded20549f31b4683429a6a0f9e96ba9d12301
+          sha256-aarch64-darwin: 7d9060a50c0e52960499ea6a4cb6aa5fd0bcccb14485d4c02829b56b4d8fcdaa
+
+      - name: Install the Roc nightly this run resolved
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
+
+      - name: Regenerate the bindings and compare them with the committed file
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: blueprint run check-glue
+
+  # Everything that does not depend on the target runs once: formatting, the
+  # script tests, the pin and supply-chain checks, type-checking every target,
+  # and the API reference audit.
+  check:
+    name: Repository checks
+    needs: resolve
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout roc-fuzz
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.1"
+          sha256-x86_64-linux: 4ad2477b11211e963f4844554d909b939bd3419e94a8faec335ca619d41e37b6
+          sha256-aarch64-linux: 7ba164c03bdda8323b1a8edb315ded20549f31b4683429a6a0f9e96ba9d12301
+          sha256-aarch64-darwin: 7d9060a50c0e52960499ea6a4cb6aa5fd0bcccb14485d4c02829b56b4d8fcdaa
+
+      - name: Install the Roc nightly this run resolved
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
+
+      - name: Show the compilers
+        run: |
+          blueprint run stable-version
+          roc version
+
+      - name: Check the scripts, the platform and every target
+        run: blueprint run check
+
+      - name: Generate and audit the API reference
+        env:
+          ROC_DOCS_URL_ROOT: /roc-fuzz/main
+        run: |
+          roc docs --output=.test-cache/docs platform/main.roc
+          blueprint run check-docs -- .test-cache/docs
+
+  # Guards the fingerprint. The lock is trusted on the strength of a short
+  # list of hashed files, which does not include the scripts that build the
+  # libraries. So when a pull request touches that recipe, and only then, this
+  # job rebuilds both targets and requires them to be byte-identical to the
+  # locked release. A routine pull request stops after the first two steps.
+  recipe:
+    name: Linker-input recipe
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout roc-fuzz with history, to compare with the base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.1"
+          sha256-x86_64-linux: 4ad2477b11211e963f4844554d909b939bd3419e94a8faec335ca619d41e37b6
+          sha256-aarch64-linux: 7ba164c03bdda8323b1a8edb315ded20549f31b4683429a6a0f9e96ba9d12301
+          sha256-aarch64-darwin: 7d9060a50c0e52960499ea6a4cb6aa5fd0bcccb14485d4c02829b56b4d8fcdaa
+
+      # Without a base to compare with, as on a manual run, the answer is yes.
+      - name: Ask whether the recipe changed
+        id: recipe
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: echo "changed=$(blueprint run link-inputs -- --operation recipe-changed --base "$BASE")" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Zig's compilation cache
+        if: steps.recipe.outputs.changed != 'false'
+        id: zig-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/zig
+          key: zig-${{ runner.os }}-${{ hashFiles('Blueprint.lock', 'scripts/native-deps.json', 'scripts/build_platform.roc', 'src/**') }}
+          restore-keys: zig-${{ runner.os }}-
+
+      - name: Build every target's linker inputs from source
+        if: steps.recipe.outputs.changed != 'false'
+        run: blueprint run build-platform -- --target x64musl --target arm64mac --libraries source --libraries-only
+
+      # Saved before the comparison, so a failing pull request does not also
+      # rebuild from nothing on every push.
+      - name: Save Zig's compilation cache
+        if: steps.recipe.outputs.changed != 'false' && steps.zig-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/zig
+          key: ${{ steps.zig-cache.outputs.cache-primary-key }}
+
+      - name: Require the libraries the locked release holds
+        if: steps.recipe.outputs.changed != 'false'
+        run: blueprint run link-inputs -- --operation check-source
+
+  # One builder cross-compiles the host for both targets, around the locked
+  # linker inputs, and bundles once. The inputs are downloaded and hashed,
+  # never rebuilt here: a cheap fingerprint says whether the lock is current. Bundling compiles nothing native. The
+  # runner jobs test these bytes and nothing else.
+  bundle:
+    name: Platform bundle
+    needs: resolve
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout roc-fuzz
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.1"
+          sha256-x86_64-linux: 4ad2477b11211e963f4844554d909b939bd3419e94a8faec335ca619d41e37b6
+          sha256-aarch64-linux: 7ba164c03bdda8323b1a8edb315ded20549f31b4683429a6a0f9e96ba9d12301
+          sha256-aarch64-darwin: 7d9060a50c0e52960499ea6a4cb6aa5fd0bcccb14485d4c02829b56b4d8fcdaa
+
+      - name: Install the Roc nightly this run resolved
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
+
+      - name: Restore the content-addressed linker-input download cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .test-cache/native-libraries
+          key: linker-inputs-${{ hashFiles('native-libraries.lock.json') }}
+
+      # Zig keys its cache by the content of every input, so a restored cache
+      # can only supply what this build would have produced anyway.
+      - name: Restore Zig's compilation cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/zig
+          key: zig-${{ runner.os }}-${{ hashFiles('Blueprint.lock', 'scripts/native-deps.json', 'scripts/build_platform.roc', 'src/**') }}
+          restore-keys: zig-${{ runner.os }}-
+
+      - name: Build both hosts around the reviewed linker inputs
+        run: blueprint run build-platform -- --target x64musl --target arm64mac
+
+      - name: Bundle the platform
+        run: blueprint run bundle -- --output-dir .test-cache/ci-bundle
+
+      - name: Hand the bundle to the runner jobs
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: platform-bundle
+          path: .test-cache/ci-bundle/*.tar.zst
+          if-no-files-found: error
+          retention-days: 7
+
+  # Cross-compiling shows that a host compiles for a target. Only running on
+  # that target shows that it links, starts and talks to the operating system.
+  # Each runner serves the bundle on a loopback address and checks, tests,
+  # builds, replays and briefly fuzzes every target in tests/targets.json.
+  test:
+    name: Targets on ${{ matrix.os }}
+    needs: [resolve, bundle]
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-22.04, macos-26]
     runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - name: Install stable tooling Roc and latest nightly
-        id: roc
-        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
-        with:
-          version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-19-d025939
-      - name: Test committed URLs from a fresh cache
-        if: runner.os != 'macOS'
-        env:
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
-        run: >-
-          "$ROC_STABLE" --opt=dev scripts/test_targets.roc --
-          --operation all --max-total-time 1 --verbose
-
-      - name: Type-check the target runner on macOS
-        if: runner.os == 'macOS'
-        env:
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-        run: |
-          "$ROC_STABLE" check scripts/test_targets.roc
-
-  self-contained-runner:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-22.04
-            platform-target: x64musl
-          - os: macos-26
-            platform-target: arm64mac
-    runs-on: ${{ matrix.os }}
-
+    permissions:
+      contents: read
     steps:
       - name: Checkout roc-fuzz
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Read workspace dependencies
-        id: dependencies
-        run: echo "zig-version=$(jq -r .zig_version scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
-
-      - name: Install stable tooling Roc and latest nightly
-        id: roc
-        uses: lukewilliamboswell/setup-roc@89a8a2945bd107f27b160096b3af7f52d2d78369 # stable-and-nightly fork
         with:
-          version: stable-and-nightly
-          stable-tag: nightly-2026-09-18-1d982dc
-          nightly-tag: nightly-2026-09-19-d025939
+          persist-credentials: false
 
-      - name: Install Zig
-        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
         with:
-          version: ${{ steps.dependencies.outputs.zig-version }}
+          version: "0.4.1"
+          sha256-x86_64-linux: 4ad2477b11211e963f4844554d909b939bd3419e94a8faec335ca619d41e37b6
+          sha256-aarch64-linux: 7ba164c03bdda8323b1a8edb315ded20549f31b4683429a6a0f9e96ba9d12301
+          sha256-aarch64-darwin: 7d9060a50c0e52960499ea6a4cb6aa5fd0bcccb14485d4c02829b56b4d8fcdaa
 
-      - name: Show tool versions
-        run: |
-          "$ROC_STABLE" version
-          "$ROC_NIGHTLY" version
-          zig version
-        env:
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
-
-      - name: Resolve the reviewed linker-input identity
-        id: linker-inputs
-        env:
-          TARGET: ${{ matrix.platform-target }}
-        run: echo "identity=$(python3 scripts/link_input_artifacts.py cache-identity --target "$TARGET")" >> "$GITHUB_OUTPUT"
-
-      - name: Restore the content-addressed linker-input download cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      - name: Install the Roc nightly this run resolved
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
         with:
-          path: .test-cache/native-libraries
-          key: linker-inputs-${{ matrix.platform-target }}-${{ steps.linker-inputs.outputs.identity }}
+          version: nightly-new-compiler
+          nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
 
-      - name: Prepare host and reviewed linker inputs
-        env:
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
-          TARGET: ${{ matrix.platform-target }}
-        run: scripts/build_platform.roc -- --target "$TARGET"
+      - name: Download the platform bundle
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: platform-bundle
+          path: .test-cache/ci-bundle
 
-      - name: Validate the repository
-        env:
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
-        run: scripts/check_all.roc
-
-      - name: Test examples against the working-tree platform
-        env:
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
-        run: |
-          scripts/build_bundle.roc -- --target ${{ matrix.platform-target }} --output-dir .test-cache/ci-bundle
-          scripts/test_bundle.roc -- .test-cache/ci-bundle/*.tar.zst
-
-      - name: Generate and validate API documentation
-        env:
-          ROC_DOCS_URL_ROOT: /roc-fuzz/main
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
-        run: |
-          "$ROC_NIGHTLY" docs --output=.test-cache/docs platform/main.roc
-          scripts/check_docs.roc -- .test-cache/docs
+      - name: Run every target against the bundle
+        run: blueprint run test-bundle -- .test-cache/ci-bundle/*.tar.zst
 
   required:
     name: CI required
     if: always()
-    needs: [native-sanitizers, self-contained-runner, published-examples]
+    needs: [check, native-sanitizers, host-bindings, recipe, bundle, test]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:
-      - name: Require every CI matrix job
+      - name: Require every CI job
         env:
-          MATRIX_RESULT: ${{ needs.self-contained-runner.result }}
-          SANITIZER_RESULT: ${{ needs.native-sanitizers.result }}
-          PUBLIC_RESULT: ${{ needs.published-examples.result }}
-        run: |
-          test "$MATRIX_RESULT" = success
-          test "$SANITIZER_RESULT" = success
-          test "$PUBLIC_RESULT" = success
+          RESULTS: ${{ toJSON(needs) }}
+        run: jq -e 'length > 0 and all(.[]; .result == "success")' <<<"$RESULTS"

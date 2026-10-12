@@ -60,10 +60,15 @@ release verification, and platform development. The site also provides the
 [generated API reference](https://lukewilliamboswell.github.io/roc-fuzz/api/)
 and a downloadable PDF manual.
 
+Repository examples use relative paths to the local platform. For applications
+using a published platform, download the examples archive attached to that
+release. Each released application names that release's platform URL. Neither
+the platform nor its examples pin a compiler.
+
 Examples under [`examples/`](examples/) demonstrate round trips, parser
 robustness, collection invariants, structured inputs, and multi-file targets.
-The focused compiler and builtin regressions remain under
-[`examples/builtins/`](examples/builtins/), and the
+The focused compiler and builtin regression targets are tests, not examples,
+and live under [`tests/targets/`](tests/targets/). The
 [trophy case](trophy-case/README.md) records bugs found through fuzzing.
 
 Content-addressed linker inputs, `libhost.a`, and platform bundles have distinct
