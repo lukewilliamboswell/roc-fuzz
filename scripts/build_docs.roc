@@ -26,7 +26,7 @@ main! = |raw_args| {
 	}
 	root = Project.root!()?
 	dependencies = WorkspaceDeps.current
-	roc_nightly = Script.roc_nightly!()?
+	roc = Script.roc!()?
 
 	automation = match options.automation_root {
 		Ok(path) => Path.absolute!(path)?
@@ -70,7 +70,7 @@ main! = |raw_args| {
 		"--api-entrypoint",
 		"platform/main.roc",
 		"--roc-command",
-		roc_nightly.program,
+		roc.program,
 	])?
 
 	site = Path.join(root, ".docs-out/site")

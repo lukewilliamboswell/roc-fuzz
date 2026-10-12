@@ -12,9 +12,9 @@ import src/Files
 
 main! = |_args| {
 	stable = Script.roc_stable!()?
-	nightly = Script.roc_nightly!()?
+	roc = Script.roc!()?
 	check_tooling!(stable)?
-	check_platform!(nightly)?
+	check_platform!(roc)?
 	check_fuzz_targets!()?
 	check_worktree!()?
 	Script.pass!("Repository checks completed successfully.")
@@ -35,10 +35,10 @@ check_tooling! = |stable| {
 	(Script.roc_stable!()?).run!(["scripts/check_supply_chain.roc"])
 }
 
-check_platform! = |nightly| {
-	Script.info!("CHECK", "Formatting and type-checking the platform with the pinned nightly")?
-	nightly.run!(["fmt", "--check", "platform", "examples"])?
-	nightly.run!(["check", "platform/main.roc"])
+check_platform! = |roc| {
+	Script.info!("CHECK", "Formatting and type-checking the platform with the latest nightly")?
+	roc.run!(["fmt", "--check", "platform", "examples"])?
+	roc.run!(["check", "platform/main.roc"])
 }
 
 check_fuzz_targets! = || {

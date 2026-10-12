@@ -29,8 +29,8 @@ main! = |raw_args| {
 	root = Project.root!()?
 	specs = if options.target_specs.is_empty() Project.target_specs else options.target_specs
 	output = Path.absolute!(options.output_dir)?
-	roc_nightly = Script.roc_nightly!()?
-	bundles = build_bundles!(root, specs, output, options.compression, roc_nightly)?
+	roc = Script.roc!()?
+	bundles = build_bundles!(root, specs, output, options.compression, roc)?
 	for bundle in bundles {
 		Script.pass!("Created ${Path.display(bundle)}")?
 	}
@@ -41,7 +41,7 @@ main! = |raw_args| {
 max_bundle_bytes : U64
 max_bundle_bytes = 104857600
 
-build_bundles! = |root, specs, output, compression, roc_nightly| {
+build_bundles! = |root, specs, output, compression, roc| {
 	if compression < 1 or compression > 22 {
 		return Err(InvalidCompressionLevel(compression))
 	}
@@ -67,7 +67,7 @@ build_bundles! = |root, specs, output, compression, roc_nightly| {
 			files = Files.files!(bundle_root)?
 			prefix_len = Path.display(bundle_root).to_utf8().len() + 1
 			relative_files = files.map(|path| OsStr.from_str(Str.from_utf8_lossy(Path.display(path).to_utf8().drop_first(prefix_len))))
-			roc_nightly.cmd(
+			roc.cmd(
 				[
 					"bundle",
 				].concat(relative_files).concat([

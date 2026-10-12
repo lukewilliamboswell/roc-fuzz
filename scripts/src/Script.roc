@@ -27,8 +27,15 @@ Script := [].{
 
 	command = |program| Command.{ base: Cmd.new(program), program }
 
-	roc_stable! = || command_from_env!("ROC_STABLE", "roc-stable")
-	roc_nightly! = || command_from_env!("ROC_NIGHTLY", "roc-nightly")
+	## The tooling compiler that Blueprint.roc names. It runs the scripts and
+	## nothing else.
+	roc_stable! = || Ok(command("roc-stable"))
+
+	## The package compiler: whatever `roc` is on PATH, which is meant to be the
+	## latest nightly. It checks, tests, bundles and builds the platform and
+	## every application that depends on it.
+	roc! = || Ok(command("roc"))
+
 	env_str! = |name|
 		Env.var_str!(name).map_err(|err| EnvironmentInputError(OsStr.display(name), err))
 
@@ -83,13 +90,6 @@ Script := [].{
 
 	trim = |value| Str.from_utf8_lossy(trim_bytes(value.to_utf8()))
 }
-
-command_from_env! = |name, fallback|
-	match Env.var!(name) {
-		Ok(value) => Ok(Script.command(value))
-		Err(VarNotFound(_)) => Ok(Script.command(fallback))
-		Err(err) => Err(EnvironmentInputError(OsStr.display(name), err))
-	}
 
 command_output! = |output|
 	match output.status {
