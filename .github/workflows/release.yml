@@ -138,87 +138,12 @@ jobs:
       - name: Build and run the pinned libFuzzer with AddressSanitizer
         run: blueprint run native-sanitizers
 
-  # The same host job as ci.yml, with the same cache key: a release of a commit
-  # that pull-request CI already built restores that host and compiles nothing.
-  host:
-    name: Host (${{ matrix.platform-target }})
-    needs: validate
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-22.04
-            platform-target: x64musl
-          - os: macos-26
-            platform-target: arm64mac
-    runs-on: ${{ matrix.os }}
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
-        with:
-          version: "0.4.0"
-          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
-          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
-          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
-
-      - name: Read the Zig release
-        id: dependencies
-        run: echo "zig-version=$(jq -r .zig_version scripts/native-deps.json)" >> "$GITHUB_OUTPUT"
-
-      - name: Resolve the reviewed linker-input identity
-        id: linker-inputs
-        env:
-          TARGET: ${{ matrix.platform-target }}
-        run: |
-          identity=$(blueprint run link-inputs -- --operation cache-identity --target "$TARGET")
-          echo "identity=$identity" >> "$GITHUB_OUTPUT"
-
-      - name: Restore the host built from these exact inputs
-        id: host-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: platform/targets/${{ matrix.platform-target }}
-          key: host-${{ matrix.platform-target }}-zig-${{ steps.dependencies.outputs.zig-version }}-${{ steps.linker-inputs.outputs.identity }}-${{ hashFiles('src/**', 'scripts/build_platform.roc', 'scripts/native-deps.json', 'scripts/src/**', 'Blueprint.lock', 'platform/targets/**/README.md') }}
-
-      - name: Install Zig
-        if: steps.host-cache.outputs.cache-hit != 'true'
-        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
-        with:
-          version: ${{ steps.dependencies.outputs.zig-version }}
-
-      - name: Restore the content-addressed linker-input download cache
-        if: steps.host-cache.outputs.cache-hit != 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .test-cache/native-libraries
-          key: linker-inputs-${{ matrix.platform-target }}-${{ steps.linker-inputs.outputs.identity }}
-
-      - name: Build the host around the reviewed linker inputs
-        if: steps.host-cache.outputs.cache-hit != 'true'
-        env:
-          TARGET: ${{ matrix.platform-target }}
-        run: blueprint run build-platform -- --target "$TARGET"
-
-      - name: Hand the host and its linker inputs to the build job
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: host-${{ matrix.platform-target }}
-          path: platform/targets/${{ matrix.platform-target }}
-          if-no-files-found: error
-          retention-days: 7
-
-  # Builds every asset once. Later jobs test and publish these files and never
-  # rebuild them.
+  # One builder cross-compiles the host for both targets around the locked
+  # linker inputs and builds every asset once. Later jobs test and publish
+  # these files and never rebuild them.
   build:
     name: Build the release assets
-    needs: [resolve, validate, host]
+    needs: [resolve, validate]
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -244,17 +169,23 @@ jobs:
           version: nightly-new-compiler
           nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
 
-      - name: Download the x64-musl host
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: host-x64musl
-          path: platform/targets/x64musl
+      - name: Read the Zig release
+        id: dependencies
+        run: echo "zig-version=$(jq -r .zig_version scripts/native-deps.json)" >> "$GITHUB_OUTPUT"
 
-      - name: Download the Apple Silicon host
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - name: Install Zig
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
         with:
-          name: host-arm64mac
-          path: platform/targets/arm64mac
+          version: ${{ steps.dependencies.outputs.zig-version }}
+
+      - name: Restore the content-addressed linker-input download cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .test-cache/native-libraries
+          key: linker-inputs-${{ hashFiles('native-libraries.lock.json') }}
+
+      - name: Build both hosts around the reviewed linker inputs
+        run: blueprint run build-platform -- --target x64musl --target arm64mac
 
       - name: Require the released linker inputs
         if: github.event_name == 'workflow_dispatch'
@@ -642,7 +573,7 @@ jobs:
   required:
     name: Release required
     if: always() && github.event_name == 'pull_request'
-    needs: [validate, host, build, docs, test]
+    needs: [validate, build, docs, test]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:

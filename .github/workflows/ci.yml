@@ -142,22 +142,13 @@ jobs:
           roc docs --output=.test-cache/docs platform/main.roc
           blueprint run check-docs -- .test-cache/docs
 
-  # The host is built once per target, on that target's own system: the macOS
-  # host needs the Apple SDK and cannot be cross-compiled from Linux. A run
-  # whose host inputs have not changed restores the earlier build and compiles
-  # nothing. The cache is storage, not a source of trust: its key names the
-  # locked linker inputs and every file that can change the host.
-  host:
-    name: Host (${{ matrix.platform-target }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-22.04
-            platform-target: x64musl
-          - os: macos-26
-            platform-target: arm64mac
-    runs-on: ${{ matrix.os }}
+  # The libraries are byte-reproducible, so the lock is checked against what
+  # this tree builds and not against a list of files that might change them.
+  # Both targets are built from source here, which takes about a minute, and
+  # their bytes are compared with the ones the locked release holds.
+  link-inputs:
+    name: Linker inputs match the lock
+    runs-on: ubuntu-22.04
     permissions:
       contents: read
     steps:
@@ -178,53 +169,23 @@ jobs:
         id: dependencies
         run: echo "zig-version=$(jq -r .zig_version scripts/native-deps.json)" >> "$GITHUB_OUTPUT"
 
-      - name: Resolve the reviewed linker-input identity
-        id: linker-inputs
-        env:
-          TARGET: ${{ matrix.platform-target }}
-        run: |
-          identity=$(blueprint run link-inputs -- --operation cache-identity --target "$TARGET")
-          echo "identity=$identity" >> "$GITHUB_OUTPUT"
-
-      - name: Restore the host built from these exact inputs
-        id: host-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: platform/targets/${{ matrix.platform-target }}
-          key: host-${{ matrix.platform-target }}-zig-${{ steps.dependencies.outputs.zig-version }}-${{ steps.linker-inputs.outputs.identity }}-${{ hashFiles('src/**', 'scripts/build_platform.roc', 'scripts/native-deps.json', 'scripts/src/**', 'Blueprint.lock', 'platform/targets/**/README.md') }}
-
       - name: Install Zig
-        if: steps.host-cache.outputs.cache-hit != 'true'
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
         with:
           version: ${{ steps.dependencies.outputs.zig-version }}
 
-      - name: Restore the content-addressed linker-input download cache
-        if: steps.host-cache.outputs.cache-hit != 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .test-cache/native-libraries
-          key: linker-inputs-${{ matrix.platform-target }}-${{ steps.linker-inputs.outputs.identity }}
+      - name: Build every target's linker inputs from source
+        run: blueprint run build-platform -- --target x64musl --target arm64mac --libraries source --libraries-only
 
-      - name: Build the host around the reviewed linker inputs
-        if: steps.host-cache.outputs.cache-hit != 'true'
-        env:
-          TARGET: ${{ matrix.platform-target }}
-        run: blueprint run build-platform -- --target "$TARGET"
+      - name: Compare them with the locked release
+        run: blueprint run link-inputs -- --operation check-source
 
-      - name: Hand the host and its linker inputs to the bundle job
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: host-${{ matrix.platform-target }}
-          path: platform/targets/${{ matrix.platform-target }}
-          if-no-files-found: error
-          retention-days: 7
-
-  # One bundle, holding every target, is assembled once. Bundling compiles
-  # nothing native. The runner jobs test these bytes and nothing else.
+  # One builder cross-compiles the host for both targets, around the locked
+  # linker inputs, and bundles once. Bundling compiles nothing native. The
+  # runner jobs test these bytes and nothing else.
   bundle:
     name: Platform bundle
-    needs: [resolve, host]
+    needs: resolve
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -248,17 +209,23 @@ jobs:
           version: nightly-new-compiler
           nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
 
-      - name: Download the x64-musl host
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: host-x64musl
-          path: platform/targets/x64musl
+      - name: Read the Zig release
+        id: dependencies
+        run: echo "zig-version=$(jq -r .zig_version scripts/native-deps.json)" >> "$GITHUB_OUTPUT"
 
-      - name: Download the Apple Silicon host
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - name: Install Zig
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
         with:
-          name: host-arm64mac
-          path: platform/targets/arm64mac
+          version: ${{ steps.dependencies.outputs.zig-version }}
+
+      - name: Restore the content-addressed linker-input download cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .test-cache/native-libraries
+          key: linker-inputs-${{ hashFiles('native-libraries.lock.json') }}
+
+      - name: Build both hosts around the reviewed linker inputs
+        run: blueprint run build-platform -- --target x64musl --target arm64mac
 
       - name: Bundle the platform
         run: blueprint run bundle -- --output-dir .test-cache/ci-bundle
@@ -317,7 +284,7 @@ jobs:
   required:
     name: CI required
     if: always()
-    needs: [check, native-sanitizers, host-bindings, host, bundle, test]
+    needs: [check, native-sanitizers, host-bindings, link-inputs, bundle, test]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:

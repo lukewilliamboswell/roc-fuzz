@@ -12,6 +12,7 @@ import cli.Stdout
 import weaver.Cli
 import weaver.Opt
 import src/Project
+import src/Script
 import src/WeaverCli
 import src/LinkInputs
 
@@ -26,6 +27,10 @@ main! = |args| {
 		"cache-identity" => Stdout.line!(LinkInputs.cache_identity!(root, Project.Target.parse(options.target)?)?)
 		"install" => LinkInputs.install!(root, Project.Target.parse(options.target)?, Path.utf8(options.cache))
 		"check-installed" => LinkInputs.check_installed!(root)
+		"check-source" => match LinkInputs.check_source!(root)? {
+			Current(release) => Script.pass!("the libraries built from this tree are the ones ${release} holds")
+			Stale({ built, locked, release }) => Script.fail!("the libraries built from this tree differ from the ones ${release} holds (built ${built}, locked ${locked}). Something that changes their bytes changed: publish a new linker-input release from this pull request, as the development chapter describes.")
+		}
 		_ => Err(UnknownOperation(options.operation))
 	}
 }
@@ -33,7 +38,7 @@ main! = |args| {
 cli_parser = Cli.assert_valid(
 	Cli.finish(
 		{
-			operation: Opt.str({ short: "", long: "operation", help: "package, cache-identity, install, or check-installed.", default: Value("") }),
+			operation: Opt.str({ short: "", long: "operation", help: "package, cache-identity, install, check-installed, or check-source.", default: Value("") }),
 			output: Opt.str({ short: "", long: "output", help: "Directory for packaged artifacts.", default: Value("candidate") }),
 			repository: Opt.str({ short: "", long: "repository", help: "Repository slug.", default: Value("") }),
 			sha: Opt.str({ short: "", long: "sha", help: "Exact producer source commit.", default: Value("") }),

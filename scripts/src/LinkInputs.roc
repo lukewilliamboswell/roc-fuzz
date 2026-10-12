@@ -22,39 +22,38 @@ LinkInputs := [].{
 	asset : Targets, Project.Target -> Asset
 	asset = |artifacts, target| if target.name() == "x64musl" artifacts.x64musl else artifacts.arm64mac
 
-	## Only what can change the bytes of a linker-input archive:
+	## The identity of a set of linker inputs is the content of the files a
+	## release publishes: every library for every target, and the licence files
+	## packed beside them. The build is byte-reproducible, so two trees that
+	## would produce the same libraries have the same identity, whatever else
+	## differs between them. No script, workflow or lock file is hashed.
 	##
-	## * the Zig release and the libFuzzer source the libraries are built from;
-	## * the recipe that builds them, and the targets it builds them for;
-	## * the macOS adapter compiled into `libfuzzer.a`;
-	## * the code that packs the archives; and
-	## * the licence files packed beside the libraries.
-	##
-	## The tooling compiler, the workflows and the rest of the scripts run or
-	## call the recipe without changing what it produces, so they are not here.
-	## Add `Blueprint.lock` when the Zig toolchain comes from Blueprint.
-	fingerprint_inputs = [
-		"LICENSE",
-		"THIRD_PARTY_LICENSES.md",
-		"scripts/build_platform.roc",
-		"scripts/native-deps.json",
-		"scripts/src/Archive.roc",
-		"scripts/src/LinkInputs.roc",
-		"scripts/src/Project.roc",
-		"src/macos_fuzzer_ext_functions.cpp",
-	]
-	fingerprint! = |root| {
-		names = AutomationIO.tracked!(root, LinkInputs.fingerprint_inputs)?
+	## A manifest and a lock record it as `input_fingerprint`, the name the
+	## shared publisher uses for the producer's identity.
+	content_identity! = |root| {
 		var $entries = []
-		for name in names {
-			$entries = $entries.append({ path: name, sha256: Integrity.digest_bytes(Path.read_bytes!(Path.join(root, name))?) })
+		for target in Project.all_targets {
+			for name in LinkInputs.files(target) {
+				$entries = $entries.append({ path: "${target.name()}/${name}", sha256: Integrity.digest!(Path.join(target.dir(root), name))? })
+			}
+		}
+		for name in LinkInputs.licenses {
+			$entries = $entries.append({ path: name, sha256: Integrity.digest!(Path.join(root, name))? })
 		}
 		Ok(Integrity.digest_bytes(Json.to_str($entries).to_utf8()))
+	}
+
+	## Whether the libraries just built from this tree are the ones the lock
+	## selects. Run it after building every target from source.
+	check_source! = |root| {
+		lock = LinkInputs.read_lock!(root)?
+		built = LinkInputs.content_identity!(root)?
+		if built == lock.source.input_fingerprint Ok(Current(lock.release)) else Ok(Stale({ built, locked: lock.source.input_fingerprint, release: lock.release }))
 	}
 	metadata : Project.Target, Str -> Metadata
 	metadata = |target, fingerprint| { schema_version: 1, kind: "link-inputs", target: target.name(), input_fingerprint: fingerprint, files: LinkInputs.files(target), licenses: LinkInputs.licenses }
 	package! = |root, output, source| {
-		fingerprint = LinkInputs.fingerprint!(root)?
+		fingerprint = LinkInputs.content_identity!(root)?
 		actual_source = { ..source, input_fingerprint: fingerprint }
 		arm64mac = package_target!(root, output, Project.Target.Arm64Mac, fingerprint)?
 		x64musl = package_target!(root, output, Project.Target.X64Musl, fingerprint)?
@@ -62,8 +61,8 @@ LinkInputs := [].{
 		manifest = { schema_version: 1, kind: "link-inputs", source: actual_source, assets: { arm64mac, x64musl } }
 		AutomationIO.json!(Path.join(output, "build-input-release.json"), manifest)
 	}
-	validate_lock : Lock, Str -> Try(Lock, _)
-	validate_lock = |lock, fingerprint| {
+	validate_lock : Lock -> Try(Lock, _)
+	validate_lock = |lock| {
 		if lock.schema_version != 1 or lock.kind != "link-inputs" {
 			return Err(UnsupportedLinkInputLock)
 		}
@@ -83,9 +82,6 @@ LinkInputs := [].{
 				return Err(InvalidLinkInputAsset(target.name()))
 			}
 		}
-		if source.input_fingerprint != fingerprint {
-			return Err(StaleLinkInputLockPublishReviewedInputs)
-		}
 		Ok(lock)
 	}
 	read_lock! = |root| {
@@ -97,7 +93,7 @@ LinkInputs := [].{
 		}
 		lock : Lock
 		lock = Json.parse(Str.replace_each(encoded, "\"targets\"", "\"artifacts\""))?
-		LinkInputs.validate_lock(lock, LinkInputs.fingerprint!(root)?)
+		LinkInputs.validate_lock(lock)
 	}
 	cache_identity! = |root, target| {
 		lock = LinkInputs.read_lock!(root)?

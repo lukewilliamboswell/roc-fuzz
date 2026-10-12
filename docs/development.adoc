@@ -141,7 +141,8 @@ entry to become trusted. Routine restoration does not query GitHub's attestation
 service. Never commit generated archives, objects, or manifests.
 
 The `Linker inputs` producer, `link-inputs.yml`, runs on a pull request that
-touches one of its inputs and on dispatch. It packages both targets without
+touches the recipe and on dispatch. One Linux job cross-compiles both targets,
+and a job on each target runs every case against the candidate. It packages both targets without
 `libhost.a`, tests each candidate through a fresh host and final bundle, emits a
 canonical aggregate manifest, and attests that manifest and both archives. It has
 no publication authority. Release new inputs for changes to their sources,
@@ -163,7 +164,7 @@ the hosting policy does not enforce immutability; a content-derived name alone
 cannot prevent an administrator from replacing assets.
 
 Before adopting a release, review its producer changes, exact source revision,
-input fingerprint, manifest and archive digests, sizes, target coverage, native
+content identity, manifest and archive digests, sizes, target coverage, native
 link tests, and workflow attestations. Merge with a merge commit so the attested
 producer SHA and signed lock commit remain reachable. Ordinary pull requests
 then know only the reviewed lock, cache, verifier, and target files; they
@@ -178,20 +179,29 @@ is compiled against the headers Zig bundles, so it builds on Linux as well as on
 macOS and reads no installed Apple SDK. Keep it that way: a change that makes
 two builds of the same commit differ is a defect in the recipe.
 
-The fingerprint that decides whether the lock is current covers only what can
-change the bytes of an archive: `scripts/native-deps.json` (the Zig release and
-the libFuzzer source), the recipe in `scripts/build_platform.roc`, the targets
-in `scripts/src/Project.roc`, the packing code in `scripts/src/LinkInputs.roc`
-and `scripts/src/Archive.roc`, the macOS libFuzzer adapter, and the licence
-files packed beside the libraries. `LinkInputs.fingerprint_inputs` is the list.
-Neither Roc compiler, the workflows nor the rest of the scripts are in it. One
-thing outside it can still change an archive and is a reviewer's
-responsibility: `Blueprint.lock`, once the Zig toolchain comes from Blueprint.
+Because the build is reproducible, the lock is checked against what the tree
+builds and not against a list of files that might change it. The identity of a
+set of linker inputs is a digest of the published files themselves: every
+library for every target, and the licence files packed beside them. A manifest
+and the lock record it as `input_fingerprint`. The `Linker inputs match the
+lock` job of `ci.yml` builds both targets from source on every pull request,
+which takes about a minute, and fails when their identity differs from the
+lock's. Run the same check locally with:
 
-When the linker-input fingerprint changes, use this sequence:
+[source,sh]
+----
+blueprint run build-platform -- --target x64musl --target arm64mac --libraries source --libraries-only
+blueprint run link-inputs -- --operation check-source
+----
 
-. Stage the source and tool-pin changes in a same-repository PR. Its regular CI
-  may fail with `linker-input lock is stale` until the new lock is adopted.
+No script, workflow or lock file is hashed. A change that leaves the libraries
+byte-identical needs no release, whatever it touches; a change that alters one
+byte needs one, whatever it touches.
+
+When that check fails, use this sequence:
+
+. Stage the change in a same-repository PR. Its `Linker inputs match the lock`
+  job fails until the new lock is adopted.
 . To inspect a nonpublishing candidate, dispatch `Linker inputs` on the PR branch
   with `release_candidate=true` and `expected_sha` set to its exact current head.
   For example, run `gh workflow run link-inputs.yml --ref BRANCH -f release_candidate=true -f expected_sha=SHA`, replacing `BRANCH` and `SHA`.
@@ -331,9 +341,10 @@ Three workflows each answer one question:
 
 `ci.yml`:: Does this change work with today's compiler? One job runs
 `blueprint run check` and audits the API reference. One job regenerates the
-host bindings and compares them with the committed file. Each target's host is
-built in its own job and restored from a cache when none of its inputs changed.
-One job assembles a single bundle holding both targets, and a job on each
+host bindings and compares them with the committed file. One job rebuilds the
+linker inputs from source and compares them with the lock. One builder
+cross-compiles the host for both targets around the locked inputs and
+assembles a single bundle, and a job on each
 target downloads that bundle and runs every case against it. `CI required`
 aggregates them.
 `release.yml`:: Do these exact bytes work? On a pull request it is a dry run
@@ -488,7 +499,7 @@ version. The workflow:
 . rejects a version whose tag or release exists, requires `trunk`, and requires
   the notes file;
 . runs `blueprint run check` and the sanitizer check on that commit;
-. builds or restores each target's host, bundles once, and checks the requested
+. cross-compiles the host for both targets, bundles once, and checks the requested
   version against the public API with `roc bump --expect`, so a breaking change
   cannot go out as a patch;
 . builds the examples archive with the real release URL, the SBOM, the

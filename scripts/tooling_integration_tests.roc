@@ -82,19 +82,19 @@ native_tests! = |_root, source, temp| {
 		AutomationIO.write!(Path.join(source, name), name.to_utf8())?
 	}
 	AutomationIO.run!("git", ["add", "."], source)?
-	fingerprint = LinkInputs.fingerprint!(source)?
-	AutomationIO.write!(Path.join(source, "README.md"), "edited\n".to_utf8())?
-	Script.require!(LinkInputs.fingerprint!(source)? == fingerprint, "An unrelated file must not invalidate native inputs")?
-	# The tooling environment runs the recipe without changing what it builds.
-	AutomationIO.write!(Path.join(source, "Blueprint.lock"), "relocked tools\n".to_utf8())?
-	Script.require!(LinkInputs.fingerprint!(source)? == fingerprint, "The tooling lock must not invalidate native inputs")?
-	for name in ["scripts/native-deps.json", "LICENSE"] {
-		original = Path.read_bytes!(Path.join(source, name))?
-		AutomationIO.write!(Path.join(source, name), original.concat("changed\n".to_utf8()))?
-		Script.require!(LinkInputs.fingerprint!(source)? != fingerprint, "${name} must invalidate native inputs")?
-		AutomationIO.write!(Path.join(source, name), original)?
+	identity = LinkInputs.content_identity!(source)?
+	for name in ["README.md", "Blueprint.lock", "scripts/native-deps.json"] {
+		AutomationIO.write!(Path.join(source, name), "edited\n".to_utf8())?
+		Script.require!(LinkInputs.content_identity!(source)? == identity, "${name} is not a linker input, so editing it must not change their identity")?
 	}
-	Script.require!(LinkInputs.fingerprint!(source)? == fingerprint, "Restored inputs must restore the fingerprint")?
+	library = Path.join(Project.Target.dir(Project.Target.X64Musl, source), "libc.a")
+	for path in [library, Path.join(source, "LICENSE")] {
+		original = Path.read_bytes!(path)?
+		AutomationIO.write!(path, original.concat("changed\n".to_utf8()))?
+		Script.require!(LinkInputs.content_identity!(source)? != identity, "${Path.display(path)} is published, so its bytes must change the identity")?
+		AutomationIO.write!(path, original)?
+	}
+	Script.require!(LinkInputs.content_identity!(source)? == identity, "Restored bytes must restore the identity")?
 	cache = Path.join(temp, "native")
 	producer : LinkInputs.Source
 	producer = { repository: "owner/repo", sha: Str.repeat("b", 40), ref: "refs/heads/test", workflow: "owner/repo/.github/workflows/link-inputs.yml", input_fingerprint: "" }
@@ -106,7 +106,10 @@ native_tests! = |_root, source, temp| {
 	lock : LinkInputs.Lock
 	lock = { schema_version: 1, kind: "link-inputs", repository: "owner/repo", release: "linker-inputs-sha256-${digest}", manifest: { asset: "build-input-release.json", sha256: digest }, source: manifest.source, artifacts: manifest.assets }
 	Path.write_utf8!(Path.join(source, "native-libraries.lock.json"), Str.replace_each(Json.to_str(lock), "\"artifacts\"", "\"targets\""))?
-	Script.require!(LinkInputs.validate_lock(lock, "different") |> Try.is_err, "Reject stale native locks")?
+	Script.require!(LinkInputs.check_source!(source)? == Current(lock.release), "Libraries the lock was made from must be current")?
+	AutomationIO.write!(library, "rebuilt differently".to_utf8())?
+	Script.require!(LinkInputs.check_source!(source)? != Current(lock.release), "Libraries that differ from the lock must be reported")?
+	AutomationIO.write!(library, "libc.a".to_utf8())?
 	for target in Project.all_targets {
 		_ = LinkInputs.verify_archive!(source, target, cache)?
 		LinkInputs.install!(source, target, cache)?

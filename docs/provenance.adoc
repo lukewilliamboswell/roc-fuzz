@@ -10,7 +10,7 @@ pull-request ref and SHA before creating an immutable release.
 
 Platform builds restore the reviewed `native-libraries.lock.json` manifest and
 archives, verify sizes and SHA-256 digests on downloads and cache hits, validate
-their locked release, source, fingerprint and inventory, and build fresh hosts.
+their locked release, source and inventory, and build fresh hosts.
 The reviewed content hash is the routine trust anchor, so a valid cache hit uses
 zero network and does not contact GitHub's attestation service. A corrupt cache
 entry is discarded and only the exact locked asset may be downloaded again. The

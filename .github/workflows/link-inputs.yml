@@ -6,19 +6,19 @@ name: Linker inputs
 # to obtain the attested candidate it releases.
 on:
   pull_request:
-    # The fingerprint inputs in scripts/src/LinkInputs.roc, plus this workflow
-    # and the producer's entry point, which can break a build without changing
-    # what a working one produces.
+    # What the libraries are built from, and what packs them.
     paths:
       - .github/workflows/link-inputs.yml
       - LICENSE
       - THIRD_PARTY_LICENSES.md
+      - native-libraries.lock.json
       - scripts/build_platform.roc
       - scripts/link_input_artifacts.roc
       - scripts/native-deps.json
       - scripts/src/Archive.roc
       - scripts/src/LinkInputs.roc
       - scripts/src/Project.roc
+      - src/macos_compat/**
       - src/macos_fuzzer_ext_functions.cpp
   workflow_dispatch:
     inputs:
@@ -68,30 +68,20 @@ jobs:
             test "$EXPECTED_SHA" = "$GITHUB_SHA"
           fi
 
+  # One Linux job cross-compiles the linker inputs and a host for both targets,
+  # and bundles them. The build is byte-reproducible, so where it runs does
+  # not change what it makes.
   build:
     needs: [resolve, validate-request]
+    runs-on: ubuntu-22.04
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-22.04
-            target: x64musl
-          - os: macos-26
-            target: arm64mac
-    runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - name: Read tool versions
-        id: dependencies
-        run: echo "zig-version=$(jq -r .zig_version scripts/native-deps.json)" >> "$GITHUB_OUTPUT"
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
-        with:
-          version: ${{ steps.dependencies.outputs.zig-version }}
-          use-cache: false
+
       - name: Install Nix and the verified blueprint binary
         uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
         with:
@@ -99,42 +89,62 @@ jobs:
           sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
           sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
           sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
+
       - name: Install the Roc nightly this run resolved
         uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
         with:
           version: nightly-new-compiler
           nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
-      - name: Build linker inputs from source
-        run: blueprint run build-platform -- --target ${{ matrix.target }} --libraries source --libraries-only
-      - name: Validate inputs through a fresh host and final bundle
-        run: |
-          blueprint run build-platform -- --target ${{ matrix.target }} --host-only
-          blueprint run bundle -- --target ${{ matrix.target }} --output-dir "$RUNNER_TEMP/bundle"
-          blueprint run test-bundle -- "$RUNNER_TEMP"/bundle/*.tar.zst
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+
+      - name: Read the Zig release
+        id: dependencies
+        run: echo "zig-version=$(jq -r .zig_version scripts/native-deps.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
         with:
-          name: built-${{ matrix.target }}
-          path: platform/targets/${{ matrix.target }}
+          version: ${{ steps.dependencies.outputs.zig-version }}
+
+      - name: Build both targets' linker inputs and hosts from source
+        run: blueprint run build-platform -- --target x64musl --target arm64mac --libraries source
+
+      - name: Bundle the platform around the candidate inputs
+        run: blueprint run bundle -- --output-dir "$RUNNER_TEMP/bundle"
+
+      - name: Hand the candidate inputs to the assemble job
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: built-targets
+          path: platform/targets
           if-no-files-found: error
           retention-days: 7
 
-  assemble:
-    needs: build
-    runs-on: ubuntu-24.04
+      - name: Hand the bundle to the test jobs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: candidate-bundle
+          path: ${{ runner.temp }}/bundle/*.tar.zst
+          if-no-files-found: error
+          retention-days: 7
+
+  # Compiling for a target shows only that the inputs compile. Each target
+  # links and runs every case against the candidate bundle.
+  test:
+    name: test (${{ matrix.os }})
+    needs: [resolve, build]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-26]
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          pattern: built-*
-          path: built
-      - name: Restore target layouts
-        run: |
-          cp -R built/built-x64musl/. platform/targets/x64musl/
-          cp -R built/built-arm64mac/. platform/targets/arm64mac/
+
       - name: Install Nix and the verified blueprint binary
         uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
         with:
@@ -142,6 +152,47 @@ jobs:
           sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
           sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
           sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
+
+      - name: Install the Roc nightly this run resolved
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
+
+      - name: Download the candidate bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: candidate-bundle
+          path: .test-cache/candidate-bundle
+
+      - name: Run every target against the candidate bundle
+        run: blueprint run test-bundle -- .test-cache/candidate-bundle/*.tar.zst
+
+  assemble:
+    needs: [build, test]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Download the tested candidate inputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: built-targets
+          path: platform/targets
+
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.0"
+          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
+          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
+          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
+
       - name: Create deterministic target archives and canonical manifest
         run: >-
           blueprint run link-inputs -- --operation package
@@ -150,6 +201,7 @@ jobs:
           --sha "$GITHUB_SHA"
           --ref "$GITHUB_REF"
           --workflow "$GITHUB_REPOSITORY/.github/workflows/link-inputs.yml"
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: link-input-release
