@@ -11,6 +11,7 @@ import cli.Stdout
 import src/ReleaseExamples
 import src/LinkInputs
 import src/Archive
+import src/Glue
 import src/Integrity
 import src/LibrarySource
 import src/RocSource

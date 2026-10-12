@@ -47,12 +47,7 @@ main! = |raw_args| {
 		LocalSource(_) => return Script.fail!("--libfuzzer-source can only be used with --libraries source")
 		PinnedSource => PinnedSource
 	}
-	glue = if options.regenerate_glue {
-		RegenerateGlue(resolve_roc_source!(options)?)
-	} else {
-		KeepGlue
-	}
-	build = { ar, dependencies, glue, libfuzzer_source, library_source, mode, root, specs, zig }
+	build = { ar, dependencies, libfuzzer_source, library_source, mode, root, specs, zig }
 
 	Script.info!("PLAN", build_summary(build))?
 	prepare_glue!(build)?
@@ -97,14 +92,6 @@ cli_parser = Cli.assert_valid(
 					Err(NoValue) => PinnedSource
 				},
 			),
-			regenerate_glue: Opt.flag({ short: "", long: "regenerate-glue", help: "Regenerate the Zig natural-ABI bindings." }),
-			roc_source: Cli.map(
-				Opt.maybe({ short: "", long: "roc-source", help: "Roc source checkout used only with --regenerate-glue; otherwise ROC_SOURCE is used.", type: "path", parser: CliValues.path }),
-				|value| match value {
-					Ok(path) => RocSource(path)
-					Err(NoValue) => EnvironmentRocSource
-				},
-			),
 			target_specs: Opt.list({
 				short: "",
 				long: "target",
@@ -145,47 +132,16 @@ build_mode! = |host_only, libraries_only, library_source|
 		Ok(Complete)
 	}
 
-resolve_roc_source! = |options| {
-	path = match options.roc_source {
-		RocSource(value) => value
-		EnvironmentRocSource => match Env.var!("ROC_SOURCE") {
-			Ok(value) => Path.from_os_str(value)
-			Err(VarNotFound(_)) => return Script.fail!("--regenerate-glue needs a Roc checkout; pass --roc-source PATH or set ROC_SOURCE")
-			Err(err) => return Err(EnvironmentInputError("ROC_SOURCE", err))
-		}
+## The host is compiled against the committed bindings and never generates
+## them, so it builds the same way on every runner. scripts/check_glue.roc
+## regenerates and compares them.
+prepare_glue! = |build| {
+	generated = Path.join(Path.join(build.root, "src"), "roc_platform_abi.zig")
+	if build.mode == LibrariesOnly or Path.is_file!(generated)? {
+		Ok({})
+	} else {
+		Script.fail!("the committed host bindings are missing at ${Path.display(generated)}; restore the file or run `blueprint run check-glue -- --update`")
 	}
-	Path.absolute!(path)
-}
-
-prepare_glue! = |build|
-	match build.glue {
-		KeepGlue => {
-			generated = Path.join(Path.join(build.root, "src"), "roc_platform_abi.zig")
-			if build.mode == LibrariesOnly or Path.is_file!(generated)? {
-				Ok({})
-			} else {
-				Script.fail!("generated ABI glue is missing at ${Path.display(generated)}; restore the file or use --regenerate-glue with a Roc source checkout")
-			}
-		}
-		RegenerateGlue(roc_source) => regenerate_glue!(build.root, roc_source, build.zig)
-	}
-
-regenerate_glue! = |root, roc_source, zig| {
-	Script.info!("GLUE", "regenerating the Zig ABI bindings from the Roc compiler source")?
-	roc = match Env.var!("ROC_NIGHTLY") {
-		Ok(value) => Path.from_os_str(value)
-		Err(VarNotFound(_)) => Path.join(Path.join(Path.join(roc_source, "zig-out"), "bin"), "roc")
-		Err(err) => return Err(EnvironmentInputError("ROC_NIGHTLY", err))
-	}
-	glue = Path.join(Path.join(Path.join(Path.join(roc_source, "src"), "glue"), "src"), "ZigGlue.roc")
-	if !Path.is_file!(roc)? {
-		return Err(MissingGlueInput(roc))
-	}
-	if !Path.is_file!(glue)? {
-		return Err(MissingGlueInput(glue))
-	}
-	Script.command(Path.to_os_str(roc)).run!(["glue", Path.to_os_str(glue), Path.to_os_str(Path.join(root, "src")), Path.to_os_str(Path.join(Path.join(root, "platform"), "main.roc"))])?
-	zig.run!(["fmt", Path.to_os_str(Path.join(Path.join(root, "src"), "roc_platform_abi.zig"))])
 }
 
 build_targets! = |build, work| {

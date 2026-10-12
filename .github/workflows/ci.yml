@@ -50,6 +50,48 @@ jobs:
         run: |
           blueprint run native-sanitizers
 
+  # A new nightly can change the generated bindings when nothing here changed.
+  # This job then fails on every pull request until the bindings are upgraded.
+  host-bindings:
+    name: Host bindings
+    needs: resolve
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout roc-fuzz
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read the Zig release
+        id: dependencies
+        run: echo "zig-version=$(jq -r .zig_version scripts/native-deps.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.0"
+          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
+          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
+          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
+
+      - name: Install the Roc nightly this run resolved
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
+        with:
+          version: ${{ steps.dependencies.outputs.zig-version }}
+
+      - name: Regenerate the bindings and compare them with the committed file
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: blueprint run check-glue
+
   self-contained-runner:
     needs: resolve
     strategy:
@@ -138,7 +180,7 @@ jobs:
   required:
     name: CI required
     if: always()
-    needs: [native-sanitizers, self-contained-runner]
+    needs: [native-sanitizers, host-bindings, self-contained-runner]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:
@@ -146,6 +188,8 @@ jobs:
         env:
           MATRIX_RESULT: ${{ needs.self-contained-runner.result }}
           SANITIZER_RESULT: ${{ needs.native-sanitizers.result }}
+          BINDINGS_RESULT: ${{ needs.host-bindings.result }}
         run: |
           test "$MATRIX_RESULT" = success
           test "$SANITIZER_RESULT" = success
+          test "$BINDINGS_RESULT" = success

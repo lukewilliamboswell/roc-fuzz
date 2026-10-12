@@ -164,18 +164,35 @@ repository-owned platform glue covered by the project license; the
 native build, `show`/replay, fuzz, failure-artifact, and packaged-bundle
 smoke tests exercise them on Apple Silicon.
 
-== Regenerate ABI glue
+== Host bindings
 
-Regenerate glue only when the Roc natural ABI changes:
+The host is compiled against `src/roc_platform_abi.zig`, which `roc glue`
+generates from `platform/main.roc`. The file is committed. The host build reads
+it and never generates it, so the host builds the same way on every runner and
+a change to the interface is reviewed as a diff.
+
+The compiler generates the bindings, so a new nightly can change them when
+nothing in this repository changed. The `Host bindings` job of `ci.yml`
+regenerates them with the nightly the run resolved and fails when the committed
+file differs. Run the same check locally with:
 
 [source,sh]
 ----
-export ROC_NIGHTLY="$HOME/roc_nightly-linux_x86_64-2026-09-26-d6267b4/roc"
-scripts/build_platform.roc -- --regenerate-glue
+blueprint run check-glue
 ----
 
-Review the generated Zig diff and rebuild every example after
-regeneration.
+The glue specification comes from the source archive attached to that nightly's
+release, verified against the SHA-256 that GitHub records for the asset. For a
+compiler built from source, name its checkout with `-- --roc-source DIR`.
+
+When the check fails and the change did not touch `platform/`, the compiler
+changed the interface. Upgrading is a manual task, because a changed layout or
+signature usually needs a matching host change:
+
+. Run `+blueprint run check-glue -- --update+` with the latest nightly as `roc`.
+. Review the diff and change the host where a layout or signature changed.
+. Build the host for every target and run the targets.
+. Open one pull request with the bindings and the host change.
 
 == Validation
 

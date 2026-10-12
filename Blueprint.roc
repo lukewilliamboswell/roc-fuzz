@@ -43,6 +43,9 @@ config = [
 	# The host and its linker inputs. Arguments follow `--`, for example
 	# `blueprint run build-platform -- --target x64musl`.
 	Task("build-platform", [Use("dev"), Run(["scripts/build_platform.roc", "--"])]),
+	# Compare the committed host bindings with what `roc glue` generates;
+	# `-- --update` rewrites them.
+	Task("check-glue", [Use("dev"), Run(["scripts/check_glue.roc", "--"])]),
 	Task("link-inputs", [Use("dev"), Run(["scripts/link_input_artifacts.roc", "--"])]),
 	Task("check-link-inputs", [Use("dev"), Run(["scripts/check_native_libraries.roc", "--"])]),
 	# Targets: check, build and run the cases in tests/targets.json.
