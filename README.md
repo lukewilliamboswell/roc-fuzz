@@ -62,8 +62,8 @@ and a downloadable PDF manual.
 
 Repository examples use relative paths to the local platform. For applications
 using a published platform, download the examples archive attached to that
-release. Each released application records its platform URL and tested compiler;
-the platform itself does not pin a compiler.
+release. Each released application names that release's platform URL. Neither
+the platform nor its examples pin a compiler.
 
 Examples under [`examples/`](examples/) demonstrate round trips, parser
 robustness, collection invariants, structured inputs, and multi-file targets.

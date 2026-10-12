@@ -252,6 +252,6 @@ reference] for generator, combinator, and target signatures.
 The repository's `examples/` applications use relative paths to the local platform;
 prepare its native inputs before building them. Published releases provide a
 `roc-fuzz-examples-VERSION.zip` download containing complete runnable applications
-with that release's content-addressed platform URL and publication compiler.
-The platform does not constrain consumers to that compiler: nightly compatibility
-checks exercise each release's frozen examples with newer compilers.
+with that release's content-addressed platform URL. Neither the platform nor
+an archived example pins a compiler: a daily compatibility check runs the latest
+release's archived examples, unchanged, on the newest Roc nightly.

@@ -162,13 +162,12 @@ checks because its negation overflows.
 
 These checks supplement the compiler's high-precision unit tests; shared
 algorithms and finite tolerances mean they do not prove correct rounding.
-To run just these inventory entries with a compiler that includes the `atan2`
-builtins:
+To run just these inventory entries, with a `roc` on `PATH` that includes the
+`atan2` builtins:
 
 [source,sh]
 ----
-export ROC_NIGHTLY=/path/to/roc
-scripts/test_targets.roc -- --operation all --max-total-time 60 \
+blueprint run test-targets -- --operation all --max-total-time 60 \
   --target arctangentDec --target arctangentF32 --target arctangentF64
 ----
 

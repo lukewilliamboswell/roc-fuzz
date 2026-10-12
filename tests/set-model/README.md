@@ -33,14 +33,14 @@ lists in each retained representative. `setOps` uses ordinary U8 hashing.
 Build and replay deterministic seeds with the compiler under test:
 
 ```sh
-ROC_NIGHTLY=/path/to/roc scripts/test_targets.roc -- --operation seed \
+blueprint run test-targets -- --operation seed \
   --target setOps --target setCollisions
 ```
 
 Run five minutes per target (the test driver runs targets sequentially):
 
 ```sh
-ROC_NIGHTLY=/path/to/roc scripts/test_targets.roc -- --operation fuzz \
+blueprint run test-targets -- --operation fuzz \
   --target setOps --target setCollisions --max-total-time 300
 ```
 

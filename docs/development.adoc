@@ -14,37 +14,78 @@ translates the friendly runner commands.
 
 == Toolchain
 
-Normal documentation, Roc source validation, target builds, and
-packaging require only:
+roc-fuzz follows the
+https://lukewilliamboswell.github.io/roc-automation/[roc-automation manual].
+Two Roc compilers are involved, and they are not interchangeable:
 
-* stable Roc for the repository's typed tooling; and
-* the last validated nightly selected by `roc_nightly` in `scripts/workspace-deps.json`.
+* `roc-stable` runs the scripts under `scripts/` and nothing else. It is one
+  nightly release, named in `Blueprint.roc` and repeated in the `roc` field of
+  every script header. It changes only through a reviewed pull request.
+* `roc` checks, tests, builds and bundles the platform and every application
+  that depends on it. It is the latest published nightly and is not pinned
+  anywhere: the platform, the examples and the test targets carry no `roc`
+  field. Users install the newest compiler, so that is the one the platform has
+  to work with.
+
+`Blueprint.roc` declares the tooling environment and `Blueprint.lock` pins it:
+`roc-stable`, the Roc bundles the scripts depend on, and the programs they
+start. https://github.com/lukewilliamboswell/roc-blueprint[roc-blueprint]
+realises that environment with Nix, the same way on a contributor's machine and
+on every CI runner. To work on roc-fuzz you need:
+
+* https://nixos.org/download[Nix];
+* the `blueprint` command, from the roc-blueprint release that the platform URL
+  in `Blueprint.roc` names: `nix profile install github:lukewilliamboswell/roc-blueprint/VERSION`,
+  or the release's prebuilt binary checked against its published SHA-256;
+* a current Roc nightly installed as `roc`; and
+* Zig 0.16.0 as `zig`, to build the host or to regenerate its bindings. Zig is
+  not in the Blueprint environment yet, because Blueprint cannot yet name an
+  exact Zig release; `scripts/native-deps.json` records the version.
+
+[source,sh]
+----
+blueprint tasks          # list the declared tasks
+blueprint run check      # everything a pull request must pass that needs no host
+blueprint shell          # enter the environment and run scripts/*.roc directly
+----
+
+Run `blueprint` from an ordinary shell. Inside the environment `roc-stable` is
+the pinned compiler and your own `roc` and `zig` remain visible. Arguments to a
+task follow `--`, for example `+blueprint run build-platform -- --target x64musl+`.
 
 Linker inputs have an independent, content-addressed release cycle;
 `libhost.a` is deliberately outside that cycle and is built with each platform
 update. This separation means a host or Roc source change does not rebuild large,
-stable runtime inputs. Source development and the explicitly dispatched producer
-require Zig 0.16.0. The builder uses `zig ar`.
+stable runtime inputs. The builder uses `zig ar`.
 
-The setup action installs separate `roc-stable` and `roc-nightly` executables.
-The local `setup-workspace-roc` action reads their exact selections from workspace metadata and checks
-the installed versions. Tooling has its own fixed `roc_stable` selection; it does
-not advance with routine project nightly updates. `ROC_STABLE` and `ROC_NIGHTLY`
-allow explicit local overrides.
-
-The shared nightly updater resolves the latest published compiler once, tests
-that exact candidate on both hosts, then advances only `roc_nightly` after all
-required checks pass. The platform and local examples contain no compiler pins.
-This metadata records a tested compiler, not an exclusive compatibility claim
-for a released platform.
-
-Repository examples use relative paths to the working-tree platform. Each new
+Repository examples use relative paths to the working-tree platform. Each
 release provides `roc-fuzz-examples-VERSION.zip` with complete applications,
-supporting modules, seeds/test inventory, an exact platform release URL, and the
-publication compiler in application headers. Newer compilers are checked against
-that frozen suite, independently of APIs added to the current repository examples.
-Only temporary application compiler pins are updated for these compatibility runs;
-the released platform bytes and URLs remain unchanged.
+supporting modules, the cases that describe them, and that release's exact
+platform URL. Nothing else in an archived example differs from the repository.
+The `Nightly compatibility` workflow runs the latest release's archive, exactly
+as published, on the latest nightly every day.
+
+=== Maintain the tooling
+
+Nothing updates the tooling on a schedule. Each of these is a pull request a
+maintainer opens:
+
+Update the lock:: Run `blueprint update`, or `blueprint update INPUT` to move
+one input, then `blueprint run check`. `Blueprint.lock` is part of the
+linker-input fingerprint, so this needs a new linker-input release in the same
+pull request; see <<generate-platform-inputs>>.
+Change the tooling compiler:: Change the tag in `Command("roc-stable", ...)` in
+`Blueprint.roc` and the `roc` field of every script to the same tag. The check
+script fails until they match. Run `blueprint update roc` if the locked overlay
+predates that nightly.
+Upgrade Blueprint:: Change the platform URL in the `Blueprint.roc` header and,
+in every workflow, the `version` and SHA-256 values passed to
+`actions/setup-blueprint`, taken from that release's `blueprint.sha256`.
+Update a script dependency:: Change the release URL in each script header and
+under `RocPackages` in `Blueprint.roc`, adding any new dependency of that
+dependency (`roc-stable deps scripts/check_all.roc` lists them), then run
+`blueprint update`.
+Regenerate the host bindings:: See <<host-bindings>>.
 
 == Repository scripting convention
 
@@ -55,24 +96,31 @@ Do not add Python scripts, shell launchers, or build-before-run wrappers to work
 around compiler behavior. Keep workflow YAML limited to job orchestration and
 small environment/output plumbing; substantive automation belongs in Roc.
 
-Run scripts directly with `roc-stable scripts/NAME.roc -- ARGUMENTS`, or their
-`#!/usr/bin/env roc-stable` shebang. Nested tooling calls use `ROC_STABLE` through
-`Script.roc_stable!`; project validation uses `ROC_NIGHTLY` separately. The fixed
-`roc_stable` selection must execute the tooling and its dependencies without
-warning-exit workarounds. Upgrade it deliberately when a compatible compiler and
-dependencies are available. A successful script must return zero, and a failed
-script must remain a failure.
+Every entry point starts with the `#!/usr/bin/env roc-stable` shebang, is
+committed as executable, and is declared as a `Task` in `Blueprint.roc`. CI
+calls tasks, never script paths, so a workflow and a contributor run the same
+command. A script starts another script through `Script.roc_stable!` and runs
+package work through `Script.roc!`, which is the `roc` on `PATH`. Never use
+`roc-stable` to check, test or bundle the platform. A successful script must
+return zero, and a failed script must remain a failure.
+
+A script references every dependency by immutable release URL, and the same URL
+is listed under `RocPackages` in `Blueprint.roc`. `scripts/check_supply_chain.roc`
+holds each header to `Blueprint.roc`: the shebang, the `roc` field, and every
+bundle URL. It also fails when a Roc file outside `scripts/` carries a `roc`
+field, and when a workflow references an action by anything but a full commit
+SHA.
 
 Roc scripts may invoke standard tools such as Git, curl, tar, zip, and unzip via
 argument lists, without shell evaluation. Roc owns selection, validation, and
-control flow. Pinned external tools and shared actions remain external dependencies;
+control flow. Declare a program a script starts under `Tools` in `Blueprint.roc`.
+Pinned external tools and shared actions remain external dependencies;
 for example, the shared documentation builder currently uses Python internally.
 That does not justify adding repository-owned Python orchestration.
 
 Pure regression checks belong in shared-module `expect`s imported by
 `scripts/tooling_tests.roc`. Filesystem and process checks belong in
 `scripts/tooling_integration_tests.roc`; both run from `scripts/check_all.roc`.
-The archive tools require Git, curl, tar, zip, and unzip on local and CI hosts.
 
 == Generate platform inputs
 
@@ -80,10 +128,10 @@ Generate the current host's ignored inputs with:
 
 [source,sh]
 ----
-scripts/build_platform.roc
+blueprint run build-platform
 ----
 
-Pass `--target x64musl` or `--target arm64mac` explicitly in automation.
+Pass `+-- --target x64musl+` or `+-- --target arm64mac+` explicitly in automation.
 The default restores the archives selected by `native-libraries.lock.json`,
 rehashes their manifest and target archive even on a cache hit, validates the
 complete archive inventory, builds the current host, and writes local
@@ -94,7 +142,8 @@ It avoids repeat network traffic without allowing a poisoned or truncated cache
 entry to become trusted. Routine restoration does not query GitHub's attestation
 service. Never commit generated archives, objects, or manifests.
 
-The workflow-dispatch-only `Linker inputs` producer packages both targets without
+The `Linker inputs` producer, `link-inputs.yml`, runs on a pull request that
+touches one of its inputs and on dispatch. It packages both targets without
 `libhost.a`, tests each candidate through a fresh host and final bundle, emits a
 canonical aggregate manifest, and attests that manifest and both archives. It has
 no publication authority. Release new inputs for changes to their sources,
@@ -118,9 +167,15 @@ cannot prevent an administrator from replacing assets.
 Before adopting a release, review its producer changes, exact source revision,
 input fingerprint, manifest and archive digests, sizes, target coverage, native
 link tests, and workflow attestations. Merge with a merge commit so the attested
-producer SHA and signed lock commit remain reachable. Ordinary PRs and nightly
-updates then know only the reviewed lock, cache, verifier, and target files; they
+producer SHA and signed lock commit remain reachable. Ordinary pull requests
+then know only the reviewed lock, cache, verifier, and target files; they
 never dispatch or reproduce linker inputs.
+
+The fingerprint that decides whether the lock is current covers the producer
+workflow, `Blueprint.lock`, `scripts/native-deps.json`, `scripts/build_platform.roc`,
+`scripts/link_input_artifacts.roc`, everything under `scripts/src/`, the macOS
+libFuzzer adapter and the licence files. It does not cover the Roc nightly,
+which plays no part in building the inputs.
 
 When the linker-input fingerprint changes, use this sequence:
 
@@ -133,6 +188,8 @@ When the linker-input fingerprint changes, use this sequence:
   run does not create a GitHub release or edit the PR.
 . From `trunk`, dispatch `Publish link inputs` with `pull-request` set to that
   PR number: `gh workflow run publish-link-inputs.yml --ref trunk -f pull-request=NUMBER`.
+  To recover an interrupted publication, also pass `producer-run` with the ID of
+  the successful producer run for the current head.
   The trusted publisher reruns the producer at the exact PR head,
   publishes the immutable linker-input release, and appends a GitHub-signed
   `native-libraries.lock.json`-only commit to the PR. Do not dispatch it from
@@ -201,22 +258,25 @@ the narrowest useful layer. Changes to public behavior also update the relevant
 examples, interface documentation, or report schema. A pull request should
 explain the behavior changed and the validation performed.
 
-Use the compiler under development through `ROC_NIGHTLY`:
+The scripts use whichever `roc` comes first on `PATH`. To validate with a
+compiler under development, put it there:
 
 [source,sh]
 ----
-export ROC_NIGHTLY=/path/to/roc
-scripts/test_targets.roc -- --operation check --verbose
-scripts/test_targets.roc -- --operation build --verbose
-scripts/test_targets.roc -- --operation seed
-scripts/test_targets.roc -- --operation fuzz --max-total-time 2
+PATH=/path/to/roc/zig-out/bin:$PATH blueprint run check
+blueprint run test-targets -- --operation check --verbose
+blueprint run test-targets -- --operation build --verbose
+blueprint run test-targets -- --operation seed
+blueprint run test-targets -- --operation fuzz --max-total-time 2
 ----
 
-After native inputs are prepared, `check_all.roc` validates the working-tree
-platform and every example. `test_targets.roc` provides the focused operations
-shown above.
-Checked-in examples use the local platform. The published compatibility lane
-uses the selected release’s own frozen examples and immutable bundle. Validation
+`blueprint run check` needs no native inputs: it formats, tests the scripts,
+runs the pin and supply-chain checks, and type-checks the platform and every
+case in `tests/targets.json`. After native inputs are prepared, `test-targets`
+provides the focused operations shown above.
+Checked-in examples and test targets use the local platform. The nightly
+compatibility workflow uses the latest release's own archived examples and
+immutable bundle. Validation
 checks the exact example inventory, Roc formatting and types. After
 generating the current host inputs, building creates every
 self-contained executable and verifies a static x86-64 ELF on Linux or
@@ -229,36 +289,59 @@ Build the HTML manual, PDF, and generated API reference with:
 
 [source,sh]
 ----
-scripts/build_docs.roc
+blueprint run docs
+blueprint run site
 ----
 
-The command fetches the immutable shared renderer from `roc-automation`, uses
-Docker for the Asciidoctor toolchain, and writes the complete publication under
-`.docs-out/`. Set `ROC_AUTOMATION_ROOT` to a local checkout while developing the
+`docs` fetches the shared renderer from `roc-automation` at the commit that
+`docs.yml` pins, uses Docker for the Asciidoctor toolchain, and writes the
+working tree's manual, PDF and API reference under `.docs-out/`. `site`
+assembles what GitHub Pages serves: the latest release's documentation,
+restored from the archive that release published, with the working tree's under
+`unreleased/`. Set `ROC_AUTOMATION_ROOT` to a local checkout while developing the
 shared action. The final API audit fails if an exposed module or public entry
 has no rendered documentation. The documentation and release workflows run the
 same build and audit.
 
-Every example runs the `check`, `test`, `build`, `seed`, and `fuzz`
-stages by default. A temporary exception must use a `skip` entry in
-`tests/targets.json` with both a concrete reason and a full GitHub issue
-URL. The driver rejects unexplained skips; skipping a prerequisite also
-requires skipping its dependent stages.
+Every case runs the `check`, `test`, `build`, `seed`, and `fuzz`
+stages by default. To switch off a case's seed replay or fuzz run, set its
+`skip_seed` or `skip_fuzz` and add an entry to the `skips` list in
+`tests/targets.json` with the case name, the operation, a concrete reason and a
+full issue URL. The supply-chain check rejects a skip without exactly one such
+note, and a note left behind once the case runs again. The driver names every
+skip and its reason at the start of each run. No case is skipped today.
 
-CI separates published compatibility, working-tree execution and packaged-platform
-execution. Published checks use the selected release’s frozen suite on fresh
-runners; development checks use local examples and current source. Both run on
-every PR and manual/nightly dispatch; there is no change classifier or
-migration exception. The release workflow additionally tests the exact
-candidate archives. `nightly_validation: true` never publishes or
-deploys.
+A file under `trophy-case/repros/` that can run is a case in
+`tests/targets.json`. The one kept there is a deliberate type error that the
+compiler once panicked on; `blueprint run check` requires `roc check` to report
+it.
+
+Three workflows each answer one question:
+
+`ci.yml`:: Does this change work with today's compiler? One job runs
+`blueprint run check` and audits the API reference. One job regenerates the
+host bindings and compares them with the committed file. Each target's host is
+built in its own job and restored from a cache when none of its inputs changed.
+One job assembles a single bundle holding both targets, and a job on each
+target downloads that bundle and runs every case against it. `CI required`
+aggregates them.
+`release.yml`:: Do these exact bytes work? On a pull request it is a dry run
+under the version `0.0.1-dry-run`: it builds the bundle, the examples archive,
+the SBOM, the documentation archive and the release notes, and tests the
+archive against the bundle on both targets. `Release required` aggregates it.
+`nightly.yml`:: Does the latest release still work with today's compiler? It
+runs daily; see <<release-bundle>>.
+
+A new nightly can fail an untouched pull request. Compare with the latest
+`Nightly compatibility` run and with `trunk` before treating a failure as a
+regression in the change.
 
 Linux CI also rebuilds the checksum-pinned libFuzzer sources with
 AddressSanitizer and runs a short native smoke campaign. This detects heap,
 stack, use-after-free, and leak errors in the embedded C++ fuzzing engine on
 every pull request, every `trunk` update, and before release publication. Run
 the same check locally with
-`roc-stable scripts/test_native_sanitizers.roc`; it requires Clang,
+`blueprint run native-sanitizers`; it requires Clang,
 `curl`, and `tar`. The sanitizer executable is CI-only and does not change the
 static release artifacts.
 
@@ -266,19 +349,22 @@ The Roc driver runs on Linux and Apple Silicon without platform skips. Scripts
 execute directly with the fixed tooling compiler; compilation errors, warnings,
 and application failures retain their normal Roc exit status.
 
-Use `--suite-root PATH` to run a frozen examples tree containing `examples/` and
+Use `--suite-root PATH` to run an unpacked examples archive containing `examples/` and
 `tests/targets.json`. Each invocation has fresh temporary executables and corpora.
 Fuzz smoke tests pass corpus directories to libFuzzer; passing an individual seed
 file would only replay it. Repository formatting is checked separately, not against
 an older release's frozen source.
 
-Published compatibility selects the highest stable semantic-version platform
-release, ignoring native-library releases and RCs. Both hosts consume the same
-selection and verify asset hashes. Releases through 0.4.1 use examples from the
-exact tag commit, rebound to that release's own bundle (the old manual URL follow-up
-could occur after tagging). Newer releases must include the examples archive.
-The compatibility artifact records the release, source commit, compiler and asset
-identities used; a missing archive or failed download cannot become a passing test.
+Nightly compatibility selects the highest stable semantic-version platform
+release, ignoring linker-input releases and release candidates. Both targets
+consume the same selection and verify asset hashes. Releases through 0.4.1 use
+examples from the exact tag commit, rebound to that release's own bundle (the old
+manual URL follow-up could occur after tagging). Newer releases must include the
+examples archive. The compatibility artifact records the release, source commit,
+compiler and asset identities used; a missing archive or failed download cannot
+become a passing test. Archives up to 0.4.3 pin every example to the compiler of
+their day, so the driver accepts the resulting version-mismatch warning; later
+archives carry no pin.
 
 Every target asserts on allocation behaviour as well as on results. A
 property can check what an operation computes but not what it costs, so
@@ -320,85 +406,128 @@ with:
 
 [source,sh]
 ----
-scripts/build_bundle.roc -- --output-dir dist
+blueprint run bundle -- --output-dir dist
 ----
 
 `build_bundle.roc` verifies every generated input checksum, then includes the
 archives and license notices in
-`roc bundle`. Production release jobs build both hosts on native hosted
-runners before bundling. Test the resulting bundle from an external
+`roc bundle`. Test the resulting bundle from an external
 target with:
 
 [source,sh]
 ----
-scripts/test_bundle.roc -- dist/<bundle>.tar.zst
+blueprint run test-bundle -- dist/<bundle>.tar.zst
 ----
 
-Production releases use the `Release` workflow. From the repository's
-*Actions* tab, run it on the default branch with an `X.Y.Z` version (or
-an `X.Y.Z-rcN` release candidate). Pull requests run the same workflow
-in dry-run mode. Before dispatching any publication, add a non-empty
-`docs/releases/X.Y.Z.adoc` or `docs/releases/X.Y.Z-rcN.adoc`. The first heading
+=== What a release contains
+
+One immutable GitHub release per version holds:
+
+[cols="2,3",options="header"]
+|===
+| Asset | Purpose
+
+| The bundle, under the filename `roc bundle` emits
+| What users depend on. The filename is its content hash.
+
+| `roc-fuzz-examples-VERSION.zip`
+| The examples pinned to this release's bundle, with the cases that describe them.
+
+| `roc-fuzz-docs-VERSION.zip`
+| The manual and API reference for this version. The documentation site restores the latest release's copy.
+
+| `roc-fuzz-VERSION.pdf`
+| The manual.
+
+| `<bundle>.spdx.json`
+| The SPDX SBOM.
+
+| `*.intoto.jsonl`
+| The exported build-provenance attestations for the bundle and the examples archive.
+|===
+
+=== Write the release notes
+
+Before dispatching a release, commit a non-empty `docs/releases/X.Y.Z.adoc`, or
+`docs/releases/X.Y.Z-rcN.adoc` for a release candidate, and add an `include`
+for it at the top of `docs/releases.adoc`. The first heading
 must be `= roc-fuzz VERSION`. Release notes are reviewed as documentation and
 should explain the release to users: lead with the theme, show notable features
-and compatibility changes, name the supported hosts and Roc compiler, link to
+and compatibility changes, name the supported hosts, link to
 verification material, and give upgrade or feedback guidance.
 
-Use `{platform-url}` where the copyable app header needs the content-addressed
-bundle URL and `{manual-url}` for the release's PDF. The workflow resolves both
-after packaging, translates the note's headings and source blocks to GitHub
-Markdown with `scripts/render_release_notes.roc`, and uses that result as the
-description for stable releases and release candidates. A missing or mismatched
-note stops publication. A real release:
+Use `+{platform-url}+` where the copyable application header needs the
+content-addressed bundle URL, and `+{manual-url}+` for the release's PDF. Do not
+put a `roc` field in that header. The build job fills both in after it has made
+the bundle, translates the note's headings and source blocks to GitHub Markdown
+with `scripts/render_release_notes.roc`, and appends the output of `roc version`
+and `roc-stable version`. That record is the release's statement of what it was
+built and tested with. Notes that never use `+{platform-url}+`, or that leave a
+placeholder unresolved, fail the build.
 
-[arabic]
-. validates all sources, tests, and short fuzz campaigns;
-. builds the platform bundle and tests that packaged bundle as an
-external consumer;
-. generates and validates a version-stamped PDF manual and HTML site containing
-the API reference; and
-. renders the matching narrative release note and publishes it with the bundle,
-PDF, zipped documentation site, SBOM, and provenance in a GitHub release.
+The committed file keeps its placeholders and is never rewritten after the
+release. A pull request renders every notes file newer than the latest release,
+so a mistake in unreleased notes fails on the pull request that makes it.
 
-Pages is independent of a release and always tracks `trunk`. Pull requests build
-the same site without deploying it.
+=== Publish a release
 
-The bump check requires a version increment from the previous platform
-release. The release policy explicitly permits exact-nightly bootstrap
-on `trunk`; no stable compiler compatibility or maintenance branch is
-implied.
+From the repository's *Actions* tab, run `Release` on `trunk` with an `X.Y.Z`
+version. The workflow:
 
-To unblock a source PR before stable bootstrap, dispatch `Release` on
-that branch with `release_candidate=true`, a new `X.Y.Z-rcN` version,
-and the full source SHA in `expected_sha`. Both target bundles must pass
-before the workflow attests and publishes the RC. Only this explicit RC
-path permits source-built libraries. It preserves the latest stable
-release and the trunk-tracking Pages site, and does not create a default-branch URL follow-up.
-Verify the published archive and its frozen examples before use.
-Stable releases still require the independent library lock.
+. rejects a version whose tag or release exists, requires `trunk`, and requires
+  the notes file;
+. runs `blueprint run check` and the sanitizer check on that commit;
+. builds or restores each target's host, bundles once, and checks the requested
+  version against the public API with `roc bump --expect`, so a breaking change
+  cannot go out as a patch;
+. builds the examples archive with the real release URL, the SBOM, the
+  documentation archive, the manual and the rendered notes;
+. on each target, serves the bundle on a loopback address and runs the archived
+  examples against it, with an empty package cache;
+. attests the tested bundle and examples archive; and
+. publishes from a job that checks out nothing and runs no repository script. It
+  stages a draft release at the tested commit, uploads every asset, downloads
+  each one back and compares it with the tested file, and only then publishes.
 
-Release preparation generates and tests the examples archive against the exact
-candidate bundle, then publishes and attests those same bytes. It does not rewrite
-repository example URLs. Download the examples asset when using a published release;
-cloning the repository gives examples for local platform development.
+After a final release the workflow rebuilds and deploys the documentation site,
+which leads with the latest release.
 
-A routine nightly update never fixes or publishes a platform. If a new compiler
-breaks the latest release, the updater reports the failure on its pull request
-and leaves the accepted compiler unchanged. GitHub check notifications (according
-to each maintainer's notification settings) and the PR report flag the failure.
-Maintainers manually investigate, fix, and release the platform. After that manual intervention, retry the nightly updater against the
-newly released suite. The updater records the new compiler only after validation
-passes; there is no automated platform-repair or release-recovery workflow.
+The publish job runs in the `release` environment. Use `roc bump` before
+choosing a version:
 
-A tooling/compiler-recipe migration can require a one-time linker-input publication
-through the existing reviewed PR publisher. The linker fingerprint includes the
-fixed tooling compiler and recipe, but excludes `roc_nightly`: subsequent project
-compiler-only updates reuse the admitted native libraries.
+[source,sh]
+----
+roc bump --old <previous release bundle URL> platform/main.roc
+----
 
-Inspect partial publication before recovery; never replace existing tags or assets
-or rebuild an already-published release from a moving branch. Preserve the exact
-tested artifacts, tag SHA and uploaded digests. No changes to historical releases
-are required to adopt this workflow.
+A release candidate is the same dispatch with an `X.Y.Z-rcN` version. It goes
+through every step above, holds the same assets, and is published as a
+prerelease that is never the latest release. Nightly compatibility and the
+documentation site ignore it. Fix what a candidate turns up on `trunk` and
+publish `-rc2`; a candidate is immutable like any other release.
+
+=== When a new compiler breaks the latest release
+
+`Nightly compatibility` runs every day. It selects the latest Roc nightly and
+the latest stable platform release, and runs that release's examples archive,
+unchanged, on both targets with `trunk`'s scripts. Its report job keeps one
+issue, titled "The latest release fails on the latest Roc nightly": opened by
+the first failure, commented on by each later one, and closed by the next pass.
+A run in which setup failed before any example ran fails without touching the
+issue.
+
+A release is immutable, so the fix is always a patch release that works with
+the new compiler. Reproduce a past combination by dispatching the workflow with
+a `nightly-tag` and a `release-version`.
+
+=== Recover an interrupted publication
+
+Inspect exactly what exists before retrying. An unfinished draft can be
+completed from the same run's artifacts: upload what is missing, verify the
+complete inventory, then publish. A published release that is incomplete cannot
+be repaired; publish a new version. Changed bytes are always a new version.
+Never replace an existing tag or asset, and never rebuild a release from a
+moving branch.
 
 == Design constraints
 
@@ -407,5 +536,5 @@ input type. `Target` then erases that type, preventing the native ABI
 from depending on every app record or tag-union layout.
 
 The platform supports x64-musl and Apple Silicon macOS. Keep native
-calls behind generated glue so compiler ABI changes are caught by
-regeneration and compilation.
+calls behind the generated bindings, so that a compiler ABI change is caught by
+the bindings check and by compilation.

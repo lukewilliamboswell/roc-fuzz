@@ -14,9 +14,9 @@ examples or interface documentation when behavior changes. Follow
 Build the manual and generated API reference locally with:
 
 ```sh
-scripts/build_docs.roc
+blueprint run docs
 ```
 
-The command requires Docker, `roc-stable` for repository tooling, and
-`roc-nightly` for project sources. Set `ROC_STABLE` and `ROC_NIGHTLY` to use
-explicit compiler paths.
+The command requires Docker, the `blueprint` command for the repository's
+tooling environment, and a current Roc nightly installed as `roc` for the
+platform sources.
