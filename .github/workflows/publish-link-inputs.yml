@@ -1,4 +1,4 @@
-name: Publish linker inputs
+name: Publish link inputs
 
 on:
   workflow_dispatch:
@@ -6,6 +6,11 @@ on:
       pull-request:
         description: Same-repository pull request containing the material linker-input change
         required: true
+        type: string
+      producer-run:
+        description: Existing successful producer run for the current PR head, for recovery; empty dispatches a new run
+        required: false
+        default: ""
         type: string
 
 permissions: {}
@@ -19,12 +24,13 @@ jobs:
       pull-requests: read
     steps:
       - name: Publish the exact attested PR candidate and adopt its lock
-        uses: lukewilliamboswell/roc-automation/actions/publish-build-inputs@26f35e78f19c761b0160768f267e321dbccac3c7 # 26f35e7
+        uses: lukewilliamboswell/roc-automation/actions/publish-build-inputs@26b692c5ce341efd5633793079d70c9e04559eac # 26b692c
         env:
           GH_TOKEN: ${{ github.token }}
         with:
           pull-request: ${{ inputs.pull-request }}
-          producer-workflow: native-libraries.yml
+          producer-workflow: link-inputs.yml
+          producer-run: ${{ inputs.producer-run }}
           candidate-artifact: link-input-release
           lock-path: native-libraries.lock.json
           release-prefix: linker-inputs
