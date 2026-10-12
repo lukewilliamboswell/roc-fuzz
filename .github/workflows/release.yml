@@ -11,10 +11,6 @@ on:
         description: Full source commit required for explicit RC publication
         type: string
         required: false
-      nightly_validation:
-        description: Validate without publishing, follow-ups or deployment
-        type: boolean
-        default: false
       release_version:
         description: "Release version with matching docs/releases/VERSION.adoc, for example 0.4.0 or 0.5.0-rc1"
         required: false
@@ -25,8 +21,8 @@ on:
 permissions: {}
 
 concurrency:
-  group: ${{ (github.event_name == 'workflow_dispatch' && !inputs.nightly_validation) && format('release-{0}', github.repository) || format('release-validate-{0}-{1}', github.repository, github.ref) }}
-  cancel-in-progress: ${{ (github.event_name != 'workflow_dispatch' || inputs.nightly_validation) }}
+  group: ${{ github.event_name == 'workflow_dispatch' && format('release-{0}', github.repository) || format('release-validate-{0}-{1}', github.repository, github.ref) }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
   native-sanitizers:
@@ -73,22 +69,12 @@ jobs:
         id: validate
         uses: roc-lang/release-package/actions/validate-release@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
-          release_version: ${{ github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && inputs.release_version || '' }}
-          dry_run: ${{ (github.event_name != 'workflow_dispatch' || inputs.nightly_validation) }}
+          release_version: ${{ github.event_name == 'workflow_dispatch' && inputs.release_version || '' }}
+          dry_run: ${{ github.event_name != 'workflow_dispatch' }}
           github_token: ${{ github.token }}
 
-      - name: Check compiler release policy
-        if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && !inputs.release_candidate
-        uses: lukewilliamboswell/roc-automation/actions/check-release@5af80ef9d9cf93f4000633adf4e33828d0ee88c8 # compiler-manifest
-        with:
-          version: ${{ inputs.release_version }}
-          compiler-manifest: scripts/workspace-deps.json
-          compiler-key: roc_nightly
-          allow-default-branch: 'true'
-          allow-nightly-bootstrap: 'true'
-
       - name: Validate release branch
-        if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && !inputs.release_candidate
+        if: github.event_name == 'workflow_dispatch' && !inputs.release_candidate
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
@@ -98,7 +84,7 @@ jobs:
           fi
 
       - name: Require matching release notes
-        if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation
+        if: github.event_name == 'workflow_dispatch'
         env:
           RELEASE_VERSION: ${{ steps.validate.outputs.release_version }}
         run: |
@@ -109,7 +95,7 @@ jobs:
           fi
 
       - name: Validate explicit release candidate source
-        if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && inputs.release_candidate
+        if: github.event_name == 'workflow_dispatch' && inputs.release_candidate
         env:
           RELEASE_VERSION: ${{ inputs.release_version }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
@@ -213,14 +199,14 @@ jobs:
           path: platform/targets/arm64mac
 
       - name: Bundle platform
-        if: github.event_name != 'workflow_dispatch' || inputs.nightly_validation || inputs.release_candidate
+        if: github.event_name != 'workflow_dispatch' || inputs.release_candidate
         env: &roc-environment
           ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
           ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
         run: scripts/build_bundle.roc -- --output-dir dist
 
       - name: Require released libraries and bundle for publication
-        if: github.event_name == 'workflow_dispatch' && !inputs.nightly_validation && !inputs.release_candidate
+        if: github.event_name == 'workflow_dispatch' && !inputs.release_candidate
         env: *roc-environment
         run: |
           scripts/check_native_libraries.roc
@@ -260,7 +246,7 @@ jobs:
         run: dirname "$ROC_NIGHTLY" >> "$GITHUB_PATH"
 
       - name: Validate API comparison without publishing
-        if: github.event_name != 'workflow_dispatch' || inputs.nightly_validation
+        if: github.event_name != 'workflow_dispatch'
         env:
           PREVIOUS_URL: ${{ steps.previous.outputs.previous_url }}
         run: roc bump --old "$PREVIOUS_URL" platform/main.roc
@@ -269,7 +255,7 @@ jobs:
         uses: roc-lang/release-package/actions/run-bump-check@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
           release_version: ${{ needs.release-info.outputs.release_version }}
-          dry_run: ${{ (github.event_name != 'workflow_dispatch' || inputs.nightly_validation) }}
+          dry_run: ${{ github.event_name != 'workflow_dispatch' }}
           previous_url: ${{ steps.previous.outputs.previous_url }}
           bump_check: require
           bump_entrypoint: platform/main.roc
@@ -481,7 +467,7 @@ jobs:
   attest-release:
     name: Attest tested release bundle
     needs: [release-info, build, test-bundles, generate-sbom]
-    if: (github.event_name == 'workflow_dispatch' && !inputs.nightly_validation)
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -560,7 +546,7 @@ jobs:
   publish-release:
     name: Publish GitHub release
     needs: [release-info, native-sanitizers, build, build-docs, test-bundles, attest-release]
-    if: (github.event_name == 'workflow_dispatch' && !inputs.nightly_validation)
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -650,7 +636,7 @@ jobs:
 
   required:
     name: Release required
-    if: always() && (github.event_name == 'pull_request' || inputs.nightly_validation)
+    if: always() && github.event_name == 'pull_request'
     needs: [release-info, native-sanitizers, native-inputs, build, test-bundles, build-docs, generate-sbom]
     runs-on: ubuntu-24.04
     permissions: {}
