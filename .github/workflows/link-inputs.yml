@@ -125,7 +125,7 @@ jobs:
         run: blueprint run bundle -- --output-dir "$RUNNER_TEMP/bundle"
 
       - name: Hand the candidate inputs to the assemble job
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: built-targets
           path: platform/targets
@@ -133,7 +133,7 @@ jobs:
           retention-days: 7
 
       - name: Hand the bundle to the test jobs
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: candidate-bundle
           path: ${{ runner.temp }}/bundle/*.tar.zst
@@ -215,7 +215,7 @@ jobs:
           --ref "$GITHUB_REF"
           --workflow "$GITHUB_REPOSITORY/.github/workflows/link-inputs.yml"
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: link-input-release
           path: candidate/*
