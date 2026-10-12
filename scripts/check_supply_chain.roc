@@ -12,6 +12,7 @@ import weaver.Cli
 import weaver.Opt
 import src/AutomationIO
 import src/Files
+import src/LinkInputs
 import src/NativeDeps
 import src/Project
 import src/Script
@@ -34,6 +35,7 @@ main! = |raw_args| {
 	}
 	validate_actions!(root)?
 	validate_zig!(root)?
+	validate_recipe_paths!(root)?
 	validate_script_headers!(root)?
 	validate_unpinned_sources!(root)?
 	validate_targets!(root)?
@@ -101,6 +103,19 @@ validate_zig! = |root| {
 	blueprint = Path.read_utf8!(Path.join(root, "Blueprint.roc"))?
 	wanted = "zigpkgs.\\\"${NativeDeps.current.zig_version}\\\""
 	if blueprint.contains(wanted) Ok({}) else Err(BlueprintMustSupplyRecipeZig(NativeDeps.current.zig_version))
+}
+
+## The producer must run whenever the recipe is touched, so its `paths` filter
+## names every recipe path. A path added to the recipe and forgotten there
+## would let a change to it skip the rebuild.
+validate_recipe_paths! = |root| {
+	producer = Path.read_utf8!(Path.join(root, ".github/workflows/link-inputs.yml"))?
+	for path in LinkInputs.recipe_paths {
+		if !producer.contains("\n      - ${path}\n") {
+			return Err(ProducerMustRunWhenRecipeChanges(path))
+		}
+	}
+	Ok({})
 }
 
 ## The platform, its targets and every other Roc file outside scripts/ float

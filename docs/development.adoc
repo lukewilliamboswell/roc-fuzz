@@ -195,11 +195,24 @@ release. The recipe itself lives in scripts, and that is what the recipe
 revision is for: raise `recipe_revision` when a change to the build alters a
 library byte, such as a flag, a target or the list of libraries.
 
-Reproducibility keeps that honest. The `Linker inputs` producer runs on a pull
-request that touches the recipe, rebuilds both targets, and while the lock
-claims to be current requires the result to be byte-identical to the locked
-release. A change that alters a library without raising the revision fails
-there, naming the files. Run the same comparison locally with:
+Reproducibility keeps that honest, and three checks guard it:
+
+* The `Linker-input recipe` job of `ci.yml` is part of `CI required`. It asks
+  whether the pull request touches the recipe, which is the list in
+  `LinkInputs.recipe_paths`: the build script, the target definitions, the
+  recipe file, the macOS sources, and `Blueprint.roc` and `Blueprint.lock`,
+  which supply Zig. A routine pull request stops there. One that touches the
+  recipe rebuilds both targets and, while the lock claims to be current,
+  requires the result to be byte-identical to the locked release. A change that
+  alters a library without raising the revision fails, naming the files, and
+  cannot merge. So does a change that makes the build irreproducible.
+* The `Linker inputs` producer makes the same comparison when it builds a
+  candidate, and runs every case against it on both targets.
+* The supply-chain check fails when a path in `LinkInputs.recipe_paths` is
+  missing from the producer's `paths` filter, so a file added to the recipe
+  cannot be left out of the trigger.
+
+Run the comparison locally with:
 
 [source,sh]
 ----

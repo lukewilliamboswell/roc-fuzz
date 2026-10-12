@@ -50,6 +50,37 @@ LinkInputs := [].{
 		Ok(Integrity.digest_bytes(Json.to_str($entries).to_utf8()))
 	}
 
+	## Every file that takes part in building the libraries. A change to one of
+	## these is not trusted to leave them alone: pull-request CI and the
+	## producer rebuild and compare when any of them is touched, and only then.
+	## The producer's `paths` filter repeats the list, and the supply-chain
+	## check holds the two together.
+	recipe_paths = [
+		"Blueprint.lock",
+		"Blueprint.roc",
+		"scripts/build_platform.roc",
+		"scripts/native-deps.json",
+		"scripts/src/LinkInputs.roc",
+		"scripts/src/NativeDeps.roc",
+		"scripts/src/Project.roc",
+		"src/macos_compat/**",
+		"src/macos_fuzzer_ext_functions.cpp",
+	]
+
+	## Whether anything in the recipe differs between `base` and the checkout.
+	## Anything that prevents a clear "no" is a "yes": an audit that runs
+	## needlessly costs a minute, and one that is skipped wrongly costs trust.
+	recipe_changed! = |root, base| {
+		if !Integrity.is_hex(base, 40) or base == Str.repeat("0", 40) {
+			return Ok(Bool.True)
+		}
+		args = ["diff", "--name-only", "${base}...HEAD", "--"].concat(LinkInputs.recipe_paths.map(|path| Str.replace_each(path, "/**", "")))
+		match AutomationIO.text!("git", args, root) {
+			Ok(changed) => Ok(!AutomationIO.lines(changed).is_empty())
+			Err(_) => Ok(Bool.True)
+		}
+	}
+
 	## After building every target from source: are the libraries the ones the
 	## locked release holds? Meaningful only while the fingerprint says the lock
 	## is current. A difference then means the recipe changed the bytes without
