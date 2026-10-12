@@ -1,0 +1,70 @@
+= roc-fuzz 0.5.0
+
+roc-fuzz 0.5.0 follows the Roc compiler instead of pinning it. The platform, its
+examples and this release were built and tested with the latest Roc nightly, and
+a daily run now checks the latest release against each new nightly. The public
+API is unchanged from 0.4.3.
+
+The native libraries in the bundle are now byte-reproducible and carry no debug
+information, which takes the bundle from about 10 MB to about 2 MB.
+
+== Use this release
+
+roc-fuzz 0.5.0 supports Linux x86-64 with musl and Apple Silicon macOS 11 or
+newer. The compilers it was built and tested with are listed at the end of the
+release page.
+
+Copy this application header into a fuzz target:
+
+[source,roc]
+----
+app [target] { fuzz: platform "{platform-url}" }
+----
+
+The header names no compiler. Use a current Roc nightly.
+
+Read or download the versioned PDF manual at {manual-url}. The online manual at
+https://lukewilliamboswell.github.io/roc-fuzz/ now leads with the latest
+release; the default branch's copy is under `unreleased/`.
+
+== Out of memory is a saved failure
+
+A Roc allocation the host cannot serve now ends the run the way a crash does. The
+runner prints `[roc crashed] out of memory` and saves the input that asked for
+the allocation, so it can be replayed and minimized like any other failure.
+
+== Examples without a compiler pin
+
+The examples archive attached to this release depends on this release's bundle
+and nothing else. Earlier archives pinned every example to the compiler of their
+day. The archive holds the examples a new user reads; the regression targets
+that exercise Roc's builtins stay in the repository under `tests/targets/`.
+
+== Reproducible native libraries
+
+libFuzzer, the Zig runtime libraries and the host are compiled with Zig 0.16.0
+from pinned sources, for both targets, on one Linux builder. The macOS libraries
+are built against the headers Zig bundles, so the build reads no installed Apple
+SDK. Anyone with that Zig release can rebuild the libraries from the recorded
+source revision and compare digests.
+
+The bundle, its SPDX SBOM and its build-provenance attestations are published
+together. Verify a downloaded bundle with:
+
+[source,console]
+----
+gh attestation verify <bundle>.tar.zst --repo lukewilliamboswell/roc-fuzz
+----
+
+== Upgrading from 0.4.3
+
+Replace the platform URL in each target's header and remove the `roc` field if
+the header has one. No other change to a target is needed.
+
+Saved corpus and crash files encode generator input rather than a stable public
+format. Keep the matching executable when exact historical reproduction matters.
+
+For bugs or feedback, please open an issue at
+https://github.com/lukewilliamboswell/roc-fuzz/issues. The full commit history
+since 0.4.3 is available in
+link:++https://github.com/lukewilliamboswell/roc-fuzz/compare/0.4.3...0.5.0++[the comparison with 0.4.3].
