@@ -37,7 +37,7 @@ check_tooling! = |stable| {
 
 check_platform! = |roc| {
 	Script.info!("CHECK", "Formatting and type-checking the platform with the latest nightly")?
-	roc.run!(["fmt", "--check", "platform", "examples"])?
+	roc.run!(["fmt", "--check", "platform", "examples", "tests"])?
 	roc.run!(["check", "platform/main.roc"])
 }
 

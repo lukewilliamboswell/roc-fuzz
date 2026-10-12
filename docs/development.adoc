@@ -303,9 +303,11 @@ Separately, the runner checks after every input that the target freed
 everything it allocated, and fails the input otherwise. Pass
 `--no-detect-leaks` to a run to turn that off.
 
-The former byte-oriented builtin targets live under `examples/builtins/`
-and use `Fuzz.from_bytes`. This keeps their existing properties in the
-regression matrix. Top-level examples are an end-user gallery and should
+The byte-oriented builtin targets live under `tests/targets/builtins/`
+and use `Fuzz.from_bytes`. They are regression tests for the compiler and its
+builtins: `tests/targets.json` lists them beside the examples, pull-request CI
+runs them, and a release's examples archive leaves them out. The applications
+under `examples/` are an end-user gallery and should
 prefer `Fuzz.target`, typed generators, and the `.Fuzz` record builder.
 A multi-file example must live in its own directory with `main.roc` as
 its app root; the test driver enforces this so editor tooling can

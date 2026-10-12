@@ -67,8 +67,8 @@ the platform itself does not pin a compiler.
 
 Examples under [`examples/`](examples/) demonstrate round trips, parser
 robustness, collection invariants, structured inputs, and multi-file targets.
-The focused compiler and builtin regressions remain under
-[`examples/builtins/`](examples/builtins/), and the
+The focused compiler and builtin regression targets are tests, not examples,
+and live under [`tests/targets/`](tests/targets/). The
 [trophy case](trophy-case/README.md) records bugs found through fuzzing.
 
 Content-addressed linker inputs, `libhost.a`, and platform bundles have distinct

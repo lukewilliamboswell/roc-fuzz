@@ -22,8 +22,8 @@ main! = |_args| {
 	Env.with_temp_dir!(
 		|temp| {
 			source = Path.join(temp, "source")
-			AutomationIO.write!(Path.join(source, "examples/nested/main.roc"), "app [target] { pf: platform \"../../platform/main.roc\", model: \"../../tests/set-model/main.roc\" }\nvalue = {roc: \"body\"}\n".to_utf8())?
-			AutomationIO.write!(Path.join(source, "tests/set-model/main.roc"), "package [] {}\n".to_utf8())?
+			AutomationIO.write!(Path.join(source, "examples/nested/main.roc"), "app [target] { pf: platform \"../../platform/main.roc\", model: \"../shared/main.roc\" }\nvalue = {roc: \"body\"}\n".to_utf8())?
+			AutomationIO.write!(Path.join(source, "examples/shared/main.roc"), "package [] {}\n".to_utf8())?
 			AutomationIO.write!(Path.join(source, "examples/nested/Other.roc"), "answer = 42\n".to_utf8())?
 			inventory : ReleaseExamples.Inventory
 			inventory = { schema: 1, cases: [{ name: "nested", path: "examples/nested/main.roc", seed_hex: "00", expected_failure: Bool.False, skip_seed: Bool.False, skip_fuzz: Bool.False }] }
@@ -46,7 +46,7 @@ main! = |_args| {
 			actual = ReleaseExamples.unpack!(first, suite)?
 			Script.require!(actual == manifest, "Manifest must survive packaging")?
 			Script.require!(ReleaseExamples.unpack!(first, suite) |> Try.is_err, "Unpacking must require a fresh destination")?
-			Script.require!(Path.is_file!(Path.join(suite, "tests/set-model/main.roc"))?, "Package must include local model imports")?
+			Script.require!(Path.is_file!(Path.join(suite, "examples/shared/main.roc"))?, "Package must include the helper packages beside the examples")?
 			ReleaseExamples.rewrite!(suite, "roc", "nightly-2026-09-29-7f11a82")?
 			Script.require!(ReleaseExamples.validate_release!(suite) |> Try.is_err, "Reject modified publication compiler")?
 			ReleaseExamples.rewrite!(suite, "roc", manifest.compiler)?

@@ -140,28 +140,21 @@ select_targets = |requested, available| {
 	Ok(available.keep_if(|item| requested.contains(item.name)))
 }
 
+## Copy the suite and point every application in it at one platform bundle.
+## Targets keep their place under the suite root, so their relative imports of
+## sibling modules and helper packages still resolve.
 prepare_platform_tests! = |temporary, selected, url, suite_root| {
-	example_root = Path.join(temporary, "examples")
-	Path.copy_dir!(Path.join(suite_root, "examples"), example_root)?
-	Path.copy_dir!(Path.join(suite_root, "tests"), Path.join(temporary, "tests"))?
-	for path in Files.roc_files!(example_root)? {
-		match RocSource.replace_platform_if_present(Path.read_utf8!(path)?, url)? {
-			Updated(source) => Path.write_utf8!(path, source)?
-			Unchanged => {}
+	for directory in ["examples", "tests"] {
+		copied = Path.join(temporary, directory)
+		Path.copy_dir!(Path.join(suite_root, directory), copied)?
+		for path in Files.roc_files!(copied)? {
+			match RocSource.replace_platform_if_present(Path.read_utf8!(path)?, url)? {
+				Updated(source) => Path.write_utf8!(path, source)?
+				Unchanged => {}
+			}
 		}
 	}
-	selected.map_try(
-		|item| Ok(
-			TestCase.{
-				expected_failure: item.expected_failure,
-				name: item.name,
-				path: Path.join(example_root, examples_relative(item.path)?),
-				seed: item.seed,
-				skip_fuzz: item.skip_fuzz,
-				skip_seed: item.skip_seed,
-			},
-		),
-	)
+	Ok(selected.map(|item| rebase(item, Path.join(temporary, Path.display(item.path)))))
 }
 
 run_operation! = |operation, max_total_time, verbose, roc, selected, work|
@@ -255,15 +248,6 @@ seed_path! = |item, work| {
 	path = Path.join(directory, "seed")
 	Path.write_bytes!(path, item.seed)?
 	Ok(path)
-}
-
-examples_relative = |path| {
-	prefix = "examples/"
-	text = Path.display(path)
-	if !Script.starts_with(text, prefix) {
-		return Err(TestTargetOutsideExamples(text))
-	}
-	Ok(Str.from_utf8_lossy(text.to_utf8().drop_first(prefix.to_utf8().len())))
 }
 
 decode_hex = |encoded| {

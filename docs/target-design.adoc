@@ -141,7 +141,7 @@ when the target produces useful values and passes a short smoke run.
 
 == Arctangent builtin properties
 
-The `examples/builtins/arctangentDec.roc`, `arctangentF32.roc`, and
+The `tests/targets/builtins/arctangentDec.roc`, `arctangentF32.roc`, and
 `arctangentF64.roc` targets check `atan` and `atan2` with composed numeric
 generators. They also assert that the numeric checks allocate no heap memory;
 input generation and diagnostic rendering are outside that measurement.

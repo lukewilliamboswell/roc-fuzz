@@ -27,7 +27,7 @@ ReleaseExamples := [].{
 		}
 		var $names = []
 		for item in inventory.cases {
-			if !Archive.safe_name(item.path) or !Script.starts_with(item.path, "examples/") or !Script.ends_with(item.path, ".roc") or !Archive.safe_name(item.name) or item.name.contains("/") or $names.contains(item.name) {
+			if !Archive.safe_name(item.path) or !(Script.starts_with(item.path, "examples/") or Script.starts_with(item.path, "tests/targets/")) or !Script.ends_with(item.path, ".roc") or !Archive.safe_name(item.name) or item.name.contains("/") or $names.contains(item.name) {
 				return Err(InvalidTargetInventory)
 			}
 			if item.seed_hex.to_utf8().len() % 2 != 0 or !Integrity.is_hex(item.seed_hex, item.seed_hex.to_utf8().len()) {
@@ -70,7 +70,13 @@ ReleaseExamples := [].{
 	package! : Path, Path, Manifest => Try({}, _)
 	package! = |root, output, manifest| {
 		ReleaseExamples.validate_suite!(root)?
-		names = AutomationIO.tracked!(root, ["examples", "tests/set-model", "tests/targets.json"])?
+		# The archive holds the examples and the cases that describe them. The
+		# regression targets under tests/targets stay in the repository.
+		inventory : Inventory
+		inventory = Json.parse(Path.read_utf8!(Path.join(root, "tests/targets.json"))?)?
+		archived : Inventory
+		archived = { schema: inventory.schema, cases: inventory.cases.keep_if(|item| Script.starts_with(item.path, "examples/")) }
+		names = AutomationIO.tracked!(root, ["examples"])?.concat(["tests/targets.json"])
 		Env.with_temp_dir!(
 			|staging| {
 				for name in names {
@@ -80,6 +86,7 @@ ReleaseExamples := [].{
 					}
 					AutomationIO.write!(Path.join(staging, name), Path.read_bytes!(path)?)?
 				}
+				AutomationIO.json!(Path.join(staging, "tests/targets.json"), archived)?
 				ReleaseExamples.rewrite!(staging, "platform", manifest.platform_url)?
 				ReleaseExamples.rewrite!(staging, "roc", manifest.compiler)?
 				AutomationIO.json!(Path.join(staging, "release.json"), manifest)?
