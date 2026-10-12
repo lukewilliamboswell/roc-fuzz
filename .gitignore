@@ -6,6 +6,7 @@
 /failureArtifact
 /.test-cache
 /.docs-out
+/.blueprint/
 *.ll
 *.bc
 *.o
