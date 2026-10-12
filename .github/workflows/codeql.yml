@@ -4,8 +4,7 @@ on:
   push:
     branches: [trunk]
   workflow_dispatch:
-permissions:
-  contents: read
+permissions: {}
 concurrency:
   group: codeql-${{ github.ref }}
   cancel-in-progress: true

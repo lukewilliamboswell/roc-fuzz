@@ -128,7 +128,7 @@ When the linker-input fingerprint changes, use this sequence:
   may fail with `linker-input lock is stale` until the new lock is adopted.
 . To inspect a nonpublishing candidate, dispatch `Linker inputs` on the PR branch
   with `release_candidate=true` and `expected_sha` set to its exact current head.
-  For example, run `gh workflow run native-libraries.yml --ref BRANCH -f release_candidate=true -f expected_sha=SHA`, replacing `BRANCH` and `SHA`.
+  For example, run `gh workflow run link-inputs.yml --ref BRANCH -f release_candidate=true -f expected_sha=SHA`, replacing `BRANCH` and `SHA`.
   Review both target tests, the manifest, archive hashes, and attestations. This
   run does not create a GitHub release or edit the PR.
 . From `trunk`, dispatch `Publish link inputs` with `pull-request` set to that

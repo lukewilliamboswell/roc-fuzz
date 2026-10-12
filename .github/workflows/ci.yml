@@ -6,46 +6,79 @@ on:
     branches: [trunk]
   workflow_dispatch:
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # One run uses one compiler: the tag is resolved here and passed to every job.
+  resolve:
+    name: Resolve the latest Roc nightly
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      nightly-tag: ${{ steps.nightly.outputs.tag }}
+    steps:
+      - id: nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "tag=$(gh api repos/roc-lang/nightlies/releases/latest --jq .tag_name)" >> "$GITHUB_OUTPUT"
+
   native-sanitizers:
     name: Native sanitizers
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
     steps:
       - name: Checkout roc-fuzz
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Install and verify workspace compilers
-        id: roc
-        uses: ./.github/actions/setup-workspace-roc
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.0"
+          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
+          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
+          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
 
       - name: Build and run the pinned libFuzzer with AddressSanitizer
-        env:
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
         run: |
-          roc-stable scripts/test_native_sanitizers.roc
+          blueprint run native-sanitizers
 
   published-release:
     name: Select published compatibility baseline
+    needs: resolve
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - name: Install workspace compilers
-        uses: ./.github/actions/setup-workspace-roc
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.0"
+          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
+          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
+          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
+      - name: Install the Roc nightly this run resolved
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
       - name: Resolve one release and compiler for both hosts
         env:
           GH_TOKEN: ${{ github.token }}
+          NIGHTLY_TAG: ${{ needs.resolve.outputs.nightly-tag }}
         run: |
-          roc-stable scripts/release_examples.roc -- --operation resolve --repository "$GITHUB_REPOSITORY" \
-            --compiler "$(jq -er .roc_nightly scripts/workspace-deps.json)" \
+          blueprint run release-examples -- --operation resolve --repository "$GITHUB_REPOSITORY" \
+            --compiler "$NIGHTLY_TAG" \
             --output .release/published-selection.json
           cat .release/published-selection.json >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -56,19 +89,30 @@ jobs:
 
   published-examples:
     name: Published release compatibility (${{ matrix.os }})
-    needs: published-release
+    needs: [resolve, published-release]
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-22.04, macos-26]
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - name: Install and verify workspace compilers
-        id: roc
-        uses: ./.github/actions/setup-workspace-roc
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.0"
+          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
+          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
+          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
+      - name: Install the Roc nightly this run resolved
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: published-selection
@@ -76,16 +120,15 @@ jobs:
       - name: Fetch the frozen release examples
         env:
           GH_TOKEN: ${{ github.token }}
+          NIGHTLY_TAG: ${{ needs.resolve.outputs.nightly-tag }}
         run: |
-          test "$(jq -er .compiler .release/published-selection.json)" = "$(jq -er .roc_nightly scripts/workspace-deps.json)"
-          roc-stable scripts/release_examples.roc -- --operation fetch --selection .release/published-selection.json --output .release/published-suite
+          test "$(jq -er .compiler .release/published-selection.json)" = "$NIGHTLY_TAG"
+          blueprint run release-examples -- --operation fetch --selection .release/published-selection.json --output .release/published-suite
       - name: Build and exercise published examples on this host
         env:
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
           XDG_CACHE_HOME: ${{ runner.temp }}/roc-published-cache
         run: >-
-          roc-stable scripts/test_targets.roc -- --suite-root .release/published-suite
+          blueprint run test-targets -- --suite-root .release/published-suite
           --operation all --max-total-time 1 --verbose
       - name: Preserve compatibility evidence
         if: always()
@@ -96,6 +139,7 @@ jobs:
           if-no-files-found: error
 
   self-contained-runner:
+    needs: resolve
     strategy:
       fail-fast: false
       matrix:
@@ -105,18 +149,31 @@ jobs:
           - os: macos-26
             platform-target: arm64mac
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout roc-fuzz
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Read workspace dependencies
         id: dependencies
         run: echo "zig-version=$(jq -r .zig_version scripts/native-deps.json)" >> "$GITHUB_OUTPUT"
 
-      - name: Install and verify workspace compilers
-        id: roc
-        uses: ./.github/actions/setup-workspace-roc
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.0"
+          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
+          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
+          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
+      - name: Install the Roc nightly this run resolved
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
 
       - name: Install Zig
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
@@ -125,19 +182,16 @@ jobs:
 
       - name: Show tool versions
         run: |
-          "$ROC_STABLE" version
-          "$ROC_NIGHTLY" version
+          blueprint run stable-version
+          roc version
           zig version
-        env:
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
 
       - name: Resolve the reviewed linker-input identity
         id: linker-inputs
         env:
           TARGET: ${{ matrix.platform-target }}
         run: |
-          identity=$(roc-stable scripts/link_input_artifacts.roc -- --operation cache-identity --target "$TARGET")
+          identity=$(blueprint run link-inputs -- --operation cache-identity --target "$TARGET")
           echo "identity=$identity" >> "$GITHUB_OUTPUT"
 
       - name: Restore the content-addressed linker-input download cache
@@ -148,39 +202,26 @@ jobs:
 
       - name: Prepare host and reviewed linker inputs
         env:
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
           TARGET: ${{ matrix.platform-target }}
-        run: scripts/build_platform.roc -- --target "$TARGET"
+        run: blueprint run build-platform -- --target "$TARGET"
 
       - name: Validate the repository
-        env:
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
-        run: scripts/check_all.roc
+        run: blueprint run check
 
       - name: Exercise local examples against the working-tree platform
-        env:
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
-        run: roc-stable scripts/test_targets.roc -- --operation all --max-total-time 1
+        run: blueprint run test-targets -- --operation all --max-total-time 1
 
       - name: Test examples against the packaged working-tree platform
-        env:
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
         run: |
-          scripts/build_bundle.roc -- --target ${{ matrix.platform-target }} --output-dir .test-cache/ci-bundle
-          scripts/test_bundle.roc -- .test-cache/ci-bundle/*.tar.zst
+          blueprint run bundle -- --target ${{ matrix.platform-target }} --output-dir .test-cache/ci-bundle
+          blueprint run test-bundle -- .test-cache/ci-bundle/*.tar.zst
 
       - name: Generate and validate API documentation
         env:
           ROC_DOCS_URL_ROOT: /roc-fuzz/main
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
         run: |
-          "$ROC_NIGHTLY" docs --output=.test-cache/docs platform/main.roc
-          scripts/check_docs.roc -- .test-cache/docs
+          roc docs --output=.test-cache/docs platform/main.roc
+          blueprint run check-docs -- .test-cache/docs
 
   required:
     name: CI required

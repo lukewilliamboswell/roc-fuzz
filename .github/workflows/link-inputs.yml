@@ -1,6 +1,22 @@
 name: Linker inputs
 
+# The producer for the host's linker inputs. A pull request that touches a
+# producer input builds, tests and uploads a candidate without publishing it.
+# The trusted publisher dispatches this workflow at an exact pull-request head
+# to obtain the attested candidate it releases.
 on:
+  pull_request:
+    # Keep in step with LinkInputs.fingerprint! in scripts/src/LinkInputs.roc.
+    paths:
+      - .github/workflows/link-inputs.yml
+      - Blueprint.lock
+      - LICENSE
+      - THIRD_PARTY_LICENSES.md
+      - scripts/build_platform.roc
+      - scripts/link_input_artifacts.roc
+      - scripts/native-deps.json
+      - scripts/src/**
+      - src/macos_fuzzer_ext_functions.cpp
   workflow_dispatch:
     inputs:
       release_candidate:
@@ -19,6 +35,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # One run uses one compiler: the tag is resolved here and passed to every job.
+  resolve:
+    name: Resolve the latest Roc nightly
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      nightly-tag: ${{ steps.nightly.outputs.tag }}
+    steps:
+      - id: nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "tag=$(gh api repos/roc-lang/nightlies/releases/latest --jq .tag_name)" >> "$GITHUB_OUTPUT"
+
   validate-request:
     runs-on: ubuntu-24.04
     permissions: {}
@@ -36,7 +66,7 @@ jobs:
           fi
 
   build:
-    needs: validate-request
+    needs: [resolve, validate-request]
     permissions:
       contents: read
     strategy:
@@ -59,22 +89,25 @@ jobs:
         with:
           version: ${{ steps.dependencies.outputs.zig-version }}
           use-cache: false
-      - name: Install and verify workspace compilers
-        id: roc
-        uses: ./.github/actions/setup-workspace-roc
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.0"
+          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
+          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
+          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
+      - name: Install the Roc nightly this run resolved
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
       - name: Build linker inputs from source
-        env:
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
-        run: scripts/build_platform.roc -- --target ${{ matrix.target }} --libraries source --libraries-only
+        run: blueprint run build-platform -- --target ${{ matrix.target }} --libraries source --libraries-only
       - name: Validate inputs through a fresh host and final bundle
-        env:
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
         run: |
-          scripts/build_platform.roc -- --target ${{ matrix.target }} --host-only
-          scripts/build_bundle.roc -- --target ${{ matrix.target }} --output-dir "$RUNNER_TEMP/bundle"
-          scripts/test_bundle.roc -- "$RUNNER_TEMP"/bundle/*.tar.zst
+          blueprint run build-platform -- --target ${{ matrix.target }} --host-only
+          blueprint run bundle -- --target ${{ matrix.target }} --output-dir "$RUNNER_TEMP/bundle"
+          blueprint run test-bundle -- "$RUNNER_TEMP"/bundle/*.tar.zst
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: built-${{ matrix.target }}
@@ -99,16 +132,21 @@ jobs:
         run: |
           cp -R built/built-x64musl/. platform/targets/x64musl/
           cp -R built/built-arm64mac/. platform/targets/arm64mac/
-      - name: Install workspace compilers
-        uses: ./.github/actions/setup-workspace-roc
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.0"
+          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
+          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
+          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
       - name: Create deterministic target archives and canonical manifest
         run: >-
-          roc-stable scripts/link_input_artifacts.roc -- --operation package
+          blueprint run link-inputs -- --operation package
           --output candidate
           --repository "$GITHUB_REPOSITORY"
           --sha "$GITHUB_SHA"
           --ref "$GITHUB_REF"
-          --workflow "$GITHUB_REPOSITORY/.github/workflows/native-libraries.yml"
+          --workflow "$GITHUB_REPOSITORY/.github/workflows/link-inputs.yml"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: link-input-release

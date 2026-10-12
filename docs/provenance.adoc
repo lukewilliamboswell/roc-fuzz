@@ -1,7 +1,7 @@
 = Release bundle provenance
 
 roc-fuzz does not store native archives or objects in Git. The independent,
-workflow-dispatch-only `native-libraries.yml` producer builds x64-musl and Apple
+workflow-dispatch-only `link-inputs.yml` producer builds x64-musl and Apple
 Silicon inputs on native GitHub-hosted runners, packages them without
 `libhost.a`, and tests the exact archives with fresh hosts and final bundles. It
 attests a canonical manifest and each archive but cannot publish. The trusted

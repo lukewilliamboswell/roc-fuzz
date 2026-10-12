@@ -93,7 +93,7 @@ native_tests! = |_root, source, temp| {
 	Script.require!(LinkInputs.fingerprint!(source)? == fingerprint, "Restored inputs must restore the fingerprint")?
 	cache = Path.join(temp, "native")
 	producer : LinkInputs.Source
-	producer = { repository: "owner/repo", sha: Str.repeat("b", 40), ref: "refs/heads/test", workflow: "owner/repo/.github/workflows/native-libraries.yml", input_fingerprint: "" }
+	producer = { repository: "owner/repo", sha: Str.repeat("b", 40), ref: "refs/heads/test", workflow: "owner/repo/.github/workflows/link-inputs.yml", input_fingerprint: "" }
 	LinkInputs.package!(source, cache, producer)?
 	manifest_path = Path.join(cache, "build-input-release.json")
 	manifest : LinkInputs.Manifest

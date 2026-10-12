@@ -13,7 +13,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # One run uses one compiler: the tag is resolved here and passed to every job.
+  resolve:
+    name: Resolve the latest Roc nightly
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      nightly-tag: ${{ steps.nightly.outputs.tag }}
+    steps:
+      - id: nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "tag=$(gh api repos/roc-lang/nightlies/releases/latest --jq .tag_name)" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: resolve
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -23,24 +38,30 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install and verify workspace compilers
-        id: roc
-        uses: ./.github/actions/setup-workspace-roc
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.0"
+          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
+          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
+          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
+      - name: Install the Roc nightly this run resolved
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
 
       - id: docs
         name: Build HTML, PDF, and API documentation
-        uses: lukewilliamboswell/roc-automation/actions/build-docs@a2b4d8abc967952b59fc751345efd144cbc0fbfc # a2b4d8a
+        uses: lukewilliamboswell/roc-automation/actions/build-docs@26b692c5ce341efd5633793079d70c9e04559eac # 26b692c
         with:
           pdf-filename: roc-fuzz.pdf
           docs-version: trunk
           api-entrypoint: platform/main.roc
-          roc-command: ${{ steps.roc.outputs.nightly-executable }}
+          roc-command: roc
 
       - name: Audit the generated API reference
-        env:
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
-        run: scripts/check_docs.roc -- "${{ steps.docs.outputs.site-directory }}/api"
+        run: blueprint run check-docs -- "${{ steps.docs.outputs.site-directory }}/api"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5

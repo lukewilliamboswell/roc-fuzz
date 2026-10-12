@@ -25,6 +25,20 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
+  # One run uses one compiler: the tag is resolved here and passed to every job.
+  resolve:
+    name: Resolve the latest Roc nightly
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      nightly-tag: ${{ steps.nightly.outputs.tag }}
+    steps:
+      - id: nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "tag=$(gh api repos/roc-lang/nightlies/releases/latest --jq .tag_name)" >> "$GITHUB_OUTPUT"
+
   native-sanitizers:
     name: Native sanitizers
     needs: release-info
@@ -37,17 +51,20 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install and verify workspace compilers
-        id: roc
-        uses: ./.github/actions/setup-workspace-roc
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.0"
+          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
+          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
+          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
 
       - name: Build and run the pinned libFuzzer with AddressSanitizer
-        env:
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
         run: |
-          roc-stable scripts/test_native_sanitizers.roc
+          blueprint run native-sanitizers
 
   release-info:
+    needs: resolve
     name: Validate release request
     runs-on: ubuntu-24.04
     permissions:
@@ -59,11 +76,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 0
 
-      - name: Install and verify workspace compilers
-        id: roc
-        uses: ./.github/actions/setup-workspace-roc
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.0"
+          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
+          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
+          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
+      - name: Install the Roc nightly this run resolved
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
 
       - name: Validate release request
         id: validate
@@ -99,15 +126,13 @@ jobs:
         env:
           RELEASE_VERSION: ${{ inputs.release_version }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
         run: |
           scripts/validate_release_candidate.roc
-          scripts/check_supply_chain.roc
+          blueprint run check-supply-chain
 
   native-inputs:
     name: Prepare locked native inputs (${{ matrix.platform_target }})
-    needs: release-info
+    needs: [resolve, release-info]
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -129,9 +154,18 @@ jobs:
         id: dependencies
         run: echo "zig-version=$(jq -r .zig_version scripts/native-deps.json)" >> "$GITHUB_OUTPUT"
 
-      - name: Install and verify workspace compilers
-        id: roc
-        uses: ./.github/actions/setup-workspace-roc
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.0"
+          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
+          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
+          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
+      - name: Install the Roc nightly this run resolved
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
 
       - name: Install Zig
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
@@ -143,7 +177,7 @@ jobs:
         env:
           TARGET: ${{ matrix.platform_target }}
         run: |
-          identity=$(roc-stable scripts/link_input_artifacts.roc -- --operation cache-identity --target "$TARGET")
+          identity=$(blueprint run link-inputs -- --operation cache-identity --target "$TARGET")
           echo "identity=$identity" >> "$GITHUB_OUTPUT"
 
       - name: Restore the content-addressed linker-input download cache
@@ -154,10 +188,8 @@ jobs:
 
       - name: Prepare host and reviewed linker inputs
         env:
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
           TARGET: ${{ matrix.platform_target }}
-        run: scripts/build_platform.roc -- --target "$TARGET"
+        run: blueprint run build-platform -- --target "$TARGET"
 
       - name: Upload native inputs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -169,7 +201,7 @@ jobs:
 
   build:
     name: Build and validate release bundle
-    needs: [release-info, native-inputs]
+    needs: [resolve, release-info, native-inputs]
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -180,11 +212,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 0
 
-      - name: Install and verify workspace compilers
-        id: roc
-        uses: ./.github/actions/setup-workspace-roc
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.0"
+          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
+          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
+          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
+      - name: Install the Roc nightly this run resolved
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
 
       - name: Download x64-musl inputs
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -200,21 +242,16 @@ jobs:
 
       - name: Bundle platform
         if: github.event_name != 'workflow_dispatch' || inputs.release_candidate
-        env: &roc-environment
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
-        run: scripts/build_bundle.roc -- --output-dir dist
+        run: blueprint run bundle -- --output-dir dist
 
       - name: Require released libraries and bundle for publication
         if: github.event_name == 'workflow_dispatch' && !inputs.release_candidate
-        env: *roc-environment
         run: |
-          scripts/check_native_libraries.roc
-          scripts/build_bundle.roc -- --output-dir dist
+          blueprint run check-link-inputs
+          blueprint run bundle -- --output-dir dist
 
       - name: Validate candidate release bundle
-        env: *roc-environment
-        run: scripts/test_bundle.roc -- dist/*.tar.zst
+        run: blueprint run test-bundle -- dist/*.tar.zst
 
       # Linker-input releases share this repository but are not platform API
       # baselines. Select a stable semantic-version release with a Roc bundle.
@@ -239,11 +276,6 @@ jobs:
         with:
           previous_release_url: ${{ steps.previous-platform.outputs.previous_url }}
           github_token: ${{ github.token }}
-
-      # The release action invokes `roc`; setup exposes two named compilers.
-      - name: Select project compiler for release actions
-        env: *roc-environment
-        run: dirname "$ROC_NIGHTLY" >> "$GITHUB_PATH"
 
       - name: Validate API comparison without publishing
         if: github.event_name != 'workflow_dispatch'
@@ -270,11 +302,11 @@ jobs:
       - name: Package frozen release examples
         env:
           EXAMPLE_VERSION: ${{ needs.release-info.outputs.release_version || '0.0.0-rc0' }}
-          COMPILER: ${{ steps.roc.outputs.nightly-tag }}
+          COMPILER: ${{ needs.resolve.outputs.nightly-tag }}
         run: |
           bundles=(.release/bundles/*.tar.zst)
           test "${#bundles[@]}" -eq 1
-          roc-stable scripts/release_examples.roc -- --operation package \
+          blueprint run release-examples -- --operation package \
             --release-version "$EXAMPLE_VERSION" --source-sha "$GITHUB_SHA" --compiler "$COMPILER" \
             --platform-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$EXAMPLE_VERSION/$(basename "${bundles[0]}")" \
             --output ".release/examples/roc-fuzz-examples-$EXAMPLE_VERSION.zip"
@@ -320,7 +352,7 @@ jobs:
 
   test-bundles:
     name: Test packaged platform (${{ matrix.os }})
-    needs: [release-info, build]
+    needs: [resolve, release-info, build]
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -331,10 +363,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      - name: Install and verify workspace compilers
-        id: roc
-        uses: ./.github/actions/setup-workspace-roc
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.0"
+          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
+          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
+          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
+      - name: Install the Roc nightly this run resolved
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
 
       - name: Download release bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -348,16 +391,14 @@ jobs:
           name: release-examples
           path: .release/examples
       - name: Extract frozen release suite
-        run: roc-stable scripts/release_examples.roc -- --operation unpack --archive .release/examples/*.zip --output .release/example-suite
+        run: blueprint run release-examples -- --operation unpack --archive .release/examples/*.zip --output .release/example-suite
 
       - name: Test release bundle
         env:
           ROC_FUZZ_SUITE_ROOT: .release/example-suite
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
         uses: roc-lang/release-package/actions/test-bundle@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
-          test_bundle_command: scripts/test_bundle.roc --
+          test_bundle_command: blueprint run test-bundle --
           bundle_path: .release/test-bundles/${{ matrix.artifact_file }}
           bundle_name: ${{ matrix.bundle_name }}
           release_version: ${{ needs.release-info.outputs.release_version }}
@@ -374,9 +415,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install and verify workspace compilers
-        id: roc
-        uses: ./.github/actions/setup-workspace-roc
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.0"
+          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
+          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
+          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
 
       - name: Download release bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -393,8 +438,6 @@ jobs:
       - name: Generate and validate SPDX 2.3 metadata
         env:
           RELEASE_VERSION: ${{ needs.release-info.outputs.release_version }}
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
         run: |
           mkdir -p .release/sbom
           library_args=()
@@ -402,7 +445,7 @@ jobs:
             if test -f "$manifest"; then library_args+=(--library-manifest "$manifest"); fi
           done
           for bundle in .release/bundles/*.tar.zst; do
-            scripts/build_release_sbom.roc -- \
+            blueprint run sbom -- \
               --bundle "$bundle" \
               --release-version "$RELEASE_VERSION" \
               "${library_args[@]}" \
@@ -421,7 +464,7 @@ jobs:
 
   build-docs:
     name: Build release manual and API docs
-    needs: release-info
+    needs: [resolve, release-info]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -429,29 +472,38 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      - name: Install and verify workspace compilers
-        id: roc
-        uses: ./.github/actions/setup-workspace-roc
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.0"
+          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
+          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
+          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
+      - name: Install the Roc nightly this run resolved
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
 
       - id: docs
         name: Build versioned HTML, PDF, and API documentation
-        uses: lukewilliamboswell/roc-automation/actions/build-docs@a2b4d8abc967952b59fc751345efd144cbc0fbfc # a2b4d8a
+        uses: lukewilliamboswell/roc-automation/actions/build-docs@26b692c5ce341efd5633793079d70c9e04559eac # 26b692c
         with:
           pdf-filename: roc-fuzz.pdf
           docs-version: ${{ needs.release-info.outputs.release_version || 'unreleased' }}
           api-entrypoint: platform/main.roc
-          roc-command: ${{ steps.roc.outputs.nightly-executable }}
+          roc-command: roc
 
       - name: Audit and archive release documentation
         env:
           DOCS_VERSION: ${{ needs.release-info.outputs.release_version || 'unreleased' }}
           SITE: ${{ steps.docs.outputs.site-directory }}
           PDF: ${{ steps.docs.outputs.pdf-path }}
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
         run: |
-          scripts/check_docs.roc -- "$SITE/api"
+          blueprint run check-docs -- "$SITE/api"
           mkdir -p release-docs
           cp "$PDF" "release-docs/roc-fuzz-$DOCS_VERSION.pdf"
           (cd "$SITE" && zip -qr "$GITHUB_WORKSPACE/release-docs/roc-fuzz-docs-$DOCS_VERSION.zip" .)
@@ -545,7 +597,7 @@ jobs:
 
   publish-release:
     name: Publish GitHub release
-    needs: [release-info, native-sanitizers, build, build-docs, test-bundles, attest-release]
+    needs: [resolve, release-info, native-sanitizers, build, build-docs, test-bundles, attest-release]
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     permissions:
@@ -555,11 +607,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 0
 
-      - name: Install and verify workspace compilers
-        id: roc
-        uses: ./.github/actions/setup-workspace-roc
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.0"
+          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
+          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
+          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
+      - name: Install the Roc nightly this run resolved
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
 
       - name: Download release bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -606,7 +668,7 @@ jobs:
         uses: roc-lang/release-package/actions/make-release-notes@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
           release_version: ${{ needs.release-info.outputs.release_version }}
-          release_notes_command: scripts/render_release_notes.roc
+          release_notes_command: blueprint run release-notes
           docs_url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
           github_token: ${{ github.token }}
 
@@ -624,8 +686,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ inputs.release_version }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
-          ROC_STABLE: ${{ steps.roc.outputs.stable-executable }}
-          ROC_NIGHTLY: ${{ steps.roc.outputs.nightly-executable }}
         run: |
           set -euo pipefail
           scripts/validate_release_candidate.roc

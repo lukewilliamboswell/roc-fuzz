@@ -22,7 +22,7 @@ LinkInputs := [].{
 	asset : Targets, Project.Target -> Asset
 	asset = |artifacts, target| if target.name() == "x64musl" artifacts.x64musl else artifacts.arm64mac
 	fingerprint! = |root| {
-		names = AutomationIO.tracked!(root, [".github/workflows/native-libraries.yml", "Blueprint.lock", "scripts/build_platform.roc", "scripts/link_input_artifacts.roc", "scripts/native-deps.json", "scripts/src", "src/macos_fuzzer_ext_functions.cpp", "LICENSE", "THIRD_PARTY_LICENSES.md"])?
+		names = AutomationIO.tracked!(root, [".github/workflows/link-inputs.yml", "Blueprint.lock", "scripts/build_platform.roc", "scripts/link_input_artifacts.roc", "scripts/native-deps.json", "scripts/src", "src/macos_fuzzer_ext_functions.cpp", "LICENSE", "THIRD_PARTY_LICENSES.md"])?
 		var $entries = []
 		for name in names {
 			$entries = $entries.append({ path: name, sha256: Integrity.digest_bytes(Path.read_bytes!(Path.join(root, name))?) })
@@ -52,7 +52,7 @@ LinkInputs := [].{
 			return Err(ReleaseMustIdentifyManifest)
 		}
 		source = lock.source
-		if source.repository != lock.repository or !Integrity.is_hex(source.sha, 40) or !Script.starts_with(source.ref, "refs/heads/") or !Archive.safe_name(source.ref) or source.workflow != "${lock.repository}/.github/workflows/native-libraries.yml" or !Integrity.is_hex(source.input_fingerprint, 64) {
+		if source.repository != lock.repository or !Integrity.is_hex(source.sha, 40) or !Script.starts_with(source.ref, "refs/heads/") or !Archive.safe_name(source.ref) or source.workflow != "${lock.repository}/.github/workflows/link-inputs.yml" or !Integrity.is_hex(source.input_fingerprint, 64) {
 			return Err(InvalidLinkInputSource)
 		}
 		for target in Project.all_targets {
