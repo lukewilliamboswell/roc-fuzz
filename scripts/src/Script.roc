@@ -27,6 +27,23 @@ Script := [].{
 
 	command = |program| Command.{ base: Cmd.new(program), program }
 
+	## A command that sees only the named environment variables, each with the
+	## value this process has. A compiler run this way cannot pick anything up
+	## from the surroundings it happens to be started in.
+	sealed_command! = |program, names| {
+		var $kept = []
+		for name in names {
+			match Env.var!(name) {
+				Ok(value) => {
+					$kept = $kept.append((name, value))
+				}
+				Err(VarNotFound(_)) => {}
+				Err(err) => return Err(EnvironmentInputError(OsStr.display(name), err))
+			}
+		}
+		Ok(Command.{ base: Cmd.new(program).clear_envs().envs($kept), program })
+	}
+
 	## The tooling compiler that Blueprint.roc names. It runs the scripts and
 	## nothing else.
 	roc_stable! = || Ok(command("roc-stable"))

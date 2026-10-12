@@ -37,7 +37,10 @@ main! = |raw_args| {
 	library_source = options.libraries
 	mode = build_mode!(options.host_only, options.libraries_only, library_source)?
 	specs = if options.target_specs.is_empty() [Project.host_target!()?.spec()] else options.target_specs
-	zig = Script.command(Path.to_os_str(options.zig))
+	# Zig sees its search path and a home for its cache, and nothing else. On
+	# macOS a development shell sets SDKROOT, and the compiler would record that
+	# SDK's version in every object it writes.
+	zig = Script.sealed_command!(Path.to_os_str(options.zig), ["PATH", "HOME"])?
 	ar = match options.ar {
 		CustomAr(program) => Cmd.new(Path.to_os_str(program))
 		DefaultAr => zig.cmd(["ar"])
@@ -271,6 +274,8 @@ build_libfuzzer! = |root, zig, ar, source, output, work, spec| {
 ##   those same directories and, for the host, a random one. `flatten_archive!`
 ##   renames members to their file names.
 ## * An archiver may record times and owners. `D` writes zeros.
+##
+## Zig also runs with a sealed environment; see `main!`.
 archive_flags = "rcsD"
 
 ## The macOS target is compiled against the headers Zig bundles, on any host.
