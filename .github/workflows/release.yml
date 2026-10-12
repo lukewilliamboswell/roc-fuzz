@@ -273,7 +273,7 @@ jobs:
           cat .release/notes/release-notes.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the bundle
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-bundles
           path: .release/bundles/*.tar.zst
@@ -281,7 +281,7 @@ jobs:
           retention-days: 7
 
       - name: Upload the examples archive and the SBOM
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-assets
           path: .release/assets/*
@@ -289,7 +289,7 @@ jobs:
           retention-days: 7
 
       - name: Upload the rendered release notes
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-notes
           path: .release/notes/release-notes.md
@@ -343,7 +343,7 @@ jobs:
           (cd "$SITE" && zip -qr "$GITHUB_WORKSPACE/release-docs/roc-fuzz-docs-$RELEASE_VERSION.zip" .)
 
       - name: Upload the documentation archive and the manual
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-docs
           path: release-docs/*
@@ -476,7 +476,7 @@ jobs:
           done
 
       - name: Upload the exported attestations
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-supply-chain
           path: .release/supply-chain/*
