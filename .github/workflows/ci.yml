@@ -160,7 +160,8 @@ jobs:
       # Zig keys its cache by the content of every input, so a restored cache
       # can only supply what this build would have produced anyway.
       - name: Restore Zig's compilation cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: zig-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/zig
           key: zig-${{ runner.os }}-${{ hashFiles('Blueprint.lock', 'scripts/native-deps.json', 'scripts/build_platform.roc', 'src/**') }}
@@ -168,6 +169,15 @@ jobs:
 
       - name: Build every target's linker inputs from source
         run: blueprint run build-platform -- --target x64musl --target arm64mac --libraries source --libraries-only
+
+      # Saved here, before the comparison, so that a pull request whose
+      # libraries differ from the lock does not also rebuild them every time.
+      - name: Save Zig's compilation cache
+        if: steps.zig-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/zig
+          key: ${{ steps.zig-cache.outputs.cache-primary-key }}
 
       - name: Compare them with the locked release
         run: blueprint run link-inputs -- --operation check-source
