@@ -225,7 +225,7 @@ build_libraries! = |root, zig, ar, source, work, spec| {
 		Path.delete!(identity)?
 	}
 	build_libfuzzer!(root, zig, ar, source, Path.join(directory, "libfuzzer.a"), work, spec)?
-	copy_zig_runtime!(zig, directory, work, spec)
+	copy_zig_runtime!(root, zig, ar, directory, work, spec)
 }
 
 build_libfuzzer! = |root, zig, ar, source, output, work, spec| {
@@ -241,14 +241,14 @@ build_libfuzzer! = |root, zig, ar, source, output, work, spec| {
 	var $index = 0
 	for cpp in cpps {
 		object = Path.join(object_dir, "fuzzer-${$index.to_str()}.o")
-		zig.run!(["c++", "-target", OsStr.from_str(spec.zig_target)].concat(cxx_target_args!(spec)?).concat(["-std=c++17", "-O2", "-fno-omit-frame-pointer", "-fPIC", "-w", "-c", Path.to_os_str(cpp), "-o", Path.to_os_str(object)]))?
+		zig.run!(["c++", "-target", OsStr.from_str(spec.zig_target)].concat(cxx_target_args(root, spec)).concat(["-std=c++17", "-O2", "-g0", "-fno-omit-frame-pointer", "-fPIC", "-w", "-c", Path.to_os_str(cpp), "-o", Path.to_os_str(object)]))?
 		$objects = $objects.append(object)
 		$index = $index + 1
 	}
 	all_objects = if spec.target == Arm64Mac {
 		adapter = Path.join(Path.join(root, "src"), "macos_fuzzer_ext_functions.cpp")
 		object = Path.join(object_dir, "macos_fuzzer_ext_functions.o")
-		zig.run!(["c++", "-target", OsStr.from_str(spec.zig_target)].concat(cxx_target_args!(spec)?).concat(["-I", Path.to_os_str(source), "-std=c++17", "-O2", "-fno-omit-frame-pointer", "-fPIC", "-w", "-c", Path.to_os_str(adapter), "-o", Path.to_os_str(object)]))?
+		zig.run!(["c++", "-target", OsStr.from_str(spec.zig_target)].concat(cxx_target_args(root, spec)).concat(["-I", Path.to_os_str(source), "-std=c++17", "-O2", "-g0", "-fno-omit-frame-pointer", "-fPIC", "-w", "-c", Path.to_os_str(adapter), "-o", Path.to_os_str(object)]))?
 		$objects.append(object)
 	} else {
 		$objects
@@ -256,26 +256,66 @@ build_libfuzzer! = |root, zig, ar, source, output, work, spec| {
 	if Path.exists!(output)? {
 		Path.delete!(output)?
 	}
-	ar.args(["rcs", Path.to_os_str(output)].concat(all_objects.map(Path.to_os_str))).exec_cmd!()
+	ar.args([archive_flags, Path.to_os_str(output)].concat(all_objects.map(Path.to_os_str))).exec_cmd!()
 }
 
-cxx_target_args! = |spec|
+## Every library is byte-reproducible: the same sources, Zig release and flags
+## give the same bytes on any machine, in any directory, at any time. Three
+## things would otherwise leak the build's surroundings into the output.
+##
+## * Debug information records the absolute paths of Zig's installation, its
+##   cache and the working directory, so nothing is compiled with it: `-g0` for
+##   C and C++, `-s` for the link that makes Zig build its runtimes, and
+##   `-fstrip` for the host.
+## * Zig names an archive member after its cache path, which holds a hash of
+##   those same directories and, for the host, a random one. `flatten_archive!`
+##   renames members to their file names.
+## * An archiver may record times and owners. `D` writes zeros.
+archive_flags = "rcsD"
+
+## The macOS target is compiled against the headers Zig bundles, on any host.
+## The build reads no installed Apple SDK. `src/macos_compat` supplies the one
+## header libFuzzer includes that Zig does not carry.
+cxx_target_args = |root, spec|
 	if spec.target == Arm64Mac {
-		sdk = Script.trim(Str.from_utf8_lossy(Script.command("xcrun").capture!(["--show-sdk-path"], ".", [])?))
-		if sdk.is_empty() {
-			Err(MissingMacosSdk)
-		} else {
-			Ok(["-isysroot", OsStr.from_str(sdk), "-isystem", OsStr.from_str("${sdk}/usr/include")])
-		}
+		["-isystem", Path.to_os_str(Path.join(root, "src/macos_compat"))]
 	} else {
-		Ok([])
+		[]
 	}
 
-copy_zig_runtime! = |zig, directory, work, spec| {
+## Rewrite an archive so that each member is named by its file name alone, in
+## the original order. Members that share a file name keep it with a counter,
+## as `clone.2.o`; musl's `libc.a` has two `clone.o`.
+flatten_archive! = |ar, archive, work, label| {
+	listed = Str.from_utf8_lossy(Script.run_capture!(ar, ["t", Path.to_os_str(archive)], work, [])?)
+	members = Str.split_on(listed, "\n").keep_if(|member| !member.is_empty())
+	if !members.any(|member| member.contains("/")) {
+		return Ok({})
+	}
+	extracted = Path.join(work, "${label}-members")
+	renamed = Path.join(extracted, "flat")
+	Path.create_all!(renamed)?
+	var $seen = []
+	var $flat = []
+	for member in members {
+		base = Str.split_on(member, "/").last().map_err(|_| EmptyArchiveMember(Path.display(archive)))?
+		# `P` matches the full member name, which is what tells duplicates apart.
+		_ = Script.run_capture!(ar, ["xP", Path.to_os_str(archive), OsStr.from_str(member)], extracted, [])?
+		earlier = $seen.keep_if(|name| name == base).len()
+		name = if earlier == 0 base else Str.replace_each(base, ".o", ".${(earlier + 1).to_str()}.o")
+		$seen = $seen.append(base)
+		Path.rename!(Path.join(extracted, base), Path.join(renamed, name))?
+		$flat = $flat.append(Path.join(renamed, name))
+	}
+	Path.delete!(archive)?
+	ar.args([archive_flags, Path.to_os_str(archive)].concat($flat.map(Path.to_os_str))).exec_cmd!()
+}
+
+copy_zig_runtime! = |root, zig, ar, directory, work, spec| {
 	probe = Path.join(work, "${Project.Target.name(spec.target)}-runtime_probe.cpp")
 	Path.write_utf8!(probe, "int main() { return 0; }\n")?
 	executable = Path.join(work, "${Project.Target.name(spec.target)}-runtime_probe")
-	args = ["c++", "-target", OsStr.from_str(spec.zig_target)].concat(cxx_target_args!(spec)?).concat(["-O2", "-v", Path.to_os_str(probe)])
+	args = ["c++", "-target", OsStr.from_str(spec.zig_target)].concat(cxx_target_args(root, spec)).concat(["-O2", "-s", "-v", Path.to_os_str(probe)])
 	final_args = if spec.target == X64Musl args.append("-static") else args
 	output = capture_combined!(zig.cmd(final_args.concat(["-o", Path.to_os_str(executable)])))?
 	wanted = spec.input_names.keep_if(|name| name != "libhost.a" and name != "libfuzzer.a")
@@ -286,7 +326,11 @@ copy_zig_runtime! = |zig, directory, work, spec| {
 			Ok(name) if !$found.contains(name) => {
 				path = Path.utf8(clean)
 				if Path.is_file!(path)? {
-					Path.copy!(path, Path.join(directory, name))?
+					copied = Path.join(directory, name)
+					Path.copy!(path, copied)?
+					if Script.ends_with(name, ".a") {
+						flatten_archive!(ar, copied, work, "${Project.Target.name(spec.target)}-${name}")?
+					}
 					$found = $found.append(name)
 				}
 			}
@@ -310,18 +354,12 @@ capture_combined! = |command| {
 build_host! = |root, zig, ar, work, spec| {
 	directory = Project.Target.dir(spec.target, root)
 	Path.create_all!(directory)?
-	sdk_args = if spec.target == Arm64Mac {
-		sdk = Script.trim(Str.from_utf8_lossy(Script.command("xcrun").capture!(["--show-sdk-path"], ".", [])?))
-		["--sysroot", OsStr.from_str(sdk)]
-	} else {
-		[]
-	}
 	host = Path.join(directory, "libhost.a")
-	zig.run!(["build-lib", Path.to_os_str(Path.join(Path.join(root, "src"), "main.zig")), "-target", OsStr.from_str(spec.zig_target)].concat(sdk_args).concat(["-O", "ReleaseFast", OsStr.from_str("-femit-bin=${Path.display(host)}"), "-fcompiler-rt", "-lc"]))?
+	zig.run!(["build-lib", Path.to_os_str(Path.join(Path.join(root, "src"), "main.zig")), "-target", OsStr.from_str(spec.zig_target)].concat(["-O", "ReleaseFast", "-fstrip", OsStr.from_str("-femit-bin=${Path.display(host)}"), "-fcompiler-rt", "-lc"]))?
 	if spec.target == Arm64Mac {
 		stack = Path.join(work, "macos_sancov.o")
-		zig.run!(["cc", "-target", OsStr.from_str(spec.zig_target)].concat(cxx_target_args!(spec)?).concat(["-O2", "-fPIC", "-c", Path.to_os_str(Path.join(Path.join(root, "src"), "macos_sancov.c")), "-o", Path.to_os_str(stack)]))?
-		ar.args(["rcs", Path.to_os_str(host), Path.to_os_str(stack)]).exec_cmd!()?
+		zig.run!(["cc", "-target", OsStr.from_str(spec.zig_target)].concat(cxx_target_args(root, spec)).concat(["-O2", "-g0", "-fPIC", "-c", Path.to_os_str(Path.join(Path.join(root, "src"), "macos_sancov.c")), "-o", Path.to_os_str(stack)]))?
+		ar.args([archive_flags, Path.to_os_str(host), Path.to_os_str(stack)]).exec_cmd!()?
 	}
-	Ok({})
+	flatten_archive!(ar, host, work, "${Project.Target.name(spec.target)}-libhost.a")
 }

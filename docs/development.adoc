@@ -169,16 +169,24 @@ producer SHA and signed lock commit remain reachable. Ordinary pull requests
 then know only the reviewed lock, cache, verifier, and target files; they
 never dispatch or reproduce linker inputs.
 
+The libraries are byte-reproducible: the same sources, Zig release and flags
+give the same bytes on any machine, in any directory, at any time. Nothing is
+compiled with debug information, which would record the absolute paths of the
+Zig installation, its cache and the working directory, and archive members are
+named by file name alone where Zig names them by cache path. The macOS target
+is compiled against the headers Zig bundles, so it builds on Linux as well as on
+macOS and reads no installed Apple SDK. Keep it that way: a change that makes
+two builds of the same commit differ is a defect in the recipe.
+
 The fingerprint that decides whether the lock is current covers only what can
 change the bytes of an archive: `scripts/native-deps.json` (the Zig release and
 the libFuzzer source), the recipe in `scripts/build_platform.roc`, the targets
 in `scripts/src/Project.roc`, the packing code in `scripts/src/LinkInputs.roc`
 and `scripts/src/Archive.roc`, the macOS libFuzzer adapter, and the licence
 files packed beside the libraries. `LinkInputs.fingerprint_inputs` is the list.
-Neither Roc compiler, the workflows nor the rest of the scripts are in it. Two
-things outside it can still change an archive and are a reviewer's
-responsibility: the runner images named in `link-inputs.yml`, which supply the
-Apple SDK, and `Blueprint.lock` once the Zig toolchain comes from Blueprint.
+Neither Roc compiler, the workflows nor the rest of the scripts are in it. One
+thing outside it can still change an archive and is a reviewer's
+responsibility: `Blueprint.lock`, once the Zig toolchain comes from Blueprint.
 
 When the linker-input fingerprint changes, use this sequence:
 

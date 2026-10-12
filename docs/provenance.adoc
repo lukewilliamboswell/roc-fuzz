@@ -35,8 +35,10 @@ clear these records to avoid claiming provenance from previously
 restored archives.
 
 The build pins Zig 0.16.0 and the SHA-256 of the `libfuzzer-sys` 0.4.5
-source archive. The macOS build necessarily uses the SDK supplied by the
-selected GitHub-hosted macOS runner. Native-library archives and the
+source archive. Both targets are compiled against the headers Zig bundles; the
+build reads no installed Apple SDK. The libraries are byte-reproducible, so
+anyone with that Zig release can rebuild them from the recorded source revision
+and compare digests. Native-library archives and the
 final platform bundle are separate published and attested subjects, with
 independent versions.
 
