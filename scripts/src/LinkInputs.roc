@@ -5,7 +5,6 @@ import AutomationIO
 import Integrity
 import Project
 import Script
-import WorkspaceDeps
 
 ## Immutable native-input packaging, lock validation and installation.
 LinkInputs := [].{
@@ -23,12 +22,10 @@ LinkInputs := [].{
 	asset : Targets, Project.Target -> Asset
 	asset = |artifacts, target| if target.name() == "x64musl" artifacts.x64musl else artifacts.arm64mac
 	fingerprint! = |root| {
-		names = AutomationIO.tracked!(root, [".github/workflows/native-libraries.yml", ".github/actions/setup-workspace-roc", "scripts/build_platform.roc", "scripts/link_input_artifacts.roc", "scripts/src", "scripts/workspace-deps.json", "src/macos_fuzzer_ext_functions.cpp", "LICENSE", "THIRD_PARTY_LICENSES.md"])?
+		names = AutomationIO.tracked!(root, [".github/workflows/native-libraries.yml", "Blueprint.lock", "scripts/build_platform.roc", "scripts/link_input_artifacts.roc", "scripts/native-deps.json", "scripts/src", "src/macos_fuzzer_ext_functions.cpp", "LICENSE", "THIRD_PARTY_LICENSES.md"])?
 		var $entries = []
 		for name in names {
-			path = Path.join(root, name)
-			bytes = if name == "scripts/workspace-deps.json" WorkspaceDeps.fingerprint_source(Path.read_utf8!(path)?)?.to_utf8() else Path.read_bytes!(path)?
-			$entries = $entries.append({ path: name, sha256: Integrity.digest_bytes(bytes) })
+			$entries = $entries.append({ path: name, sha256: Integrity.digest_bytes(Path.read_bytes!(Path.join(root, name))?) })
 		}
 		Ok(Integrity.digest_bytes(Json.to_str($entries).to_utf8()))
 	}

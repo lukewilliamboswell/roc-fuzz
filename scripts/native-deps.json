@@ -1,0 +1,10 @@
+{
+  "schema": 2,
+  "repository": "lukewilliamboswell/roc-fuzz",
+  "zig_version": "0.16.0",
+  "libfuzzer": {
+    "version": "0.4.5",
+    "sha256": "c8fff891139ee62800da71b7fd5b508d570b9ad95e614a53c6f453ca08366038",
+    "url": "https://crates.io/api/v1/crates/libfuzzer-sys/0.4.5/download"
+  }
+}

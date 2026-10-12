@@ -28,7 +28,9 @@ main! = |_args| {
 			inventory : ReleaseExamples.Inventory
 			inventory = { schema: 1, cases: [{ name: "nested", path: "examples/nested/main.roc", seed_hex: "00", expected_failure: Bool.False, skip_seed: Bool.False, skip_fuzz: Bool.False }] }
 			AutomationIO.json!(Path.join(source, "tests/targets.json"), inventory)?
-			AutomationIO.write!(Path.join(source, "scripts/workspace-deps.json"), Path.read_bytes!(Path.join(root, "scripts/workspace-deps.json"))?)?
+			AutomationIO.write!(Path.join(source, "scripts/native-deps.json"), Path.read_bytes!(Path.join(root, "scripts/native-deps.json"))?)?
+			AutomationIO.write!(Path.join(source, "Blueprint.lock"), "locked tools\n".to_utf8())?
+			AutomationIO.write!(Path.join(source, "README.md"), "unrelated\n".to_utf8())?
 			AutomationIO.run!("git", ["init", "-q"], source)?
 			AutomationIO.run!("git", ["add", "."], source)?
 			manifest : ReleaseExamples.Manifest
@@ -79,14 +81,16 @@ native_tests! = |_root, source, temp| {
 		AutomationIO.write!(Path.join(source, name), name.to_utf8())?
 	}
 	AutomationIO.run!("git", ["add", "."], source)?
-	metadata = Path.join(source, "scripts/workspace-deps.json")
-	original = Path.read_utf8!(metadata)?
 	fingerprint = LinkInputs.fingerprint!(source)?
-	Path.write_utf8!(metadata, Str.replace_each(original, "nightly-2026-09-26-d6267b4", "nightly-2026-09-29-7f11a82"))?
-	Script.require!(LinkInputs.fingerprint!(source)? == fingerprint, "Project nightly must not invalidate native inputs")?
-	Path.write_utf8!(metadata, Str.replace_each(original, "nightly-2026-09-29-7f11a82", "nightly-2026-09-18-1d982dc"))?
-	Script.require!(LinkInputs.fingerprint!(source)? != fingerprint, "Tooling compiler must invalidate native inputs")?
-	Path.write_utf8!(metadata, original)?
+	AutomationIO.write!(Path.join(source, "README.md"), "edited\n".to_utf8())?
+	Script.require!(LinkInputs.fingerprint!(source)? == fingerprint, "An unrelated file must not invalidate native inputs")?
+	for name in ["Blueprint.lock", "scripts/native-deps.json"] {
+		original = Path.read_bytes!(Path.join(source, name))?
+		AutomationIO.write!(Path.join(source, name), original.concat("changed\n".to_utf8()))?
+		Script.require!(LinkInputs.fingerprint!(source)? != fingerprint, "${name} must invalidate native inputs")?
+		AutomationIO.write!(Path.join(source, name), original)?
+	}
+	Script.require!(LinkInputs.fingerprint!(source)? == fingerprint, "Restored inputs must restore the fingerprint")?
 	cache = Path.join(temp, "native")
 	producer : LinkInputs.Source
 	producer = { repository: "owner/repo", sha: Str.repeat("b", 40), ref: "refs/heads/test", workflow: "owner/repo/.github/workflows/native-libraries.yml", input_fingerprint: "" }

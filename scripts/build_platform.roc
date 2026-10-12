@@ -25,7 +25,7 @@ import src/Project
 import src/LinkInputs
 import src/Script
 import src/WeaverCli
-import src/WorkspaceDeps
+import src/NativeDeps
 
 main! = |raw_args| {
 	options = match WeaverCli.parse!(cli_parser, raw_args)? {
@@ -33,7 +33,7 @@ main! = |raw_args| {
 		Exit => return Ok({})
 	}
 	root = Project.root!()?
-	dependencies = WorkspaceDeps.current
+	dependencies = NativeDeps.current
 	library_source = options.libraries
 	mode = build_mode!(options.host_only, options.libraries_only, library_source)?
 	specs = if options.target_specs.is_empty() [Project.host_target!()?.spec()] else options.target_specs

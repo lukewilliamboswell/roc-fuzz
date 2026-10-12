@@ -14,5 +14,6 @@ import src/Archive
 import src/Integrity
 import src/LibrarySource
 import src/RocSource
+import src/Tooling
 
 main! = |_args| Stdout.line!("This is the test root for shared tooling modules; run it with `roc test`.")

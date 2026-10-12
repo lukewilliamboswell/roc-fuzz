@@ -54,7 +54,7 @@ jobs:
           persist-credentials: false
       - name: Read tool versions
         id: dependencies
-        run: echo "zig-version=$(jq -r .zig_version scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+        run: echo "zig-version=$(jq -r .zig_version scripts/native-deps.json)" >> "$GITHUB_OUTPUT"
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
         with:
           version: ${{ steps.dependencies.outputs.zig-version }}

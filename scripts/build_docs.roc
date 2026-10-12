@@ -14,10 +14,10 @@ import weaver.Cli
 import weaver.Opt
 import src/ApiDocs
 import src/CliValues
+import src/Identity
 import src/Project
 import src/Script
 import src/WeaverCli
-import src/WorkspaceDeps
 
 main! = |raw_args| {
 	options = match WeaverCli.parse!(cli_parser, raw_args)? {
@@ -25,7 +25,7 @@ main! = |raw_args| {
 		Exit => return Ok({})
 	}
 	root = Project.root!()?
-	dependencies = WorkspaceDeps.current
+	revision = build_docs_revision!(root)?
 	roc = Script.roc!()?
 
 	automation = match options.automation_root {
@@ -35,11 +35,11 @@ main! = |raw_args| {
 			if !configured.is_empty() {
 				Path.absolute!(Path.utf8(configured))?
 			} else {
-				checkout = Path.join(root, ".test-cache/roc-automation-docs/${dependencies.roc_automation.build_docs_revision}")
+				checkout = Path.join(root, ".test-cache/roc-automation-docs/${revision}")
 				if !Path.is_dir!(checkout)? {
 					Path.create_all!(Path.join(root, ".test-cache/roc-automation-docs"))?
-					Script.command("git").run!(["clone", "--filter=blob:none", OsStr.from_str(dependencies.roc_automation.repository), Path.to_os_str(checkout)])?
-					Script.command("git").run!(["-C", Path.to_os_str(checkout), "checkout", "--detach", OsStr.from_str(dependencies.roc_automation.build_docs_revision)])?
+					Script.command("git").run!(["clone", "--filter=blob:none", "https://github.com/lukewilliamboswell/roc-automation.git", Path.to_os_str(checkout)])?
+					Script.command("git").run!(["-C", Path.to_os_str(checkout), "checkout", "--detach", OsStr.from_str(revision)])?
 				}
 				checkout
 			}
@@ -47,8 +47,8 @@ main! = |raw_args| {
 	}
 
 	actual_revision = Script.trim(Str.from_utf8_lossy(Script.command("git").capture!(["-C", Path.to_os_str(automation), "rev-parse", "HEAD"], root, [])?))
-	if actual_revision != dependencies.roc_automation.build_docs_revision {
-		return Err(UnexpectedAutomationRevision(Path.display(automation), dependencies.roc_automation.build_docs_revision, actual_revision))
+	if actual_revision != revision {
+		return Err(UnexpectedAutomationRevision(Path.display(automation), revision, actual_revision))
 	}
 
 	build_script = Path.join(automation, "actions/build-docs/build_docs.py")
@@ -77,6 +77,19 @@ main! = |raw_args| {
 	pdf = Path.join(root, ".docs-out/roc-fuzz.pdf")
 	ApiDocs.validate!(Path.join(site, "api"))?
 	Script.pass!("Documentation created in ${Path.display(site)}; PDF: ${Path.display(pdf)}")
+}
+
+## The reviewed roc-automation commit is written once, where docs.yml pins the
+## shared renderer. A local build uses that same commit.
+build_docs_revision! = |root| {
+	workflow = Path.read_utf8!(Path.join(root, ".github/workflows/docs.yml"))?
+	match Str.split_on(workflow, "lukewilliamboswell/roc-automation/actions/build-docs@") {
+		[_, rest] => match Str.split_on(rest, " ") {
+			[revision, ..] if Identity.GitRevision.parse(revision) |> Try.is_ok => Ok(revision)
+			_ => Err(DocsWorkflowMustPinSharedRenderer)
+		}
+		_ => Err(DocsWorkflowMustPinSharedRenderer)
+	}
 }
 
 cli_parser = Cli.assert_valid(

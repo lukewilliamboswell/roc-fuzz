@@ -20,7 +20,7 @@ import src/ReleaseCandidate
 import src/Script
 import src/Version
 import src/WeaverCli
-import src/WorkspaceDeps
+import src/NativeDeps
 
 Package := { checksum : [Checksum(Str), NoChecksum], download : Str, identifier : Str, license : Str, name : Str, version : Str }.{}
 
@@ -38,7 +38,7 @@ main! = |raw_args| {
 		Ok(path) => Path.absolute!(path)?
 		Err(NoValue) => Path.utf8("${Path.display(bundle)}.spdx.json")
 	}
-	document = generate!(bundle, options.release_version, options.native_manifests, options.library_manifests, WorkspaceDeps.current)?
+	document = generate!(bundle, options.release_version, options.native_manifests, options.library_manifests, NativeDeps.current)?
 	Path.write_utf8!(output, document)?
 	Script.pass!("SPDX release SBOM written to ${Path.display(output)}")
 }

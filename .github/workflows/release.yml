@@ -141,7 +141,7 @@ jobs:
 
       - name: Read workspace dependencies
         id: dependencies
-        run: echo "zig-version=$(jq -r .zig_version scripts/workspace-deps.json)" >> "$GITHUB_OUTPUT"
+        run: echo "zig-version=$(jq -r .zig_version scripts/native-deps.json)" >> "$GITHUB_OUTPUT"
 
       - name: Install and verify workspace compilers
         id: roc
