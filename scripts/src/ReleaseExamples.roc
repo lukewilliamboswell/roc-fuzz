@@ -53,8 +53,15 @@ ReleaseExamples := [].{
 		for path in Files.roc_files!(Path.join(root, "examples"))? {
 			source = Path.read_utf8!(path)?
 			for header in RocSource.app_header(source)? {
-				if RocSource.value_for(source, header, "platform")? != manifest.platform_url or RocSource.value_for(source, header, "roc")? != manifest.compiler {
+				if RocSource.value_for(source, header, "platform")? != manifest.platform_url {
 					return Err(ExampleDisagreesWithManifest(Path.display(path)))
+				}
+				# An archived example carries no compiler pin. Archives published
+				# up to 0.4.3 pinned every example to the manifest's compiler.
+				match RocSource.value_for(source, header, "roc") {
+					Ok(pinned) if pinned == manifest.compiler => {}
+					Err(MissingAppField(_)) => {}
+					_ => return Err(ExampleDisagreesWithManifest(Path.display(path)))
 				}
 			}
 		}
@@ -92,9 +99,19 @@ ReleaseExamples := [].{
 				}
 				AutomationIO.json!(Path.join(staging, "tests/targets.json"), archived)?
 				ReleaseExamples.rewrite!(staging, "platform", manifest.platform_url)?
-				ReleaseExamples.rewrite!(staging, "roc", manifest.compiler)?
+				# The archive differs from the repository in the platform
+				# dependency and in nothing else.
+				for name in names.keep_if(|item| Script.ends_with(item, ".roc")) {
+					original = Path.read_utf8!(Path.join(root, name))?
+					for header in RocSource.app_header(original)? {
+						local = RocSource.value_for(original, header, "platform")?
+						if RocSource.rewrite(Path.read_utf8!(Path.join(staging, name))?, "platform", local)? != original {
+							return Err(ArchivedExampleDiffersBeyondPlatform(name))
+						}
+					}
+				}
 				AutomationIO.json!(Path.join(staging, "release.json"), manifest)?
-				Path.write_utf8!(Path.join(staging, "README.md"), "# roc-fuzz ${manifest.version} examples\n\nTested with Roc `${manifest.compiler}`. Each app selects the published platform.\n\n```sh\nroc build --fuzz examples/jsonRoundTrip.roc\n./examples/jsonRoundTrip run\n```\n")?
+				Path.write_utf8!(Path.join(staging, "README.md"), "# roc-fuzz ${manifest.version} examples\n\nThese are the repository's examples at the commit of release ${manifest.version}. Each application depends on that release's platform bundle:\n\n    ${manifest.platform_url}\n\nNothing else differs from the repository, and no example pins a compiler. The release was built and tested with Roc `${manifest.compiler}`.\n\n```sh\nroc build --fuzz examples/jsonRoundTrip.roc\n./examples/jsonRoundTrip run\n```\n")?
 				_ = ReleaseExamples.validate_release!(staging)?
 				Archive.pack!(Archive.Format.Zip, staging, names.concat(["release.json", "README.md"]), output)
 			},
@@ -256,7 +273,11 @@ legacy = |version| match semantic(version) {
 	Err(_) => Bool.False
 }
 
-valid_version = |version| match Str.split_on(version, "-rc") {
+## A pull request runs the release steps as a dry run under this version. Roc
+## rejects `0.0.0` in a package URL.
+dry_run_version = "0.0.1-dry-run"
+
+valid_version = |version| if version == dry_run_version Bool.True else match Str.split_on(version, "-rc") {
 	[base] => semantic(base) |> Try.is_ok
 	[base, rc] => (semantic(base) |> Try.is_ok) and (U64.from_str(rc) |> Try.is_ok)
 	_ => Bool.False
@@ -265,6 +286,8 @@ valid_version = |version| match Str.split_on(version, "-rc") {
 expect legacy("0.4.1")
 expect !legacy("0.4.2")
 expect !valid_version("1.02.3")
+expect valid_version("0.0.1-dry-run")
+expect !valid_version("0.0.1-dry")
 
 fixture_release : Str, Bool, Bool -> ReleaseExamples.Release
 fixture_release = |version, draft, prerelease| { id: 1, tag_name: version, draft, prerelease, assets: [{ name: "hash.tar.zst", browser_download_url: "https://github.com/owner/repo/releases/download/1.0.0/hash.tar.zst", digest: "sha256:${Str.repeat("a", 64)}" }] }

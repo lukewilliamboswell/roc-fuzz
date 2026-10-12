@@ -301,7 +301,7 @@ jobs:
 
       - name: Package frozen release examples
         env:
-          EXAMPLE_VERSION: ${{ needs.release-info.outputs.release_version || '0.0.0-rc0' }}
+          EXAMPLE_VERSION: ${{ needs.release-info.outputs.release_version || '0.0.1-dry-run' }}
           COMPILER: ${{ needs.resolve.outputs.nightly-tag }}
         run: |
           bundles=(.release/bundles/*.tar.zst)

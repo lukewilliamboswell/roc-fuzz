@@ -221,8 +221,10 @@ run_allow_pin_warning! : Script.Command, List(OsStr) => Try({}, _)
 run_allow_pin_warning! = |roc, args| {
 	Script.info!("RUN", Str.join_with([roc.program].concat(args).map(OsStr.display), " "))?
 	code = roc.cmd(args).exec_exit_code!()?
-	# Roc currently returns 2 when checking an app whose downloaded platform
-	# carries an older compiler pin; the app itself still checked successfully.
+	# Roc returns 2 for a version-mismatch warning. The examples archives of
+	# releases up to 0.4.3 pin every example to the compiler of their day, so
+	# the nightly workflow meets that warning until a later release is the
+	# latest. The application itself still checked successfully.
 	if code == 0 or code == 2 Ok({}) else Err(RocCommandExited(code))
 }
 

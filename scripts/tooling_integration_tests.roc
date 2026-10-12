@@ -47,6 +47,7 @@ main! = |_args| {
 			Script.require!(actual == manifest, "Manifest must survive packaging")?
 			Script.require!(ReleaseExamples.unpack!(first, suite) |> Try.is_err, "Unpacking must require a fresh destination")?
 			Script.require!(Path.is_file!(Path.join(suite, "examples/shared/main.roc"))?, "Package must include the helper packages beside the examples")?
+			Script.require!(!Path.read_utf8!(Path.join(suite, "examples/nested/main.roc"))?.contains("roc: \"nightly"), "An archived example must not pin a compiler")?
 			ReleaseExamples.rewrite!(suite, "roc", "nightly-2026-09-29-7f11a82")?
 			Script.require!(ReleaseExamples.validate_release!(suite) |> Try.is_err, "Reject modified publication compiler")?
 			ReleaseExamples.rewrite!(suite, "roc", manifest.compiler)?
