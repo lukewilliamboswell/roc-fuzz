@@ -184,9 +184,9 @@ builds and not against a list of files that might change it. The identity of a
 set of linker inputs is a digest of the published files themselves: every
 library for every target, and the licence files packed beside them. A manifest
 and the lock record it as `input_fingerprint`. The `Linker inputs match the
-lock` job of `ci.yml` builds both targets from source on every pull request,
-which takes about a minute, and fails when their identity differs from the
-lock's. Run the same check locally with:
+lock` job of `ci.yml` builds both targets from source on every pull request
+and fails when their identity differs from the lock's. The build takes about
+four minutes on a runner with a cold Zig cache. Run the same check locally with:
 
 [source,sh]
 ----

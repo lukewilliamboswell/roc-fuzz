@@ -184,6 +184,15 @@ jobs:
           path: .test-cache/native-libraries
           key: linker-inputs-${{ hashFiles('native-libraries.lock.json') }}
 
+      # Zig keys its cache by the content of every input, so a restored cache
+      # can only supply what this build would have produced anyway.
+      - name: Restore Zig's compilation cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/zig
+          key: zig-${{ steps.dependencies.outputs.zig-version }}-${{ runner.os }}-${{ hashFiles('scripts/native-deps.json', 'scripts/build_platform.roc', 'src/**') }}
+          restore-keys: zig-${{ steps.dependencies.outputs.zig-version }}-${{ runner.os }}-
+
       - name: Build both hosts around the reviewed linker inputs
         run: blueprint run build-platform -- --target x64musl --target arm64mac
 
