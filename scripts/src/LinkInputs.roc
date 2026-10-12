@@ -5,7 +5,6 @@ import AutomationIO
 import Integrity
 import Project
 import Script
-import WorkspaceDeps
 
 ## Immutable native-input packaging, lock validation and installation.
 LinkInputs := [].{
@@ -22,15 +21,95 @@ LinkInputs := [].{
 	files = |target| Project.library_names(target.spec())
 	asset : Targets, Project.Target -> Asset
 	asset = |artifacts, target| if target.name() == "x64musl" artifacts.x64musl else artifacts.arm64mac
+
+	## What a routine pull request hashes to learn whether the locked release
+	## is still the right one. It is cheap, so no pull request rebuilds the
+	## libraries to find out.
+	##
+	## The list is short on purpose: what the libraries are made from, and the
+	## files packed beside them. `scripts/native-deps.json` holds the Zig
+	## release, the libFuzzer source and the recipe revision, which is raised by
+	## hand when a change to the build recipe alters a library byte. No script
+	## and no lock file is here, so editing tooling never demands a release.
+	##
+	## What keeps the revision honest is `check_source!`: the build is
+	## byte-reproducible, and the producer rebuilds and compares whenever the
+	## recipe is touched.
+	fingerprint_inputs = [
+		"LICENSE",
+		"THIRD_PARTY_LICENSES.md",
+		"scripts/native-deps.json",
+		"src/macos_compat/sys/syscall.h",
+		"src/macos_fuzzer_ext_functions.cpp",
+	]
 	fingerprint! = |root| {
-		names = AutomationIO.tracked!(root, [".github/workflows/native-libraries.yml", ".github/actions/setup-workspace-roc", "scripts/build_platform.roc", "scripts/link_input_artifacts.roc", "scripts/src", "scripts/workspace-deps.json", "src/macos_fuzzer_ext_functions.cpp", "LICENSE", "THIRD_PARTY_LICENSES.md"])?
 		var $entries = []
-		for name in names {
-			path = Path.join(root, name)
-			bytes = if name == "scripts/workspace-deps.json" WorkspaceDeps.fingerprint_source(Path.read_utf8!(path)?)?.to_utf8() else Path.read_bytes!(path)?
-			$entries = $entries.append({ path: name, sha256: Integrity.digest_bytes(bytes) })
+		for name in LinkInputs.fingerprint_inputs {
+			$entries = $entries.append({ path: name, sha256: Integrity.digest!(Path.join(root, name))? })
 		}
 		Ok(Integrity.digest_bytes(Json.to_str($entries).to_utf8()))
+	}
+
+	## Every file that takes part in building the libraries. A change to one of
+	## these is not trusted to leave them alone: pull-request CI and the
+	## producer rebuild and compare when any of them is touched, and only then.
+	## The producer's `paths` filter repeats the list, and the supply-chain
+	## check holds the two together.
+	recipe_paths = [
+		"Blueprint.lock",
+		"Blueprint.roc",
+		"scripts/build_platform.roc",
+		"scripts/native-deps.json",
+		"scripts/src/LinkInputs.roc",
+		"scripts/src/NativeDeps.roc",
+		"scripts/src/Project.roc",
+		"src/macos_compat/**",
+		"src/macos_fuzzer_ext_functions.cpp",
+	]
+
+	## Whether anything in the recipe differs between `base` and the checkout.
+	## Anything that prevents a clear "no" is a "yes": an audit that runs
+	## needlessly costs a minute, and one that is skipped wrongly costs trust.
+	recipe_changed! = |root, base| {
+		if !Integrity.is_hex(base, 40) or base == Str.repeat("0", 40) {
+			return Ok(Bool.True)
+		}
+		args = ["diff", "--name-only", "${base}...HEAD", "--"].concat(LinkInputs.recipe_paths.map(|path| Str.replace_each(path, "/**", "")))
+		match AutomationIO.text!("git", args, root) {
+			Ok(changed) => Ok(!AutomationIO.lines(changed).is_empty())
+			Err(_) => Ok(Bool.True)
+		}
+	}
+
+	## After building every target from source: are the libraries the ones the
+	## locked release holds? Meaningful only while the fingerprint says the lock
+	## is current. A difference then means the recipe changed the bytes without
+	## the recipe revision being raised, or the build stopped being reproducible.
+	check_source! = |root, cache| {
+		lock = match LinkInputs.read_lock!(root) {
+			Ok(current) => current
+			Err(_) => return Ok(LockNotCurrent)
+		}
+		var $different = []
+		for target in Project.all_targets {
+			(archive, _) = LinkInputs.verify_archive!(root, target, cache)?
+			$different = $different.concat(
+				Env.with_temp_dir!(
+					|temp| {
+						staging = Path.join(temp, "locked")
+						LinkInputs.extract!(target, archive, staging, lock.source.input_fingerprint)?
+						var $changed = []
+						for name in LinkInputs.files(target) {
+							if Integrity.digest!(Path.join(staging, name))? != Integrity.digest!(Path.join(target.dir(root), name))? {
+								$changed = $changed.append("${target.name()}/${name}")
+							}
+						}
+						Ok($changed)
+					},
+				)?,
+			)
+		}
+		if $different.is_empty() Ok(SameBytes(lock.release)) else Ok(DifferentBytes({ release: lock.release, files: $different }))
 	}
 	metadata : Project.Target, Str -> Metadata
 	metadata = |target, fingerprint| { schema_version: 1, kind: "link-inputs", target: target.name(), input_fingerprint: fingerprint, files: LinkInputs.files(target), licenses: LinkInputs.licenses }
@@ -55,7 +134,7 @@ LinkInputs := [].{
 			return Err(ReleaseMustIdentifyManifest)
 		}
 		source = lock.source
-		if source.repository != lock.repository or !Integrity.is_hex(source.sha, 40) or !Script.starts_with(source.ref, "refs/heads/") or !Archive.safe_name(source.ref) or source.workflow != "${lock.repository}/.github/workflows/native-libraries.yml" or !Integrity.is_hex(source.input_fingerprint, 64) {
+		if source.repository != lock.repository or !Integrity.is_hex(source.sha, 40) or !Script.starts_with(source.ref, "refs/heads/") or !Archive.safe_name(source.ref) or source.workflow != "${lock.repository}/.github/workflows/link-inputs.yml" or !Integrity.is_hex(source.input_fingerprint, 64) {
 			return Err(InvalidLinkInputSource)
 		}
 		for target in Project.all_targets {

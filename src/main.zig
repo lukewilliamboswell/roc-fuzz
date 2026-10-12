@@ -33,16 +33,24 @@ var friendly_run_active = false;
 var leak_detection_enabled = true;
 var artifact_directory: []const u8 = ".roc-fuzz";
 
-fn hostAlloc(_: *abi.RocHost, length: usize, alignment: usize) callconv(.c) ?*anyopaque {
-    return roc_alloc(length, alignment);
+/// The Roc ABI requires an allocation to succeed or not return. A request the
+/// allocator cannot serve ends the run the way a crash does, so the input that
+/// asked for it is saved.
+fn outOfMemory() noreturn {
+    writeErr("[roc crashed] out of memory\n");
+    finishRocFailure();
+}
+
+fn hostAlloc(_: *abi.RocHost, length: usize, alignment: usize) callconv(.c) *anyopaque {
+    return roc_alloc(length, alignment) orelse outOfMemory();
 }
 
 fn hostDealloc(_: *abi.RocHost, ptr: *anyopaque, alignment: usize) callconv(.c) void {
     roc_dealloc(ptr, alignment);
 }
 
-fn hostRealloc(_: *abi.RocHost, ptr: *anyopaque, length: usize, alignment: usize) callconv(.c) ?*anyopaque {
-    return roc_realloc(ptr, length, alignment);
+fn hostRealloc(_: *abi.RocHost, ptr: *anyopaque, length: usize, alignment: usize) callconv(.c) *anyopaque {
+    return roc_realloc(ptr, length, alignment) orelse outOfMemory();
 }
 
 fn hostDbg(_: *abi.RocHost, bytes: [*]const u8, len: usize) callconv(.c) void {

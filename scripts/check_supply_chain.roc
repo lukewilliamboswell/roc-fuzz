@@ -10,18 +10,19 @@ app [main!] {
 import cli.Path
 import weaver.Cli
 import weaver.Opt
+import src/AutomationIO
 import src/Files
-import src/Identity
+import src/LinkInputs
+import src/NativeDeps
 import src/Project
 import src/Script
+import src/SkipNotes
+import src/Tooling
 import src/WeaverCli
-import src/WorkspaceDeps
 
-CompilerConfig : { compiler_manifest : { path : Str, key : Str } }
+TestCase : { name : Str, path : Str, skip_seed : Bool, skip_fuzz : Bool }
 
-TestCase : { path : Str }
-
-TestSpec : { cases : List(TestCase) }
+TestSpec : { cases : List(TestCase), skips : List(SkipNotes.Note) }
 
 main! = |raw_args| {
 	verbose = match WeaverCli.parse!(cli_parser, raw_args)? {
@@ -29,44 +30,43 @@ main! = |raw_args| {
 		Exit => return Ok({})
 	}
 	root = Project.root!()?
-	dependencies = WorkspaceDeps.current
 	if verbose {
 		Script.info!("CHECK", "Workflow action revisions, script package identities, and compiler pins")?
 	}
-	validate_actions!(root, dependencies)?
-	validate_script_headers!(root, dependencies)?
-	validate_compiler_roots!(root)?
+	validate_actions!(root)?
+	validate_zig!(root)?
+	validate_recipe_paths!(root)?
+	validate_script_headers!(root)?
+	validate_unpinned_sources!(root)?
+	validate_targets!(root)?
 	Script.pass!("Supply-chain metadata is pinned and internally consistent.")
 }
 
-validate_script_headers! = |root, dependencies| {
+## Blueprint.roc chooses the tooling compiler and the bundles the scripts use.
+## Every script header repeats them, and this check holds the copies to it.
+validate_script_headers! = |root| {
+	blueprint = Path.read_utf8!(Path.join(root, "Blueprint.roc"))?
+	tooling_roc = Tooling.stable_tag(blueprint)?
+	locked = Tooling.roc_packages(blueprint)?
 	scripts = Files.direct_files!(Path.join(root, "scripts"))?.keep_if(|path| Path.ext(path).map_ok(Path.display) == Ok("roc"))
 	for path in scripts {
 		source = Path.read_utf8!(path)?
 		if !Script.starts_with(source, "#!/usr/bin/env roc-stable\n") {
 			return Err(ScriptMustRunDirectlyWithRoc(Path.display(path)))
 		}
-		tooling_roc = dependencies.roc_stable
-		for (label, identity) in [
-			("cli: platform", dependencies.package_urls.basic_cli),
-			("ascii:", dependencies.package_urls.ascii),
-			("ansi:", dependencies.package_urls.ansi),
-			("roc:", tooling_roc),
-		] {
-			if !source.contains("${label} \"${identity}\"") {
-				return Err(ScriptDependencyIdentityDrift(Path.display(path), label))
-			}
+		if !source.contains("\troc: \"${tooling_roc}\",\n") {
+			return Err(ScriptMustNameToolingCompiler(Path.display(path), tooling_roc))
 		}
-		for (label, identity) in [("weaver:", dependencies.package_urls.weaver), ("arg_path:", dependencies.package_urls.arg_path)] {
-			if source.contains("\n\t${label}") and !source.contains("${label} \"${identity}\"") {
-				return Err(ScriptDependencyIdentityDrift(Path.display(path), label))
+		for url in Tooling.header_urls(source) {
+			if !locked.contains(url) {
+				return Err(ScriptDependencyNotLocked(Path.display(path), url))
 			}
 		}
 	}
 	Ok({})
 }
 
-validate_actions! = |root, dependencies| {
+validate_actions! = |root| {
 	workflows = Files.files!(Path.join(root, ".github"))?.keep_if(
 		|path| {
 			extension = Path.ext(path).map_ok(Path.display)
@@ -89,7 +89,6 @@ validate_actions! = |root, dependencies| {
 					if parts.len() < 2 {
 						return Err(ActionMissingVersionComment(reference))
 					}
-					validate_managed_action(reference, dependencies)?
 				}
 			}
 		}
@@ -97,45 +96,71 @@ validate_actions! = |root, dependencies| {
 	Ok({})
 }
 
-validate_managed_action = |reference, dependencies| {
-	setup_prefix = "lukewilliamboswell/setup-roc@"
-	automation_slug = Str.replace_each(Str.replace_each(dependencies.roc_automation.repository, "https://github.com/", ""), ".git", "")
-	docs_prefix = "${automation_slug}/actions/build-docs@"
-	if Script.starts_with(reference, setup_prefix) and reference != "${setup_prefix}${dependencies.setup_roc_revision.to_str()}" {
-		Err(SetupRocRevisionDrift(reference))
-	} else if Script.starts_with(reference, docs_prefix) and reference != "${docs_prefix}${dependencies.roc_automation.build_docs_revision}" {
-		Err(BuildDocsRevisionDrift(reference))
-	} else {
-		Ok({})
-	}
+## The environment supplies the exact Zig release the native recipe names, so
+## a contributor and every runner build the host and its linker inputs with the
+## compiler the recipe was written for.
+validate_zig! = |root| {
+	blueprint = Path.read_utf8!(Path.join(root, "Blueprint.roc"))?
+	wanted = "zigpkgs.\\\"${NativeDeps.current.zig_version}\\\""
+	if blueprint.contains(wanted) Ok({}) else Err(BlueprintMustSupplyRecipeZig(NativeDeps.current.zig_version))
 }
 
-validate_compiler_roots! = |root| {
-	config : CompilerConfig
-	config = Json.parse(Path.read_utf8!(Path.join(root, ".github/roc-nightly.json"))?).map_err(|err| InvalidCompilerConfig(err))?
+## The producer must run whenever the recipe is touched, so its `paths` filter
+## names every recipe path. A path added to the recipe and forgotten there
+## would let a change to it skip the rebuild.
+validate_recipe_paths! = |root| {
+	producer = Path.read_utf8!(Path.join(root, ".github/workflows/link-inputs.yml"))?
+	for path in LinkInputs.recipe_paths {
+		if !producer.contains("\n      - ${path}\n") {
+			return Err(ProducerMustRunWhenRecipeChanges(path))
+		}
+	}
+	Ok({})
+}
+
+## The platform, its targets and every other Roc file outside scripts/ float
+## on the latest nightly, so none of them may carry a compiler pin.
+validate_unpinned_sources! = |root| {
+	if Path.exists!(Path.join(root, ".roc-version"))? {
+		return Err(LegacyRocVersionFile)
+	}
+	for name in AutomationIO.tracked!(root, ["*.roc"])? {
+		if name != "Blueprint.roc" and !Script.starts_with(name, "scripts/") {
+			source = Path.read_utf8!(Path.join(root, name))?
+			if pins_compiler(source) {
+				return Err(OnlyScriptsMayPinCompiler(name))
+			}
+		}
+	}
+	Ok({})
+}
+
+## Every target depends on the working tree's platform by relative path, and
+## every part of a case that is switched off says why.
+validate_targets! = |root| {
 	spec : TestSpec
 	spec = Json.parse(Path.read_utf8!(Path.join(root, "tests/targets.json"))?).map_err(|err| InvalidTestSpecification(err))?
-	if config.compiler_manifest != { path: "scripts/workspace-deps.json", key: "roc_nightly" } {
-		return Err(IncorrectCompilerManifest)
-	}
-	platform_source = Path.read_utf8!(Path.join(root, "platform/main.roc"))?
-	if platform_source.contains("roc:") {
-		return Err(PlatformMustNotPinCompiler)
-	}
+	SkipNotes.validate(spec.cases.map(|item| { name: item.name, skip_seed: item.skip_seed, skip_fuzz: item.skip_fuzz }), spec.skips)?
 	for item in spec.cases {
 		source = Path.read_utf8!(Path.join(root, item.path))?
 		header = Str.split_on(source, "\n").first().map_err(|_| EmptyExample(item.path))?
 		depth = Str.split_on(item.path, "/").len() - 1
 		relative_platform = Str.repeat("../", depth).concat("platform/main.roc")
-		if header.contains("roc:") or !header.contains("platform \"${relative_platform}\"") {
-			return Err(ExampleMustUseLocalPlatformWithoutCompilerPin(item.path))
+		if !header.contains("platform \"${relative_platform}\"") {
+			return Err(TargetMustUseLocalPlatform(item.path))
 		}
-	}
-	if Path.exists!(Path.join(root, ".roc-version"))? {
-		return Err(LegacyRocVersionFile)
 	}
 	Ok({})
 }
+
+pins_compiler = |source|
+	match Str.split_on(source, "}") {
+		[header, ..] => header.contains("roc: \"")
+		_ => Bool.False
+	}
+
+expect pins_compiler("app [main!] {\n\tpf: platform \"../platform/main.roc\",\n\troc: \"nightly-2026-09-29-7f11a82\",\n}\n")
+expect !pins_compiler("app [target] { fuzz: platform \"../platform/main.roc\" }\nvalue = { roc: \"body\" }\n")
 
 is_full_sha = |value| value.to_utf8().len() == 40 and value.to_utf8().all(|byte| (byte >= '0' and byte <= '9') or (byte >= 'a' and byte <= 'f'))
 

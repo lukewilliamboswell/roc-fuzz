@@ -55,3 +55,5 @@ include::internals.adoc[leveloffset=+1]
 include::development.adoc[leveloffset=+1]
 
 include::project-information.adoc[leveloffset=+1]
+
+include::releases.adoc[leveloffset=+1]

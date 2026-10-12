@@ -20,7 +20,7 @@ import src/ReleaseCandidate
 import src/Script
 import src/Version
 import src/WeaverCli
-import src/WorkspaceDeps
+import src/NativeDeps
 
 Package := { checksum : [Checksum(Str), NoChecksum], download : Str, identifier : Str, license : Str, name : Str, version : Str }.{}
 
@@ -38,7 +38,7 @@ main! = |raw_args| {
 		Ok(path) => Path.absolute!(path)?
 		Err(NoValue) => Path.utf8("${Path.display(bundle)}.spdx.json")
 	}
-	document = generate!(bundle, options.release_version, options.native_manifests, options.library_manifests, WorkspaceDeps.current)?
+	document = generate!(bundle, options.release_version, options.native_manifests, options.library_manifests, NativeDeps.current)?
 	Path.write_utf8!(output, document)?
 	Script.pass!("SPDX release SBOM written to ${Path.display(output)}")
 }
@@ -80,7 +80,7 @@ parse_release_version = |argument|
 		Err(_) => Err(InvalidUtf8)
 	}
 
-valid_release_version = |value| Version.semantic(value) or (ReleaseCandidate.parse(value) |> Try.is_ok)
+valid_release_version = |value| Version.semantic(value) or value == Version.dry_run or (ReleaseCandidate.parse(value) |> Try.is_ok)
 
 generate! = |bundle, release, native_manifests, library_manifest_paths, dependencies| {
 	if !Path.is_file!(bundle)? or !Script.ends_with(Path.display(bundle), ".tar.zst") {

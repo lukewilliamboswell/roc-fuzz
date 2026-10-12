@@ -87,5 +87,5 @@ how bytes are decoded.
 
 For bugs or feedback, please open an issue at
 https://github.com/lukewilliamboswell/roc-fuzz/issues. The full commit history
-since 0.3.0 is available at
-https://github.com/lukewilliamboswell/roc-fuzz/compare/0.3.0...0.4.0.
+since 0.3.0 is available in
+link:++https://github.com/lukewilliamboswell/roc-fuzz/compare/0.3.0...0.4.0++[the comparison with 0.3.0].

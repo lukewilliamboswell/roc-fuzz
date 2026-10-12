@@ -22,13 +22,18 @@ main! = |_args| {
 	Env.with_temp_dir!(
 		|temp| {
 			source = Path.join(temp, "source")
-			AutomationIO.write!(Path.join(source, "examples/nested/main.roc"), "app [target] { pf: platform \"../../platform/main.roc\", model: \"../../tests/set-model/main.roc\" }\nvalue = {roc: \"body\"}\n".to_utf8())?
-			AutomationIO.write!(Path.join(source, "tests/set-model/main.roc"), "package [] {}\n".to_utf8())?
+			AutomationIO.write!(Path.join(source, "examples/nested/main.roc"), "app [target] { pf: platform \"../../platform/main.roc\", model: \"../shared/main.roc\" }\nvalue = {roc: \"body\"}\n".to_utf8())?
+			AutomationIO.write!(Path.join(source, "examples/shared/main.roc"), "package [] {}\n".to_utf8())?
 			AutomationIO.write!(Path.join(source, "examples/nested/Other.roc"), "answer = 42\n".to_utf8())?
 			inventory : ReleaseExamples.Inventory
 			inventory = { schema: 1, cases: [{ name: "nested", path: "examples/nested/main.roc", seed_hex: "00", expected_failure: Bool.False, skip_seed: Bool.False, skip_fuzz: Bool.False }] }
 			AutomationIO.json!(Path.join(source, "tests/targets.json"), inventory)?
-			AutomationIO.write!(Path.join(source, "scripts/workspace-deps.json"), Path.read_bytes!(Path.join(root, "scripts/workspace-deps.json"))?)?
+			AutomationIO.write!(Path.join(source, "scripts/native-deps.json"), Path.read_bytes!(Path.join(root, "scripts/native-deps.json"))?)?
+			for name in ["src/macos_fuzzer_ext_functions.cpp", "src/macos_compat/sys/syscall.h"] {
+				AutomationIO.write!(Path.join(source, name), Path.read_bytes!(Path.join(root, name))?)?
+			}
+			AutomationIO.write!(Path.join(source, "Blueprint.lock"), "locked tools\n".to_utf8())?
+			AutomationIO.write!(Path.join(source, "README.md"), "unrelated\n".to_utf8())?
 			AutomationIO.run!("git", ["init", "-q"], source)?
 			AutomationIO.run!("git", ["add", "."], source)?
 			manifest : ReleaseExamples.Manifest
@@ -44,7 +49,8 @@ main! = |_args| {
 			actual = ReleaseExamples.unpack!(first, suite)?
 			Script.require!(actual == manifest, "Manifest must survive packaging")?
 			Script.require!(ReleaseExamples.unpack!(first, suite) |> Try.is_err, "Unpacking must require a fresh destination")?
-			Script.require!(Path.is_file!(Path.join(suite, "tests/set-model/main.roc"))?, "Package must include local model imports")?
+			Script.require!(Path.is_file!(Path.join(suite, "examples/shared/main.roc"))?, "Package must include the helper packages beside the examples")?
+			Script.require!(!Path.read_utf8!(Path.join(suite, "examples/nested/main.roc"))?.contains("roc: \"nightly"), "An archived example must not pin a compiler")?
 			ReleaseExamples.rewrite!(suite, "roc", "nightly-2026-09-29-7f11a82")?
 			Script.require!(ReleaseExamples.validate_release!(suite) |> Try.is_err, "Reject modified publication compiler")?
 			ReleaseExamples.rewrite!(suite, "roc", manifest.compiler)?
@@ -79,17 +85,23 @@ native_tests! = |_root, source, temp| {
 		AutomationIO.write!(Path.join(source, name), name.to_utf8())?
 	}
 	AutomationIO.run!("git", ["add", "."], source)?
-	metadata = Path.join(source, "scripts/workspace-deps.json")
-	original = Path.read_utf8!(metadata)?
 	fingerprint = LinkInputs.fingerprint!(source)?
-	Path.write_utf8!(metadata, Str.replace_each(original, "nightly-2026-09-26-d6267b4", "nightly-2026-09-29-7f11a82"))?
-	Script.require!(LinkInputs.fingerprint!(source)? == fingerprint, "Project nightly must not invalidate native inputs")?
-	Path.write_utf8!(metadata, Str.replace_each(original, "nightly-2026-09-29-7f11a82", "nightly-2026-09-18-1d982dc"))?
-	Script.require!(LinkInputs.fingerprint!(source)? != fingerprint, "Tooling compiler must invalidate native inputs")?
-	Path.write_utf8!(metadata, original)?
+	library = Path.join(Project.Target.dir(Project.Target.X64Musl, source), "libc.a")
+	# Tooling is not an input: editing it never demands a release.
+	for name in ["README.md", "Blueprint.lock", "scripts/build_platform.roc"] {
+		AutomationIO.write!(Path.join(source, name), "edited\n".to_utf8())?
+		Script.require!(LinkInputs.fingerprint!(source)? == fingerprint, "${name} must not invalidate native inputs")?
+	}
+	for name in ["scripts/native-deps.json", "LICENSE", "src/macos_fuzzer_ext_functions.cpp"] {
+		original = Path.read_bytes!(Path.join(source, name))?
+		AutomationIO.write!(Path.join(source, name), original.concat("changed\n".to_utf8()))?
+		Script.require!(LinkInputs.fingerprint!(source)? != fingerprint, "${name} must invalidate native inputs")?
+		AutomationIO.write!(Path.join(source, name), original)?
+	}
+	Script.require!(LinkInputs.fingerprint!(source)? == fingerprint, "Restored inputs must restore the fingerprint")?
 	cache = Path.join(temp, "native")
 	producer : LinkInputs.Source
-	producer = { repository: "owner/repo", sha: Str.repeat("b", 40), ref: "refs/heads/test", workflow: "owner/repo/.github/workflows/native-libraries.yml", input_fingerprint: "" }
+	producer = { repository: "owner/repo", sha: Str.repeat("b", 40), ref: "refs/heads/test", workflow: "owner/repo/.github/workflows/link-inputs.yml", input_fingerprint: "" }
 	LinkInputs.package!(source, cache, producer)?
 	manifest_path = Path.join(cache, "build-input-release.json")
 	manifest : LinkInputs.Manifest
@@ -99,6 +111,18 @@ native_tests! = |_root, source, temp| {
 	lock = { schema_version: 1, kind: "link-inputs", repository: "owner/repo", release: "linker-inputs-sha256-${digest}", manifest: { asset: "build-input-release.json", sha256: digest }, source: manifest.source, artifacts: manifest.assets }
 	Path.write_utf8!(Path.join(source, "native-libraries.lock.json"), Str.replace_each(Json.to_str(lock), "\"artifacts\"", "\"targets\""))?
 	Script.require!(LinkInputs.validate_lock(lock, "different") |> Try.is_err, "Reject stale native locks")?
+	same = match LinkInputs.check_source!(source, cache)? {
+		SameBytes(_) => Bool.True
+		_ => Bool.False
+	}
+	Script.require!(same, "Libraries the lock was made from must compare equal")?
+	AutomationIO.write!(library, "rebuilt differently".to_utf8())?
+	named = match LinkInputs.check_source!(source, cache)? {
+		DifferentBytes({ files, release: _ }) => files == ["x64musl/libc.a"]
+		_ => Bool.False
+	}
+	Script.require!(named, "A library that differs from the locked one must be named")?
+	AutomationIO.write!(library, "libc.a".to_utf8())?
 	for target in Project.all_targets {
 		_ = LinkInputs.verify_archive!(source, target, cache)?
 		LinkInputs.install!(source, target, cache)?

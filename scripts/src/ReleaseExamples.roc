@@ -6,6 +6,7 @@ import Files
 import Integrity
 import RocSource
 import Script
+import SkipNotes
 import Version
 
 ## Freeze release examples and acquire the exact published compatibility suite.
@@ -17,6 +18,7 @@ ReleaseExamples := [].{
 	Manifest : { schema : U64, version : Str, source_sha : Str, platform_url : Str, compiler : Str }
 	Case : { name : Str, path : Str, seed_hex : Str, expected_failure : Bool, skip_seed : Bool, skip_fuzz : Bool }
 	Inventory : { schema : U64, cases : List(Case) }
+	ArchivedInventory : { schema : U64, cases : List(Case), skips : List(SkipNotes.Note) }
 	limit : U64
 	limit = 100 * 1024 * 1024
 	validate_suite! = |root| {
@@ -27,7 +29,7 @@ ReleaseExamples := [].{
 		}
 		var $names = []
 		for item in inventory.cases {
-			if !Archive.safe_name(item.path) or !Script.starts_with(item.path, "examples/") or !Script.ends_with(item.path, ".roc") or !Archive.safe_name(item.name) or item.name.contains("/") or $names.contains(item.name) {
+			if !Archive.safe_name(item.path) or !(Script.starts_with(item.path, "examples/") or Script.starts_with(item.path, "tests/targets/")) or !Script.ends_with(item.path, ".roc") or !Archive.safe_name(item.name) or item.name.contains("/") or $names.contains(item.name) {
 				return Err(InvalidTargetInventory)
 			}
 			if item.seed_hex.to_utf8().len() % 2 != 0 or !Integrity.is_hex(item.seed_hex, item.seed_hex.to_utf8().len()) {
@@ -51,8 +53,15 @@ ReleaseExamples := [].{
 		for path in Files.roc_files!(Path.join(root, "examples"))? {
 			source = Path.read_utf8!(path)?
 			for header in RocSource.app_header(source)? {
-				if RocSource.value_for(source, header, "platform")? != manifest.platform_url or RocSource.value_for(source, header, "roc")? != manifest.compiler {
+				if RocSource.value_for(source, header, "platform")? != manifest.platform_url {
 					return Err(ExampleDisagreesWithManifest(Path.display(path)))
+				}
+				# An archived example carries no compiler pin. Archives published
+				# up to 0.4.3 pinned every example to the manifest's compiler.
+				match RocSource.value_for(source, header, "roc") {
+					Ok(pinned) if pinned == manifest.compiler => {}
+					Err(MissingAppField(_)) => {}
+					_ => return Err(ExampleDisagreesWithManifest(Path.display(path)))
 				}
 			}
 		}
@@ -70,7 +79,15 @@ ReleaseExamples := [].{
 	package! : Path, Path, Manifest => Try({}, _)
 	package! = |root, output, manifest| {
 		ReleaseExamples.validate_suite!(root)?
-		names = AutomationIO.tracked!(root, ["examples", "tests/set-model", "tests/targets.json"])?
+		# The archive holds the examples and the cases that describe them. The
+		# regression targets under tests/targets stay in the repository.
+		inventory : Inventory
+		inventory = Json.parse(Path.read_utf8!(Path.join(root, "tests/targets.json"))?)?
+		cases = inventory.cases.keep_if(|item| Script.starts_with(item.path, "examples/"))
+		notes = SkipNotes.load!(Path.join(root, "tests/targets.json"))?
+		archived : ArchivedInventory
+		archived = { schema: inventory.schema, cases, skips: notes.keep_if(|note| cases.any(|item| item.name == note.name)) }
+		names = AutomationIO.tracked!(root, ["examples"])?.concat(["tests/targets.json"])
 		Env.with_temp_dir!(
 			|staging| {
 				for name in names {
@@ -80,10 +97,21 @@ ReleaseExamples := [].{
 					}
 					AutomationIO.write!(Path.join(staging, name), Path.read_bytes!(path)?)?
 				}
+				AutomationIO.json!(Path.join(staging, "tests/targets.json"), archived)?
 				ReleaseExamples.rewrite!(staging, "platform", manifest.platform_url)?
-				ReleaseExamples.rewrite!(staging, "roc", manifest.compiler)?
+				# The archive differs from the repository in the platform
+				# dependency and in nothing else.
+				for name in names.keep_if(|item| Script.ends_with(item, ".roc")) {
+					original = Path.read_utf8!(Path.join(root, name))?
+					for header in RocSource.app_header(original)? {
+						local = RocSource.value_for(original, header, "platform")?
+						if RocSource.rewrite(Path.read_utf8!(Path.join(staging, name))?, "platform", local)? != original {
+							return Err(ArchivedExampleDiffersBeyondPlatform(name))
+						}
+					}
+				}
 				AutomationIO.json!(Path.join(staging, "release.json"), manifest)?
-				Path.write_utf8!(Path.join(staging, "README.md"), "# roc-fuzz ${manifest.version} examples\n\nTested with Roc `${manifest.compiler}`. Each app selects the published platform.\n\n```sh\nroc build --fuzz examples/jsonRoundTrip.roc\n./examples/jsonRoundTrip run\n```\n")?
+				Path.write_utf8!(Path.join(staging, "README.md"), "# roc-fuzz ${manifest.version} examples\n\nThese are the repository's examples at the commit of release ${manifest.version}. Each application depends on that release's platform bundle:\n\n    ${manifest.platform_url}\n\nNothing else differs from the repository, and no example pins a compiler. The release was built and tested with Roc `${manifest.compiler}`.\n\n```sh\nroc build --fuzz examples/jsonRoundTrip.roc\n./examples/jsonRoundTrip run\n```\n")?
 				_ = ReleaseExamples.validate_release!(staging)?
 				Archive.pack!(Archive.Format.Zip, staging, names.concat(["release.json", "README.md"]), output)
 			},
@@ -109,13 +137,23 @@ ReleaseExamples := [].{
 			_ => Err(NoStablePlatformRelease)
 		}
 	}
-	resolve! : Str, Str => Try(Selection, _)
-	resolve! = |repository, compiler| {
+
+	## Select the release to test: the one tagged `wanted`, or the latest
+	## stable platform release when `wanted` is empty.
+	resolve! : Str, Str, Str => Try(Selection, _)
+	resolve! = |repository, compiler, wanted| {
 		if !Archive.safe_name(repository) or Str.split_on(repository, "/").len() != 2 or !Version.nightly(compiler) {
 			return Err(InvalidReleaseSelection)
 		}
 		releases = releases!(repository, 1, [])?
-		release = ReleaseExamples.select_release(releases)?
+		release = if wanted.is_empty() {
+			ReleaseExamples.select_release(releases)?
+		} else {
+			match releases.keep_if(|item| item.tag_name == wanted and !item.draft) {
+				[item] => item
+				_ => return Err(NoSuchPlatformRelease(wanted))
+			}
+		}
 		bundle = match release.assets.keep_if(|item| Script.ends_with(item.name, ".tar.zst")) {
 			[item] => asset_identity(item)?
 			_ => return Err(ExpectedOnePlatformBundle)
@@ -130,6 +168,32 @@ ReleaseExamples := [].{
 		examples = kits.map_try(asset_identity)?
 		Ok({ schema: 1, repository, release_id: release.id, version: release.tag_name, source_sha: sha, compiler, bundle, examples })
 	}
+
+	## The documentation archive of the latest stable platform release, which
+	## is what a visitor to the site has installed.
+	latest_docs! = |repository| {
+		if !Archive.safe_name(repository) or Str.split_on(repository, "/").len() != 2 {
+			return Err(InvalidReleaseSelection)
+		}
+		release = ReleaseExamples.select_release(releases!(repository, 1, [])?)?
+		match release.assets.keep_if(|item| item.name == "roc-fuzz-docs-${release.tag_name}.zip") {
+			[item] => Ok(Published({ version: release.tag_name, archive: asset_identity(item)? }))
+			_ => Ok(NoDocsArchive(release.tag_name))
+		}
+	}
+
+	## Download a release's documentation archive, check it against the digest
+	## GitHub records, and unpack it into a fresh directory.
+	fetch_docs! = |archive, destination|
+		Env.with_temp_dir!(
+			|temp| {
+				downloaded = Path.join(temp, "docs.zip")
+				download!(archive, downloaded)?
+				_ = Archive.extract!(Archive.Format.Zip, downloaded, destination, ReleaseExamples.limit)?
+				Ok({})
+			},
+		)
+
 	unpack! = |archive, destination| {
 		_ = Archive.extract!(Archive.Format.Zip, archive, destination, ReleaseExamples.limit)?
 		ReleaseExamples.validate_release!(destination)
@@ -158,7 +222,6 @@ ReleaseExamples := [].{
 				}
 				# Check the platform's digest too; Roc checks its content address on use.
 				download!(selection.bundle, Path.join(temp, "platform.tar.zst"))?
-				ReleaseExamples.rewrite!(destination, "roc", selection.compiler)?
 				AutomationIO.json!(Path.join(destination, "compatibility.json"), selection)
 			},
 		)
@@ -236,7 +299,7 @@ legacy = |version| match semantic(version) {
 	Err(_) => Bool.False
 }
 
-valid_version = |version| match Str.split_on(version, "-rc") {
+valid_version = |version| if version == Version.dry_run Bool.True else match Str.split_on(version, "-rc") {
 	[base] => semantic(base) |> Try.is_ok
 	[base, rc] => (semantic(base) |> Try.is_ok) and (U64.from_str(rc) |> Try.is_ok)
 	_ => Bool.False
@@ -245,6 +308,8 @@ valid_version = |version| match Str.split_on(version, "-rc") {
 expect legacy("0.4.1")
 expect !legacy("0.4.2")
 expect !valid_version("1.02.3")
+expect valid_version("0.0.1-dry-run")
+expect !valid_version("0.0.1-dry")
 
 fixture_release : Str, Bool, Bool -> ReleaseExamples.Release
 fixture_release = |version, draft, prerelease| { id: 1, tag_name: version, draft, prerelease, assets: [{ name: "hash.tar.zst", browser_download_url: "https://github.com/owner/repo/releases/download/1.0.0/hash.tar.zst", digest: "sha256:${Str.repeat("a", 64)}" }] }

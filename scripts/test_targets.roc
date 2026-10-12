@@ -17,6 +17,7 @@ import src/CliValues
 import src/Files
 import src/RocSource
 import src/Script
+import src/SkipNotes
 import src/WeaverCli
 
 Operation : [All, Build, Check, Fuzz, Seed, Test]
@@ -45,6 +46,20 @@ PlatformUrl :: Str.{
 	to_str = |PlatformUrl.(value)| value
 }
 
+## A switched-off part of a case is never silent: every run names it, with the
+## reason and the issue that will switch it back on.
+report_skips! = |selected, notes| {
+	Script.info!("SUITE", "${selected.len().to_str()} targets")?
+	for item in selected {
+		for (skipped, operation) in [(item.skip_seed, "seed"), (item.skip_fuzz, "fuzz")] {
+			if skipped {
+				Script.warn!("SKIP ${item.name} ${operation}: ${SkipNotes.describe(notes, item.name, operation)}")?
+			}
+		}
+	}
+	Ok({})
+}
+
 main! = |raw_args| {
 	cli_options = match WeaverCli.parse!(cli_parser, raw_args)? {
 		Run(parsed) => parsed
@@ -53,15 +68,17 @@ main! = |raw_args| {
 	suite_root = Path.absolute!(cli_options.suite_root)?
 	inventory = load_inventory!(Path.join(suite_root, "tests/targets.json"))?
 	selected = select_targets(cli_options.selected, inventory)?
-	roc_nightly = Script.roc_nightly!()?
+	notes = SkipNotes.load!(Path.join(suite_root, "tests/targets.json"))?
+	report_skips!(selected, notes)?
+	roc = Script.roc!()?
 	Env.with_temp_dir!(
 		|work| {
 			match cli_options.platform_url {
 				Ok(url) => {
 					local = prepare_platform_tests!(work, selected, url.to_str(), suite_root)?
-					run_operation!(cli_options.operation, cli_options.max_total_time, cli_options.verbose, roc_nightly, local, work)
+					run_operation!(cli_options.operation, cli_options.max_total_time, cli_options.verbose, roc, local, work)
 				}
-				Err(NoValue) => run_operation!(cli_options.operation, cli_options.max_total_time, cli_options.verbose, roc_nightly, selected.map(|item| rebase(item, Path.join(suite_root, Path.display(item.path)))), work)
+				Err(NoValue) => run_operation!(cli_options.operation, cli_options.max_total_time, cli_options.verbose, roc, selected.map(|item| rebase(item, Path.join(suite_root, Path.display(item.path)))), work)
 			}
 		},
 	)
@@ -140,79 +157,74 @@ select_targets = |requested, available| {
 	Ok(available.keep_if(|item| requested.contains(item.name)))
 }
 
+## Copy the suite and point every application in it at one platform bundle.
+## Targets keep their place under the suite root, so their relative imports of
+## sibling modules and helper packages still resolve.
 prepare_platform_tests! = |temporary, selected, url, suite_root| {
-	example_root = Path.join(temporary, "examples")
-	Path.copy_dir!(Path.join(suite_root, "examples"), example_root)?
-	Path.copy_dir!(Path.join(suite_root, "tests"), Path.join(temporary, "tests"))?
-	for path in Files.roc_files!(example_root)? {
-		match RocSource.replace_platform_if_present(Path.read_utf8!(path)?, url)? {
-			Updated(source) => Path.write_utf8!(path, source)?
-			Unchanged => {}
+	for directory in ["examples", "tests"] {
+		copied = Path.join(temporary, directory)
+		Path.copy_dir!(Path.join(suite_root, directory), copied)?
+		for path in Files.roc_files!(copied)? {
+			match RocSource.replace_platform_if_present(Path.read_utf8!(path)?, url)? {
+				Updated(source) => Path.write_utf8!(path, source)?
+				Unchanged => {}
+			}
 		}
 	}
-	selected.map_try(
-		|item| Ok(
-			TestCase.{
-				expected_failure: item.expected_failure,
-				name: item.name,
-				path: Path.join(example_root, examples_relative(item.path)?),
-				seed: item.seed,
-				skip_fuzz: item.skip_fuzz,
-				skip_seed: item.skip_seed,
-			},
-		),
-	)
+	Ok(selected.map(|item| rebase(item, Path.join(temporary, Path.display(item.path)))))
 }
 
-run_operation! = |operation, max_total_time, verbose, roc_nightly, selected, work|
+run_operation! = |operation, max_total_time, verbose, roc, selected, work|
 	match operation {
-		Check => check_targets!(roc_nightly, selected)
-		Test => test_targets!(roc_nightly, selected)
-		Build => build_targets!(roc_nightly, selected, work).map_ok(|_| {})
-		Seed => replay_seeds!(build_targets!(roc_nightly, selected, work)?, work)
-		Fuzz => fuzz_targets!(build_targets!(roc_nightly, selected, work)?, max_total_time, verbose, work)
+		Check => check_targets!(roc, selected)
+		Test => test_targets!(roc, selected)
+		Build => build_targets!(roc, selected, work).map_ok(|_| {})
+		Seed => replay_seeds!(build_targets!(roc, selected, work)?, work)
+		Fuzz => fuzz_targets!(build_targets!(roc, selected, work)?, max_total_time, verbose, work)
 		All => {
-			check_targets!(roc_nightly, selected)?
-			test_targets!(roc_nightly, selected)?
-			executables = build_targets!(roc_nightly, selected, work)?
+			check_targets!(roc, selected)?
+			test_targets!(roc, selected)?
+			executables = build_targets!(roc, selected, work)?
 			replay_seeds!(executables, work)?
 			fuzz_targets!(executables, max_total_time, verbose, work)
 		}
 	}
 
-check_targets! = |roc_nightly, selected| {
+check_targets! = |roc, selected| {
 	for item in selected {
-		run_allow_pin_warning!(roc_nightly, ["check", Path.to_os_str(item.path)])?
+		run_allow_pin_warning!(roc, ["check", Path.to_os_str(item.path)])?
 	}
 	Ok({})
 }
 
-test_targets! = |roc_nightly, selected| {
+test_targets! = |roc, selected| {
 	for item in selected {
-		run_allow_pin_warning!(roc_nightly, ["test", Path.to_os_str(item.path)])?
+		run_allow_pin_warning!(roc, ["test", Path.to_os_str(item.path)])?
 	}
 	Ok({})
 }
 
-build_targets! = |roc_nightly, selected, work| {
+build_targets! = |roc, selected, work| {
 	directory : Path
 	directory = Path.join(work, "executables")
 	Path.create_all!(directory)?
 	var $executables = []
 	for item in selected {
 		output = Path.join(directory, item.name)
-		run_allow_pin_warning!(roc_nightly, ["build", "--fuzz", Path.to_os_str(item.path), OsStr.from_str("--output=${Path.display(output)}")])?
+		run_allow_pin_warning!(roc, ["build", "--fuzz", Path.to_os_str(item.path), OsStr.from_str("--output=${Path.display(output)}")])?
 		$executables = $executables.append((item, output))
 	}
 	Ok($executables)
 }
 
 run_allow_pin_warning! : Script.Command, List(OsStr) => Try({}, _)
-run_allow_pin_warning! = |roc_nightly, args| {
-	Script.info!("RUN", Str.join_with([roc_nightly.program].concat(args).map(OsStr.display), " "))?
-	code = roc_nightly.cmd(args).exec_exit_code!()?
-	# Roc currently returns 2 when checking an app whose downloaded platform
-	# carries an older compiler pin; the app itself still checked successfully.
+run_allow_pin_warning! = |roc, args| {
+	Script.info!("RUN", Str.join_with([roc.program].concat(args).map(OsStr.display), " "))?
+	code = roc.cmd(args).exec_exit_code!()?
+	# Roc returns 2 for a version-mismatch warning. The examples archives of
+	# releases up to 0.4.3 pin every example to the compiler of their day, so
+	# the nightly workflow meets that warning until a later release is the
+	# latest. The application itself still checked successfully.
 	if code == 0 or code == 2 Ok({}) else Err(RocCommandExited(code))
 }
 
@@ -255,15 +267,6 @@ seed_path! = |item, work| {
 	path = Path.join(directory, "seed")
 	Path.write_bytes!(path, item.seed)?
 	Ok(path)
-}
-
-examples_relative = |path| {
-	prefix = "examples/"
-	text = Path.display(path)
-	if !Script.starts_with(text, prefix) {
-		return Err(TestTargetOutsideExamples(text))
-	}
-	Ok(Str.from_utf8_lossy(text.to_utf8().drop_first(prefix.to_utf8().len())))
 }
 
 decode_hex = |encoded| {

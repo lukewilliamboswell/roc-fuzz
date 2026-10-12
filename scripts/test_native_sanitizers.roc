@@ -13,11 +13,11 @@ import src/Files
 import src/Integrity
 import src/Project
 import src/Script
-import src/WorkspaceDeps
+import src/NativeDeps
 
 main! = |_| {
 	root = Project.root!()?
-	dependency = WorkspaceDeps.current.libfuzzer
+	dependency = NativeDeps.current.libfuzzer
 	compiler = Script.env_str_or!("CXX", "clang++")?
 	Env.with_temp_dir!(|work| run_sanitizer_smoke!(root, work, dependency, compiler))?
 	Script.pass!("Pinned libFuzzer completed its AddressSanitizer smoke campaign.")

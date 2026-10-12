@@ -34,8 +34,8 @@ main! = |raw_args| {
 	if Path.ext(source_path).map_ok(Path.display) != Ok("roc") {
 		return Err(TargetMustBeRocSource(Path.display(source_path)))
 	}
-	nightly = Script.roc_nightly!()?
-	run_target!(source_path, cli_options.libraries, runner_args(cli_options), nightly)
+	roc = Script.roc!()?
+	run_target!(source_path, cli_options.libraries, runner_args(cli_options), roc)
 }
 
 runner_args = |options| {
@@ -60,14 +60,14 @@ append_number = |args, name, value|
 		Err(NoValue) => args
 	}
 
-run_target! = |source_path, library_source, args, nightly| {
+run_target! = |source_path, library_source, args, roc| {
 	target_name = Project.host_target!()?.name()
 	Script.info!("PREPARE", "Building ${target_name} platform inputs from ${LibrarySource.to_str(library_source)} libraries")?
 	(Script.roc_stable!()?).run!(["scripts/build_platform.roc", "--", "--target", OsStr.from_str(target_name), "--libraries", OsStr.from_str(LibrarySource.to_str(library_source))])?
-	Env.with_temp_dir!(|temporary| run_in_workspace!(temporary, source_path, target_name, args, nightly))
+	Env.with_temp_dir!(|temporary| run_in_workspace!(temporary, source_path, target_name, args, roc))
 }
 
-run_in_workspace! = |temporary, source_path, target_name, args, nightly| {
+run_in_workspace! = |temporary, source_path, target_name, args, roc| {
 	bundle_dir = Path.join(temporary, "bundle")
 	(Script.roc_stable!()?).run!(["scripts/build_bundle.roc", "--", "--target", OsStr.from_str(target_name), "--output-dir", Path.to_os_str(bundle_dir)])?
 	bundles = Files.direct_files!(bundle_dir)?.keep_if(|path| Script.ends_with(Path.display(path), ".tar.zst"))
@@ -76,10 +76,10 @@ run_in_workspace! = |temporary, source_path, target_name, args, nightly| {
 		_ => return Err(ExpectedOneBundle(bundles.len()))
 	}
 	filename = Path.filename(bundle).map_ok(Path.display).map_err(|_| InvalidBundlePath(Path.display(bundle)))?
-	BundleServer.with!(filename, Path.read_bytes!(bundle)?, |server| build_and_run!(temporary, source_path, server, args, nightly))
+	BundleServer.with!(filename, Path.read_bytes!(bundle)?, |server| build_and_run!(temporary, source_path, server, args, roc))
 }
 
-build_and_run! = |temporary, source_path, server, args, nightly| {
+build_and_run! = |temporary, source_path, server, args, roc| {
 	parent = parent_path(source_path)?
 	local_dir = Path.join(temporary, "app")
 	Path.copy_dir!(parent, local_dir)?
@@ -89,7 +89,7 @@ build_and_run! = |temporary, source_path, server, args, nightly| {
 	Path.create_all!(".test-cache/run")?
 	executable : Path
 	executable = ".test-cache/run/${Files.stem(Path.display(app_name))}"
-	child = nightly.cmd(["build", "--fuzz", Path.to_os_str(local_app), OsStr.from_str("--output=${Path.display(executable)}")]).stdout(Capture).stderr(Capture).spawn!().map_err(|err| TargetBuildSpawnFailed(err))?
+	child = roc.cmd(["build", "--fuzz", Path.to_os_str(local_app), OsStr.from_str("--output=${Path.display(executable)}")]).stdout(Capture).stderr(Capture).spawn!().map_err(|err| TargetBuildSpawnFailed(err))?
 	output = server.serve_child!(child)?
 	match output.status {
 		Exited(0) => {}

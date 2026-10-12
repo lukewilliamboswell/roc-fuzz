@@ -1,0 +1,244 @@
+name: Linker inputs
+
+# The producer for the host's linker inputs. A pull request that touches a
+# producer input builds, tests and uploads a candidate without publishing it.
+# The trusted publisher dispatches this workflow at an exact pull-request head
+# to obtain the attested candidate it releases.
+on:
+  pull_request:
+    # The recipe, as LinkInputs.recipe_paths lists it, plus what packs and
+    # publishes the result. A routine pull request touches none of these and
+    # builds nothing here. The supply-chain check fails if a recipe path is
+    # missing from this list.
+    paths:
+      - .github/workflows/link-inputs.yml
+      - Blueprint.lock
+      - Blueprint.roc
+      - LICENSE
+      - THIRD_PARTY_LICENSES.md
+      - native-libraries.lock.json
+      - scripts/build_platform.roc
+      - scripts/link_input_artifacts.roc
+      - scripts/native-deps.json
+      - scripts/src/Archive.roc
+      - scripts/src/LinkInputs.roc
+      - scripts/src/NativeDeps.roc
+      - scripts/src/Project.roc
+      - src/macos_compat/**
+      - src/macos_fuzzer_ext_functions.cpp
+  workflow_dispatch:
+    inputs:
+      release_candidate:
+        description: Build and attest the exact candidate selected by the trusted publisher
+        required: true
+        default: false
+        type: boolean
+      expected_sha:
+        description: Exact pull-request head selected by the trusted publisher
+        required: false
+        type: string
+
+permissions: {}
+concurrency:
+  group: linker-inputs-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # One run uses one compiler: the tag is resolved here and passed to every job.
+  resolve:
+    name: Resolve the latest Roc nightly
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      nightly-tag: ${{ steps.nightly.outputs.tag }}
+    steps:
+      - id: nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "tag=$(gh api repos/roc-lang/nightlies/releases/latest --jq .tag_name)" >> "$GITHUB_OUTPUT"
+
+  validate-request:
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Bind publication candidates to the dispatched commit
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          RELEASE_CANDIDATE: ${{ inputs.release_candidate || false }}
+        run: |
+          set -euo pipefail
+          if [ "$RELEASE_CANDIDATE" = true ]; then
+            test "$GITHUB_EVENT_NAME" = workflow_dispatch
+            test -n "$EXPECTED_SHA"
+            test "$EXPECTED_SHA" = "$GITHUB_SHA"
+          fi
+
+  # One Linux job cross-compiles the linker inputs and a host for both targets,
+  # and bundles them. The build is byte-reproducible, so where it runs does
+  # not change what it makes.
+  build:
+    needs: [resolve, validate-request]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.1"
+          sha256-x86_64-linux: 4ad2477b11211e963f4844554d909b939bd3419e94a8faec335ca619d41e37b6
+          sha256-aarch64-linux: 7ba164c03bdda8323b1a8edb315ded20549f31b4683429a6a0f9e96ba9d12301
+          sha256-aarch64-darwin: 7d9060a50c0e52960499ea6a4cb6aa5fd0bcccb14485d4c02829b56b4d8fcdaa
+
+      - name: Install the Roc nightly this run resolved
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
+
+      # Zig keys its cache by the content of every input, so a restored cache
+      # can only supply what this build would have produced anyway.
+      - name: Restore Zig's compilation cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/zig
+          key: zig-${{ runner.os }}-${{ hashFiles('Blueprint.lock', 'scripts/native-deps.json', 'scripts/build_platform.roc', 'src/**') }}
+          restore-keys: zig-${{ runner.os }}-
+
+      - name: Build both targets' linker inputs and hosts from source
+        run: blueprint run build-platform -- --target x64musl --target arm64mac --libraries source
+
+      # The build is byte-reproducible. While the lock is current, what this
+      # tree builds must be what the lock holds; a difference means the recipe
+      # changed the bytes without its revision being raised. When the lock is
+      # not current there is nothing to compare, and these are a candidate.
+      - name: Compare the libraries with the locked release
+        run: blueprint run link-inputs -- --operation check-source
+
+      - name: Bundle the platform around the candidate inputs
+        run: blueprint run bundle -- --output-dir "$RUNNER_TEMP/bundle"
+
+      - name: Hand the candidate inputs to the assemble job
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: built-targets
+          path: platform/targets
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Hand the bundle to the test jobs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: candidate-bundle
+          path: ${{ runner.temp }}/bundle/*.tar.zst
+          if-no-files-found: error
+          retention-days: 7
+
+  # Compiling for a target shows only that the inputs compile. Each target
+  # links and runs every case against the candidate bundle.
+  test:
+    name: test (${{ matrix.os }})
+    needs: [resolve, build]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-26]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.1"
+          sha256-x86_64-linux: 4ad2477b11211e963f4844554d909b939bd3419e94a8faec335ca619d41e37b6
+          sha256-aarch64-linux: 7ba164c03bdda8323b1a8edb315ded20549f31b4683429a6a0f9e96ba9d12301
+          sha256-aarch64-darwin: 7d9060a50c0e52960499ea6a4cb6aa5fd0bcccb14485d4c02829b56b4d8fcdaa
+
+      - name: Install the Roc nightly this run resolved
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
+
+      - name: Download the candidate bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: candidate-bundle
+          path: .test-cache/candidate-bundle
+
+      - name: Run every target against the candidate bundle
+        run: blueprint run test-bundle -- .test-cache/candidate-bundle/*.tar.zst
+
+  assemble:
+    needs: [build, test]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Download the tested candidate inputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: built-targets
+          path: platform/targets
+
+      - name: Install Nix and the verified blueprint binary
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        with:
+          version: "0.4.1"
+          sha256-x86_64-linux: 4ad2477b11211e963f4844554d909b939bd3419e94a8faec335ca619d41e37b6
+          sha256-aarch64-linux: 7ba164c03bdda8323b1a8edb315ded20549f31b4683429a6a0f9e96ba9d12301
+          sha256-aarch64-darwin: 7d9060a50c0e52960499ea6a4cb6aa5fd0bcccb14485d4c02829b56b4d8fcdaa
+
+      - name: Create deterministic target archives and canonical manifest
+        run: >-
+          blueprint run link-inputs -- --operation package
+          --output candidate
+          --repository "$GITHUB_REPOSITORY"
+          --sha "$GITHUB_SHA"
+          --ref "$GITHUB_REF"
+          --workflow "$GITHUB_REPOSITORY/.github/workflows/link-inputs.yml"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: link-input-release
+          path: candidate/*
+          if-no-files-found: error
+          retention-days: 30
+
+  attest:
+    needs: assemble
+    if: github.event_name == 'workflow_dispatch' && inputs.release_candidate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: link-input-release
+          path: candidate
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: candidate/build-input-release.json
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: candidate/link-inputs-*.tar
