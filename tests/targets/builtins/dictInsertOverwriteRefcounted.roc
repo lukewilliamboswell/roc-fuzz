@@ -1,8 +1,8 @@
-app [target] { pf: platform "../../platform/main.roc" }
+app [target] { pf: platform "../../../platform/main.roc" }
 
 import pf.Fuzz
 
-## RED TEST -- currently fails. Follow-up to the primitive-key overwrite defect
+## Regression target; it passes with nightly-2026-10-11-7d256b9. Follow-up to the primitive-key overwrite defect
 ## fixed by "Preserve Dict uniqueness across projected field takes"
 ## (roc 046b7daa26), which made `Dict(U64, U64)` overwrites free.
 ##

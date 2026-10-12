@@ -6,6 +6,7 @@ import Files
 import Integrity
 import RocSource
 import Script
+import SkipNotes
 import Version
 
 ## Freeze release examples and acquire the exact published compatibility suite.
@@ -17,6 +18,7 @@ ReleaseExamples := [].{
 	Manifest : { schema : U64, version : Str, source_sha : Str, platform_url : Str, compiler : Str }
 	Case : { name : Str, path : Str, seed_hex : Str, expected_failure : Bool, skip_seed : Bool, skip_fuzz : Bool }
 	Inventory : { schema : U64, cases : List(Case) }
+	ArchivedInventory : { schema : U64, cases : List(Case), skips : List(SkipNotes.Note) }
 	limit : U64
 	limit = 100 * 1024 * 1024
 	validate_suite! = |root| {
@@ -74,8 +76,10 @@ ReleaseExamples := [].{
 		# regression targets under tests/targets stay in the repository.
 		inventory : Inventory
 		inventory = Json.parse(Path.read_utf8!(Path.join(root, "tests/targets.json"))?)?
-		archived : Inventory
-		archived = { schema: inventory.schema, cases: inventory.cases.keep_if(|item| Script.starts_with(item.path, "examples/")) }
+		cases = inventory.cases.keep_if(|item| Script.starts_with(item.path, "examples/"))
+		notes = SkipNotes.load!(Path.join(root, "tests/targets.json"))?
+		archived : ArchivedInventory
+		archived = { schema: inventory.schema, cases, skips: notes.keep_if(|note| cases.any(|item| item.name == note.name)) }
 		names = AutomationIO.tracked!(root, ["examples"])?.concat(["tests/targets.json"])
 		Env.with_temp_dir!(
 			|staging| {

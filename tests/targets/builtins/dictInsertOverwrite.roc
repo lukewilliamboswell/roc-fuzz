@@ -1,8 +1,9 @@
-app [target] { pf: platform "../../platform/main.roc" }
+app [target] { pf: platform "../../../platform/main.roc" }
 
 import pf.Fuzz
 
-## RED TEST -- currently fails, see `trophy-case/README.md`.
+## Regression target for a defect recorded in `trophy-case/README.md`. It
+## passes with nightly-2026-10-11-7d256b9.
 ##
 ## Overwriting an existing key in a uniquely owned, pre-sized `Dict` allocates
 ## once per call. Inserting a *new* key into the same dictionary allocates

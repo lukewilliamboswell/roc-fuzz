@@ -22,7 +22,7 @@ import pf.Fuzz
 main! : List(U8) => U8
 main! = |data| {
 	# Use the input length directly so a reproducer's size equals the observed
-	# allocation count while this nightly is red.
+	# allocation count when uniqueness is lost.
 	n = List.len(data)
 
 	# Pre-size outside the measured region: `with_capacity` allocates the
@@ -44,8 +44,9 @@ main! = |data| {
 	# The same inserts with a second reference held across them.
 	base = Dict.with_capacity(n)
 	alias = base
+	# An empty input inserts nothing, so there is nothing to copy.
 	shared = Fuzz.expect_allocs_at_least!(
-		1,
+		if n == 0 0 else 1,
 		|{}| {
 			var $dict = base
 			var $j = 0

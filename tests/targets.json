@@ -186,15 +186,9 @@
       "path": "tests/targets/builtins/strToF64.roc",
       "seed_hex": "2d312e37393736393331333438363233313537653330380807",
       "libfuzzer_seed": 1018,
-      "skip": {
-        "fuzz": {
-          "reason": "F64.from_str hangs for 30+ minutes on adversarial underscore-heavy decimal literals",
-          "issue": "https://github.com/roc-lang/roc/issues/10660"
-        }
-      },
       "expected_failure": false,
       "skip_seed": false,
-      "skip_fuzz": true
+      "skip_fuzz": false
     },
     {
       "name": "strToI128",
@@ -408,19 +402,9 @@
       "path": "tests/targets/builtins/dictInsertUniqueness.roc",
       "seed_hex": "0001020304050607",
       "libfuzzer_seed": 1054,
-      "skip": {
-        "seed": {
-          "reason": "Dict.insert loses uniqueness across the allocation-check closure and allocates once per insertion",
-          "issue": "https://github.com/roc-lang/roc/issues/11162"
-        },
-        "fuzz": {
-          "reason": "Dict.insert loses uniqueness across the allocation-check closure and allocates once per insertion",
-          "issue": "https://github.com/roc-lang/roc/issues/11162"
-        }
-      },
       "expected_failure": false,
-      "skip_seed": true,
-      "skip_fuzz": true
+      "skip_seed": false,
+      "skip_fuzz": false
     },
     {
       "name": "dictIterRoundTrip",
@@ -691,8 +675,27 @@
       "expected_failure": false,
       "skip_seed": false,
       "skip_fuzz": false
+    },
+    {
+      "name": "dictInsertOverwrite",
+      "path": "tests/targets/builtins/dictInsertOverwrite.roc",
+      "seed_hex": "0001020304050607",
+      "libfuzzer_seed": 2226,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "dictInsertOverwriteRefcounted",
+      "path": "tests/targets/builtins/dictInsertOverwriteRefcounted.roc",
+      "seed_hex": "0001020304050607",
+      "libfuzzer_seed": 2227,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
     }
   ],
+  "skips": [],
   "retired": [
     {
       "name": "strCountGraphemes",

@@ -17,6 +17,7 @@ import src/CliValues
 import src/Files
 import src/RocSource
 import src/Script
+import src/SkipNotes
 import src/WeaverCli
 
 Operation : [All, Build, Check, Fuzz, Seed, Test]
@@ -45,6 +46,20 @@ PlatformUrl :: Str.{
 	to_str = |PlatformUrl.(value)| value
 }
 
+## A switched-off part of a case is never silent: every run names it, with the
+## reason and the issue that will switch it back on.
+report_skips! = |selected, notes| {
+	Script.info!("SUITE", "${selected.len().to_str()} targets")?
+	for item in selected {
+		for (skipped, operation) in [(item.skip_seed, "seed"), (item.skip_fuzz, "fuzz")] {
+			if skipped {
+				Script.warn!("SKIP ${item.name} ${operation}: ${SkipNotes.describe(notes, item.name, operation)}")?
+			}
+		}
+	}
+	Ok({})
+}
+
 main! = |raw_args| {
 	cli_options = match WeaverCli.parse!(cli_parser, raw_args)? {
 		Run(parsed) => parsed
@@ -53,6 +68,8 @@ main! = |raw_args| {
 	suite_root = Path.absolute!(cli_options.suite_root)?
 	inventory = load_inventory!(Path.join(suite_root, "tests/targets.json"))?
 	selected = select_targets(cli_options.selected, inventory)?
+	notes = SkipNotes.load!(Path.join(suite_root, "tests/targets.json"))?
+	report_skips!(selected, notes)?
 	roc = Script.roc!()?
 	Env.with_temp_dir!(
 		|work| {

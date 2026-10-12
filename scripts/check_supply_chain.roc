@@ -14,12 +14,13 @@ import src/AutomationIO
 import src/Files
 import src/Project
 import src/Script
+import src/SkipNotes
 import src/Tooling
 import src/WeaverCli
 
-TestCase : { path : Str }
+TestCase : { name : Str, path : Str, skip_seed : Bool, skip_fuzz : Bool }
 
-TestSpec : { cases : List(TestCase) }
+TestSpec : { cases : List(TestCase), skips : List(SkipNotes.Note) }
 
 main! = |raw_args| {
 	verbose = match WeaverCli.parse!(cli_parser, raw_args)? {
@@ -108,10 +109,12 @@ validate_unpinned_sources! = |root| {
 	Ok({})
 }
 
-## Every target depends on the working tree's platform by relative path.
+## Every target depends on the working tree's platform by relative path, and
+## every part of a case that is switched off says why.
 validate_targets! = |root| {
 	spec : TestSpec
 	spec = Json.parse(Path.read_utf8!(Path.join(root, "tests/targets.json"))?).map_err(|err| InvalidTestSpecification(err))?
+	SkipNotes.validate(spec.cases.map(|item| { name: item.name, skip_seed: item.skip_seed, skip_fuzz: item.skip_fuzz }), spec.skips)?
 	for item in spec.cases {
 		source = Path.read_utf8!(Path.join(root, item.path))?
 		header = Str.split_on(source, "\n").first().map_err(|_| EmptyExample(item.path))?

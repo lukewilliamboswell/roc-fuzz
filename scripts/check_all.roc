@@ -6,6 +6,7 @@ app [main!] {
 	roc: "nightly-2026-09-29-7f11a82",
 }
 
+import cli.OsStr
 import cli.Path
 import src/Script
 import src/Files
@@ -37,8 +38,19 @@ check_tooling! = |stable| {
 
 check_platform! = |roc| {
 	Script.info!("CHECK", "Formatting and type-checking the platform with the latest nightly")?
-	roc.run!(["fmt", "--check", "platform", "examples", "tests"])?
-	roc.run!(["check", "platform/main.roc"])
+	roc.run!(["fmt", "--check", "platform", "examples", "tests", "trophy-case"])?
+	roc.run!(["check", "platform/main.roc"])?
+	check_repros!(roc)
+}
+
+## A repro under trophy-case/ that can run is a case in tests/targets.json. The
+## one kept here is a deliberate type error that the compiler used to panic on:
+## it must be reported as an error, which `roc check` does with exit code 1.
+check_repros! = |roc| {
+	repro = "trophy-case/repros/postcheck_panic_on_type_error.roc"
+	Script.info!("RUN", "roc check ${repro} (expecting a reported type error)")?
+	code = roc.cmd(["check", OsStr.from_str(repro)]).exec_exit_code!()?
+	Script.require!(code == 1, "roc check ${repro} exited with code ${code.to_str()}; it must report the type error and exit with 1")
 }
 
 check_fuzz_targets! = || {
