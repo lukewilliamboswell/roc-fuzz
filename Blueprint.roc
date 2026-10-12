@@ -9,15 +9,16 @@
 # release named below; it runs the scripts under scripts/. The platform and its
 # targets are checked, built and run with whatever `roc` is on PATH, which is
 # meant to be the latest nightly, so nothing here provides a bare `roc`.
-app [config] { pf: platform "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.4.0/4jmnCGtQeuXTJJYc1rPrnA1pQFPRqUecY5oau1te8cYn.tar.zst" }
+app [config] { pf: platform "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.4.1/3Cev8eY9VdEbPazJcBUnsjNnUgdauMod46Q25uKodLUe.tar.zst" }
 
 config = [
 	Name("roc-fuzz"),
 	Overlay("roc", "github:roc-lang/roc-overlay"),
+	Overlay("zig", "github:mitchellh/zig-overlay"),
 	Environment(
 		"dev",
 		[
-			Overlays(["roc"]),
+			Overlays(["roc", "zig"]),
 			Command("roc-stable", "rocpkgs.nightly-2026-09-29-7f11a82"),
 			# Every bundle the scripts depend on, including dependencies of
 			# dependencies: `roc-stable deps scripts/check_all.roc` lists them.
@@ -29,10 +30,10 @@ config = [
 				"https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst",
 				"https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
 			]),
-			# Programs the scripts and workflows start. Zig is not here yet: an
-			# exact Zig release needs a tool name Blueprint cannot express until
-			# its next release, so CI installs it and contributors provide it.
-			Tools(["coreutils", "gh", "git", "jq", "unzip", "zip"]),
+			# Programs the scripts and workflows start. Zig is the exact
+			# release that builds the host and its linker inputs, taken from
+			# zig-overlay; scripts/native-deps.json names the same version.
+			Tools(["coreutils", "gh", "git", "jq", "unzip", "zip", "zigpkgs.\"0.16.0\""]),
 		],
 	),
 	Shell("default", [Use("dev")]),

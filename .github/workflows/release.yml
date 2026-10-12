@@ -100,10 +100,10 @@ jobs:
       - name: Install Nix and the verified blueprint binary
         uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
         with:
-          version: "0.4.0"
-          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
-          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
-          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
+          version: "0.4.1"
+          sha256-x86_64-linux: 4ad2477b11211e963f4844554d909b939bd3419e94a8faec335ca619d41e37b6
+          sha256-aarch64-linux: 7ba164c03bdda8323b1a8edb315ded20549f31b4683429a6a0f9e96ba9d12301
+          sha256-aarch64-darwin: 7d9060a50c0e52960499ea6a4cb6aa5fd0bcccb14485d4c02829b56b4d8fcdaa
 
       - name: Install the Roc nightly this run resolved
         uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
@@ -130,10 +130,10 @@ jobs:
       - name: Install Nix and the verified blueprint binary
         uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
         with:
-          version: "0.4.0"
-          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
-          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
-          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
+          version: "0.4.1"
+          sha256-x86_64-linux: 4ad2477b11211e963f4844554d909b939bd3419e94a8faec335ca619d41e37b6
+          sha256-aarch64-linux: 7ba164c03bdda8323b1a8edb315ded20549f31b4683429a6a0f9e96ba9d12301
+          sha256-aarch64-darwin: 7d9060a50c0e52960499ea6a4cb6aa5fd0bcccb14485d4c02829b56b4d8fcdaa
 
       - name: Build and run the pinned libFuzzer with AddressSanitizer
         run: blueprint run native-sanitizers
@@ -158,25 +158,16 @@ jobs:
       - name: Install Nix and the verified blueprint binary
         uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
         with:
-          version: "0.4.0"
-          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
-          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
-          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
+          version: "0.4.1"
+          sha256-x86_64-linux: 4ad2477b11211e963f4844554d909b939bd3419e94a8faec335ca619d41e37b6
+          sha256-aarch64-linux: 7ba164c03bdda8323b1a8edb315ded20549f31b4683429a6a0f9e96ba9d12301
+          sha256-aarch64-darwin: 7d9060a50c0e52960499ea6a4cb6aa5fd0bcccb14485d4c02829b56b4d8fcdaa
 
       - name: Install the Roc nightly this run resolved
         uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
         with:
           version: nightly-new-compiler
           nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
-
-      - name: Read the Zig release
-        id: dependencies
-        run: echo "zig-version=$(jq -r .zig_version scripts/native-deps.json)" >> "$GITHUB_OUTPUT"
-
-      - name: Install Zig
-        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
-        with:
-          version: ${{ steps.dependencies.outputs.zig-version }}
 
       - name: Restore the content-addressed linker-input download cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -190,8 +181,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/zig
-          key: zig-${{ steps.dependencies.outputs.zig-version }}-${{ runner.os }}-${{ hashFiles('scripts/native-deps.json', 'scripts/build_platform.roc', 'src/**') }}
-          restore-keys: zig-${{ steps.dependencies.outputs.zig-version }}-${{ runner.os }}-
+          key: zig-${{ runner.os }}-${{ hashFiles('Blueprint.lock', 'scripts/native-deps.json', 'scripts/build_platform.roc', 'src/**') }}
+          restore-keys: zig-${{ runner.os }}-
 
       - name: Build both hosts around the reviewed linker inputs
         run: blueprint run build-platform -- --target x64musl --target arm64mac
@@ -320,10 +311,10 @@ jobs:
       - name: Install Nix and the verified blueprint binary
         uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
         with:
-          version: "0.4.0"
-          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
-          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
-          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
+          version: "0.4.1"
+          sha256-x86_64-linux: 4ad2477b11211e963f4844554d909b939bd3419e94a8faec335ca619d41e37b6
+          sha256-aarch64-linux: 7ba164c03bdda8323b1a8edb315ded20549f31b4683429a6a0f9e96ba9d12301
+          sha256-aarch64-darwin: 7d9060a50c0e52960499ea6a4cb6aa5fd0bcccb14485d4c02829b56b4d8fcdaa
 
       - name: Install the Roc nightly this run resolved
         uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
@@ -382,10 +373,10 @@ jobs:
       - name: Install Nix and the verified blueprint binary
         uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
         with:
-          version: "0.4.0"
-          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
-          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
-          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
+          version: "0.4.1"
+          sha256-x86_64-linux: 4ad2477b11211e963f4844554d909b939bd3419e94a8faec335ca619d41e37b6
+          sha256-aarch64-linux: 7ba164c03bdda8323b1a8edb315ded20549f31b4683429a6a0f9e96ba9d12301
+          sha256-aarch64-darwin: 7d9060a50c0e52960499ea6a4cb6aa5fd0bcccb14485d4c02829b56b4d8fcdaa
 
       - name: Install the Roc nightly this run resolved
         uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf

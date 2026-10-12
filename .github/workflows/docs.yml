@@ -48,10 +48,10 @@ jobs:
       - name: Install Nix and the verified blueprint binary
         uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
         with:
-          version: "0.4.0"
-          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
-          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
-          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
+          version: "0.4.1"
+          sha256-x86_64-linux: 4ad2477b11211e963f4844554d909b939bd3419e94a8faec335ca619d41e37b6
+          sha256-aarch64-linux: 7ba164c03bdda8323b1a8edb315ded20549f31b4683429a6a0f9e96ba9d12301
+          sha256-aarch64-darwin: 7d9060a50c0e52960499ea6a4cb6aa5fd0bcccb14485d4c02829b56b4d8fcdaa
 
       - name: Install the Roc nightly this run resolved
         uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf

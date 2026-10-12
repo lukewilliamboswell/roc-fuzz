@@ -25,6 +25,14 @@
 						(value (Str "overlay"))) (
 						(name "flake")
 						(value (Bool true))))))) (
+					(name "zig")
+					(value (Attrs ((
+						(name "ref")
+						(value (Str "github:mitchellh/zig-overlay"))) (
+						(name "kind")
+						(value (Str "overlay"))) (
+						(name "flake")
+						(value (Bool true))))))) (
 					(name "roc-AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH")
 					(value (Attrs ((
 						(name "ref")
@@ -76,7 +84,7 @@
 				(name "overlays")
 				(value (Attrs ((
 					(name "dev")
-					(value (List ((Str "roc"))))))))))))) (
+					(value (List ((Str "roc") (Str "zig"))))))))))))) (
 			(name "graph")
 			(value (Attrs ((
 				(name "root")
@@ -109,6 +117,32 @@
 							(value (Str "nixos-unstable"))) (
 							(name "repo")
 							(value (Str "nixpkgs"))) (
+							(name "type")
+							(value (Str "github"))))))))))) (
+					(name "flake-compat")
+					(value (Attrs ((
+						(name "flake")
+						(value (Bool false))) (
+						(name "locked")
+						(value (Attrs ((
+							(name "lastModified")
+							(value (Int 1696426674))) (
+							(name "narHash")
+							(value (Str "sha256-kvjfFW7WAETZlt09AgDn1MrtKzP7t90Vf7vypd3OL1U="))) (
+							(name "owner")
+							(value (Str "edolstra"))) (
+							(name "repo")
+							(value (Str "flake-compat"))) (
+							(name "rev")
+							(value (Str "0f9255e01c2351cc7d116c072cb317785dd33b33"))) (
+							(name "type")
+							(value (Str "github"))))))) (
+						(name "original")
+						(value (Attrs ((
+							(name "owner")
+							(value (Str "edolstra"))) (
+							(name "repo")
+							(value (Str "flake-compat"))) (
 							(name "type")
 							(value (Str "github"))))))))))) (
 					(name "nixpkgs")
@@ -159,6 +193,32 @@
 							(value (Str "NixOS"))) (
 							(name "ref")
 							(value (Str "nixpkgs-26.05-darwin"))) (
+							(name "repo")
+							(value (Str "nixpkgs"))) (
+							(name "type")
+							(value (Str "github"))))))))))) (
+					(name "nixpkgs_2")
+					(value (Attrs ((
+						(name "locked")
+						(value (Attrs ((
+							(name "lastModified")
+							(value (Int 1771043024))) (
+							(name "narHash")
+							(value (Str "sha256-O1XDr7EWbRp+kHrNNgLWgIrB0/US5wvw9K6RERWAj6I="))) (
+							(name "owner")
+							(value (Str "NixOS"))) (
+							(name "repo")
+							(value (Str "nixpkgs"))) (
+							(name "rev")
+							(value (Str "3aadb7ca9eac2891d52a9dec199d9580a6e2bf44"))) (
+							(name "type")
+							(value (Str "github"))))))) (
+						(name "original")
+						(value (Attrs ((
+							(name "owner")
+							(value (Str "NixOS"))) (
+							(name "ref")
+							(value (Str "nixos-25.11"))) (
 							(name "repo")
 							(value (Str "nixpkgs"))) (
 							(name "type")
@@ -322,7 +382,67 @@
 							(name "roc-AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH")
 							(value (Str "roc-AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH"))) (
 							(name "roc-JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL")
-							(value (Str "roc-JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL")))))))))))))))))))))))))
+							(value (Str "roc-JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL"))) (
+							(name "zig")
+							(value (Str "zig"))))))))))) (
+					(name "systems")
+					(value (Attrs ((
+						(name "flake")
+						(value (Bool false))) (
+						(name "locked")
+						(value (Attrs ((
+							(name "lastModified")
+							(value (Int 1681028828))) (
+							(name "narHash")
+							(value (Str "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768="))) (
+							(name "owner")
+							(value (Str "nix-systems"))) (
+							(name "repo")
+							(value (Str "default"))) (
+							(name "rev")
+							(value (Str "da67096a3b9bf56a91d16901293e51ba5b49a27e"))) (
+							(name "type")
+							(value (Str "github"))))))) (
+						(name "original")
+						(value (Attrs ((
+							(name "owner")
+							(value (Str "nix-systems"))) (
+							(name "repo")
+							(value (Str "default"))) (
+							(name "type")
+							(value (Str "github"))))))))))) (
+					(name "zig")
+					(value (Attrs ((
+						(name "inputs")
+						(value (Attrs ((
+							(name "flake-compat")
+							(value (Str "flake-compat"))) (
+							(name "nixpkgs")
+							(value (Str "nixpkgs_2"))) (
+							(name "systems")
+							(value (Str "systems"))))))) (
+						(name "locked")
+						(value (Attrs ((
+							(name "lastModified")
+							(value (Int 1791635236))) (
+							(name "narHash")
+							(value (Str "sha256-AnEn78XeUUzBKISAhdyD462id4QP7gkn3kbIi9ZB9Pw="))) (
+							(name "owner")
+							(value (Str "mitchellh"))) (
+							(name "repo")
+							(value (Str "zig-overlay"))) (
+							(name "rev")
+							(value (Str "f0acd78ef01f2d5e3471cc01b08022ab4e665898"))) (
+							(name "type")
+							(value (Str "github"))))))) (
+						(name "original")
+						(value (Attrs ((
+							(name "owner")
+							(value (Str "mitchellh"))) (
+							(name "repo")
+							(value (Str "zig-overlay"))) (
+							(name "type")
+							(value (Str "github")))))))))))))))))))))))))
 	(intent (
 		(build_sources ((
 			(name "roc-5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H")
@@ -340,10 +460,13 @@
 		(inputs ((
 			(kind Overlay)
 			(name "roc")
-			(url "github:roc-lang/roc-overlay"))))
+			(url "github:roc-lang/roc-overlay")) (
+			(kind Overlay)
+			(name "zig")
+			(url "github:mitchellh/zig-overlay"))))
 		(overlays ((
 			(environment "dev")
-			(overlays ("roc")))))
+			(overlays ("roc" "zig")))))
 		(sources ((
 			(name "default")
 			(provider Auto))))))
@@ -358,6 +481,11 @@
 		(provider "nix")
 		(ref "github:roc-lang/roc-overlay")
 		(rev "57595f4dff90d2923f3cbbb79f17595b24cad496")) (
+		(digest "sha256:027127efc5de514cc128848085dc83e3ada277840fee0927de46c88bd641f4fc")
+		(name "zig")
+		(provider "nix")
+		(ref "github:mitchellh/zig-overlay")
+		(rev "f0acd78ef01f2d5e3471cc01b08022ab4e665898")) (
 		(digest "sha256:d67502113fa2be1a8c781c983aafaaf7df626626d93dccc5508c11a50a9ee486")
 		(name "roc-AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH")
 		(provider "nix")

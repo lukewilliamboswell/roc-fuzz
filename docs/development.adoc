@@ -37,10 +37,12 @@ on every CI runner. To work on roc-fuzz you need:
 * the `blueprint` command, from the roc-blueprint release that the platform URL
   in `Blueprint.roc` names: `nix profile install github:lukewilliamboswell/roc-blueprint/VERSION`,
   or the release's prebuilt binary checked against its published SHA-256;
-* a current Roc nightly installed as `roc`; and
-* Zig 0.16.0 as `zig`, to build the host or to regenerate its bindings. Zig is
-  not in the Blueprint environment yet, because Blueprint cannot yet name an
-  exact Zig release; `scripts/native-deps.json` records the version.
+* a current Roc nightly installed as `roc`.
+
+The environment supplies Zig 0.16.0, from
+https://github.com/mitchellh/zig-overlay[zig-overlay], to build the host and its
+linker inputs and to format the host bindings. `scripts/native-deps.json` names
+the same version, and the supply-chain check holds the two together.
 
 [source,sh]
 ----
@@ -50,7 +52,7 @@ blueprint shell          # enter the environment and run scripts/*.roc directly
 ----
 
 Run `blueprint` from an ordinary shell. Inside the environment `roc-stable` is
-the pinned compiler and your own `roc` and `zig` remain visible. Arguments to a
+the pinned compiler and your own `roc` remains visible. Arguments to a
 task follow `--`, for example `+blueprint run build-platform -- --target x64musl+`.
 
 Linker inputs have an independent, content-addressed release cycle;

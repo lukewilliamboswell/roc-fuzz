@@ -12,6 +12,7 @@ import weaver.Cli
 import weaver.Opt
 import src/AutomationIO
 import src/Files
+import src/NativeDeps
 import src/Project
 import src/Script
 import src/SkipNotes
@@ -32,6 +33,7 @@ main! = |raw_args| {
 		Script.info!("CHECK", "Workflow action revisions, script package identities, and compiler pins")?
 	}
 	validate_actions!(root)?
+	validate_zig!(root)?
 	validate_script_headers!(root)?
 	validate_unpinned_sources!(root)?
 	validate_targets!(root)?
@@ -90,6 +92,15 @@ validate_actions! = |root| {
 		}
 	}
 	Ok({})
+}
+
+## The environment supplies the exact Zig release the native recipe names, so
+## a contributor and every runner build the host and its linker inputs with the
+## compiler the recipe was written for.
+validate_zig! = |root| {
+	blueprint = Path.read_utf8!(Path.join(root, "Blueprint.roc"))?
+	wanted = "zigpkgs.\\\"${NativeDeps.current.zig_version}\\\""
+	if blueprint.contains(wanted) Ok({}) else Err(BlueprintMustSupplyRecipeZig(NativeDeps.current.zig_version))
 }
 
 ## The platform, its targets and every other Roc file outside scripts/ float
