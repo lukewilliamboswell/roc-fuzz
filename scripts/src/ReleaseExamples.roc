@@ -109,13 +109,23 @@ ReleaseExamples := [].{
 			_ => Err(NoStablePlatformRelease)
 		}
 	}
-	resolve! : Str, Str => Try(Selection, _)
-	resolve! = |repository, compiler| {
+
+	## Select the release to test: the one tagged `wanted`, or the latest
+	## stable platform release when `wanted` is empty.
+	resolve! : Str, Str, Str => Try(Selection, _)
+	resolve! = |repository, compiler, wanted| {
 		if !Archive.safe_name(repository) or Str.split_on(repository, "/").len() != 2 or !Version.nightly(compiler) {
 			return Err(InvalidReleaseSelection)
 		}
 		releases = releases!(repository, 1, [])?
-		release = ReleaseExamples.select_release(releases)?
+		release = if wanted.is_empty() {
+			ReleaseExamples.select_release(releases)?
+		} else {
+			match releases.keep_if(|item| item.tag_name == wanted and !item.draft) {
+				[item] => item
+				_ => return Err(NoSuchPlatformRelease(wanted))
+			}
+		}
 		bundle = match release.assets.keep_if(|item| Script.ends_with(item.name, ".tar.zst")) {
 			[item] => asset_identity(item)?
 			_ => return Err(ExpectedOnePlatformBundle)
@@ -158,7 +168,6 @@ ReleaseExamples := [].{
 				}
 				# Check the platform's digest too; Roc checks its content address on use.
 				download!(selection.bundle, Path.join(temp, "platform.tar.zst"))?
-				ReleaseExamples.rewrite!(destination, "roc", selection.compiler)?
 				AutomationIO.json!(Path.join(destination, "compatibility.json"), selection)
 			},
 		)

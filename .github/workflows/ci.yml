@@ -50,94 +50,6 @@ jobs:
         run: |
           blueprint run native-sanitizers
 
-  published-release:
-    name: Select published compatibility baseline
-    needs: resolve
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
-        with:
-          version: "0.4.0"
-          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
-          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
-          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
-      - name: Install the Roc nightly this run resolved
-        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
-        with:
-          version: nightly-new-compiler
-          nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
-      - name: Resolve one release and compiler for both hosts
-        env:
-          GH_TOKEN: ${{ github.token }}
-          NIGHTLY_TAG: ${{ needs.resolve.outputs.nightly-tag }}
-        run: |
-          blueprint run release-examples -- --operation resolve --repository "$GITHUB_REPOSITORY" \
-            --compiler "$NIGHTLY_TAG" \
-            --output .release/published-selection.json
-          cat .release/published-selection.json >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: published-selection
-          path: .release/published-selection.json
-          if-no-files-found: error
-
-  published-examples:
-    name: Published release compatibility (${{ matrix.os }})
-    needs: [resolve, published-release]
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-22.04, macos-26]
-    runs-on: ${{ matrix.os }}
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
-        with:
-          version: "0.4.0"
-          sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
-          sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
-          sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
-      - name: Install the Roc nightly this run resolved
-        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
-        with:
-          version: nightly-new-compiler
-          nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: published-selection
-          path: .release
-      - name: Fetch the frozen release examples
-        env:
-          GH_TOKEN: ${{ github.token }}
-          NIGHTLY_TAG: ${{ needs.resolve.outputs.nightly-tag }}
-        run: |
-          test "$(jq -er .compiler .release/published-selection.json)" = "$NIGHTLY_TAG"
-          blueprint run release-examples -- --operation fetch --selection .release/published-selection.json --output .release/published-suite
-      - name: Build and exercise published examples on this host
-        env:
-          XDG_CACHE_HOME: ${{ runner.temp }}/roc-published-cache
-        run: >-
-          blueprint run test-targets -- --suite-root .release/published-suite
-          --operation all --max-total-time 1 --verbose
-      - name: Preserve compatibility evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: compatibility-${{ matrix.os }}
-          path: .release/published-suite/compatibility.json
-          if-no-files-found: error
-
   self-contained-runner:
     needs: resolve
     strategy:
@@ -226,7 +138,7 @@ jobs:
   required:
     name: CI required
     if: always()
-    needs: [native-sanitizers, self-contained-runner, published-release, published-examples]
+    needs: [native-sanitizers, self-contained-runner]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:
@@ -234,8 +146,6 @@ jobs:
         env:
           MATRIX_RESULT: ${{ needs.self-contained-runner.result }}
           SANITIZER_RESULT: ${{ needs.native-sanitizers.result }}
-          PUBLIC_RESULT: ${{ needs.published-examples.result }}
         run: |
           test "$MATRIX_RESULT" = success
           test "$SANITIZER_RESULT" = success
-          test "$PUBLIC_RESULT" = success

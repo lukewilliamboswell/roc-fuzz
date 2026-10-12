@@ -25,7 +25,7 @@ main! = |args| {
 	match options.operation {
 		"package" => ReleaseExamples.package!(Project.root!()?, output, { schema: 1, version: options.release_version, source_sha: options.source_sha, platform_url: options.platform_url, compiler: options.compiler })
 		"resolve" => {
-			selected = ReleaseExamples.resolve!(options.repository, options.compiler)?
+			selected = ReleaseExamples.resolve!(options.repository, options.compiler, options.release_version)?
 			AutomationIO.json!(output, selected)?
 			Stdout.line!(Json.to_str(selected))
 		}
@@ -47,10 +47,10 @@ cli_parser = Cli.assert_valid(
 		{
 			operation: Opt.str({ short: "", long: "operation", help: "package, resolve, fetch, or unpack.", default: Value("") }),
 			output: Opt.str({ short: "", long: "output", help: "Output archive, selection, or fresh suite directory.", default: Value("") }),
-			release_version: Opt.str({ short: "", long: "release-version", help: "Platform release version.", default: Value("") }),
+			release_version: Opt.str({ short: "", long: "release-version", help: "Platform release version; with resolve, the release to select instead of the latest.", default: Value("") }),
 			source_sha: Opt.str({ short: "", long: "source-sha", help: "Exact release source commit.", default: Value("") }),
 			platform_url: Opt.str({ short: "", long: "platform-url", help: "Immutable released platform bundle URL.", default: Value("") }),
-			compiler: Opt.str({ short: "", long: "compiler", help: "Exact project compiler tag.", default: Value("") }),
+			compiler: Opt.str({ short: "", long: "compiler", help: "Nightly tag the run uses, recorded with the selection.", default: Value("") }),
 			repository: Opt.str({ short: "", long: "repository", help: "Repository slug.", default: Value("") }),
 			selection: Opt.str({ short: "", long: "selection", help: "Resolved release selection JSON.", default: Value("") }),
 			archive: Opt.str({ short: "", long: "archive", help: "Frozen examples ZIP archive.", default: Value("") }),
