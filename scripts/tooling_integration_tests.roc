@@ -29,6 +29,9 @@ main! = |_args| {
 			inventory = { schema: 1, cases: [{ name: "nested", path: "examples/nested/main.roc", seed_hex: "00", expected_failure: Bool.False, skip_seed: Bool.False, skip_fuzz: Bool.False }] }
 			AutomationIO.json!(Path.join(source, "tests/targets.json"), inventory)?
 			AutomationIO.write!(Path.join(source, "scripts/native-deps.json"), Path.read_bytes!(Path.join(root, "scripts/native-deps.json"))?)?
+			for name in ["src/macos_fuzzer_ext_functions.cpp", "src/macos_compat/sys/syscall.h"] {
+				AutomationIO.write!(Path.join(source, name), Path.read_bytes!(Path.join(root, name))?)?
+			}
 			AutomationIO.write!(Path.join(source, "Blueprint.lock"), "locked tools\n".to_utf8())?
 			AutomationIO.write!(Path.join(source, "README.md"), "unrelated\n".to_utf8())?
 			AutomationIO.run!("git", ["init", "-q"], source)?
@@ -82,19 +85,20 @@ native_tests! = |_root, source, temp| {
 		AutomationIO.write!(Path.join(source, name), name.to_utf8())?
 	}
 	AutomationIO.run!("git", ["add", "."], source)?
-	identity = LinkInputs.content_identity!(source)?
-	for name in ["README.md", "Blueprint.lock", "scripts/native-deps.json"] {
-		AutomationIO.write!(Path.join(source, name), "edited\n".to_utf8())?
-		Script.require!(LinkInputs.content_identity!(source)? == identity, "${name} is not a linker input, so editing it must not change their identity")?
-	}
+	fingerprint = LinkInputs.fingerprint!(source)?
 	library = Path.join(Project.Target.dir(Project.Target.X64Musl, source), "libc.a")
-	for path in [library, Path.join(source, "LICENSE")] {
-		original = Path.read_bytes!(path)?
-		AutomationIO.write!(path, original.concat("changed\n".to_utf8()))?
-		Script.require!(LinkInputs.content_identity!(source)? != identity, "${Path.display(path)} is published, so its bytes must change the identity")?
-		AutomationIO.write!(path, original)?
+	# Tooling is not an input: editing it never demands a release.
+	for name in ["README.md", "Blueprint.lock", "scripts/build_platform.roc"] {
+		AutomationIO.write!(Path.join(source, name), "edited\n".to_utf8())?
+		Script.require!(LinkInputs.fingerprint!(source)? == fingerprint, "${name} must not invalidate native inputs")?
 	}
-	Script.require!(LinkInputs.content_identity!(source)? == identity, "Restored bytes must restore the identity")?
+	for name in ["scripts/native-deps.json", "LICENSE", "src/macos_fuzzer_ext_functions.cpp"] {
+		original = Path.read_bytes!(Path.join(source, name))?
+		AutomationIO.write!(Path.join(source, name), original.concat("changed\n".to_utf8()))?
+		Script.require!(LinkInputs.fingerprint!(source)? != fingerprint, "${name} must invalidate native inputs")?
+		AutomationIO.write!(Path.join(source, name), original)?
+	}
+	Script.require!(LinkInputs.fingerprint!(source)? == fingerprint, "Restored inputs must restore the fingerprint")?
 	cache = Path.join(temp, "native")
 	producer : LinkInputs.Source
 	producer = { repository: "owner/repo", sha: Str.repeat("b", 40), ref: "refs/heads/test", workflow: "owner/repo/.github/workflows/link-inputs.yml", input_fingerprint: "" }
@@ -106,9 +110,18 @@ native_tests! = |_root, source, temp| {
 	lock : LinkInputs.Lock
 	lock = { schema_version: 1, kind: "link-inputs", repository: "owner/repo", release: "linker-inputs-sha256-${digest}", manifest: { asset: "build-input-release.json", sha256: digest }, source: manifest.source, artifacts: manifest.assets }
 	Path.write_utf8!(Path.join(source, "native-libraries.lock.json"), Str.replace_each(Json.to_str(lock), "\"artifacts\"", "\"targets\""))?
-	Script.require!(LinkInputs.check_source!(source)? == Current(lock.release), "Libraries the lock was made from must be current")?
+	Script.require!(LinkInputs.validate_lock(lock, "different") |> Try.is_err, "Reject stale native locks")?
+	same = match LinkInputs.check_source!(source, cache)? {
+		SameBytes(_) => Bool.True
+		_ => Bool.False
+	}
+	Script.require!(same, "Libraries the lock was made from must compare equal")?
 	AutomationIO.write!(library, "rebuilt differently".to_utf8())?
-	Script.require!(LinkInputs.check_source!(source)? != Current(lock.release), "Libraries that differ from the lock must be reported")?
+	named = match LinkInputs.check_source!(source, cache)? {
+		DifferentBytes({ files, release: _ }) => files == ["x64musl/libc.a"]
+		_ => Bool.False
+	}
+	Script.require!(named, "A library that differs from the locked one must be named")?
 	AutomationIO.write!(library, "libc.a".to_utf8())?
 	for target in Project.all_targets {
 		_ = LinkInputs.verify_archive!(source, target, cache)?

@@ -5,6 +5,7 @@ LibfuzzerDependency : { sha256 : Str, url : Str, version : Str }
 
 RawNativeDeps : {
 	libfuzzer : LibfuzzerDependency,
+	recipe_revision : U64,
 	repository : Str,
 	schema : U64,
 	zig_version : Str,
@@ -17,6 +18,11 @@ NativeLibfuzzerDependency : { sha256 : Identity.Sha256, url : Str, version : Str
 ## else the repository pins lives in Blueprint.roc and Blueprint.lock.
 NativeDeps := {
 	libfuzzer : NativeLibfuzzerDependency,
+
+	## Raised by hand when a change to the build recipe alters a library byte:
+	## a flag, a target, the list of libraries. The producer rebuilds and
+	## compares on every such pull request, and fails one that forgot.
+	recipe_revision : U64,
 	repository : Identity.Repository,
 	schema : U64,
 	zig_version : Str,
@@ -43,6 +49,7 @@ NativeDeps := {
 		NativeDeps.validate(
 			NativeDeps.{
 				libfuzzer: { sha256: libfuzzer_sha256, url: decoded.libfuzzer.url, version: decoded.libfuzzer.version },
+				recipe_revision: decoded.recipe_revision,
 				repository,
 				schema: decoded.schema,
 				zig_version: decoded.zig_version,
@@ -51,7 +58,7 @@ NativeDeps := {
 	}
 
 	validate = |self| {
-		if self.schema != 2 {
+		if self.schema != 3 {
 			return Err(UnsupportedNativeDependenciesSchema(self.schema))
 		}
 		if !Version.semantic(self.zig_version) {

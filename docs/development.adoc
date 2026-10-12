@@ -166,7 +166,7 @@ the hosting policy does not enforce immutability; a content-derived name alone
 cannot prevent an administrator from replacing assets.
 
 Before adopting a release, review its producer changes, exact source revision,
-content identity, manifest and archive digests, sizes, target coverage, native
+input fingerprint, manifest and archive digests, sizes, target coverage, native
 link tests, and workflow attestations. Merge with a merge commit so the attested
 producer SHA and signed lock commit remain reachable. Ordinary pull requests
 then know only the reviewed lock, cache, verifier, and target files; they
@@ -181,14 +181,25 @@ is compiled against the headers Zig bundles, so it builds on Linux as well as on
 macOS and reads no installed Apple SDK. Keep it that way: a change that makes
 two builds of the same commit differ is a defect in the recipe.
 
-Because the build is reproducible, the lock is checked against what the tree
-builds and not against a list of files that might change it. The identity of a
-set of linker inputs is a digest of the published files themselves: every
-library for every target, and the licence files packed beside them. A manifest
-and the lock record it as `input_fingerprint`. The `Linker inputs match the
-lock` job of `ci.yml` builds both targets from source on every pull request
-and fails when their identity differs from the lock's. The build takes about
-four minutes on a runner with a cold Zig cache. Run the same check locally with:
+A routine pull request never rebuilds the libraries. It hashes a short list of
+files and compares the result with the `input_fingerprint` the lock records;
+`LinkInputs.fingerprint_inputs` is the list:
+
+* `scripts/native-deps.json`: the Zig release, the libFuzzer source, and the
+  recipe revision;
+* the macOS libFuzzer adapter and the stand-in header it is compiled with; and
+* the licence files packed beside the libraries.
+
+No script, workflow or lock file is in it, so editing tooling never demands a
+release. The recipe itself lives in scripts, and that is what the recipe
+revision is for: raise `recipe_revision` when a change to the build alters a
+library byte, such as a flag, a target or the list of libraries.
+
+Reproducibility keeps that honest. The `Linker inputs` producer runs on a pull
+request that touches the recipe, rebuilds both targets, and while the lock
+claims to be current requires the result to be byte-identical to the locked
+release. A change that alters a library without raising the revision fails
+there, naming the files. Run the same comparison locally with:
 
 [source,sh]
 ----
@@ -196,14 +207,11 @@ blueprint run build-platform -- --target x64musl --target arm64mac --libraries s
 blueprint run link-inputs -- --operation check-source
 ----
 
-No script, workflow or lock file is hashed. A change that leaves the libraries
-byte-identical needs no release, whatever it touches; a change that alters one
-byte needs one, whatever it touches.
+When the fingerprint changes, or that comparison fails, use this sequence:
 
-When that check fails, use this sequence:
-
-. Stage the change in a same-repository PR. Its `Linker inputs match the lock`
-  job fails until the new lock is adopted.
+. Stage the change in a same-repository PR, raising `recipe_revision` if the
+  build recipe changed. Its `Platform bundle` job fails with a stale-lock error
+  until the new lock is adopted.
 . To inspect a nonpublishing candidate, dispatch `Linker inputs` on the PR branch
   with `release_candidate=true` and `expected_sha` set to its exact current head.
   For example, run `gh workflow run link-inputs.yml --ref BRANCH -f release_candidate=true -f expected_sha=SHA`, replacing `BRANCH` and `SHA`.
@@ -343,8 +351,7 @@ Three workflows each answer one question:
 
 `ci.yml`:: Does this change work with today's compiler? One job runs
 `blueprint run check` and audits the API reference. One job regenerates the
-host bindings and compares them with the committed file. One job rebuilds the
-linker inputs from source and compares them with the lock. One builder
+host bindings and compares them with the committed file. One builder
 cross-compiles the host for both targets around the locked inputs and
 assembles a single bundle, and a job on each
 target downloads that bundle and runs every case against it. `CI required`

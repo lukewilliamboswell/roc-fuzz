@@ -27,9 +27,10 @@ main! = |args| {
 		"cache-identity" => Stdout.line!(LinkInputs.cache_identity!(root, Project.Target.parse(options.target)?)?)
 		"install" => LinkInputs.install!(root, Project.Target.parse(options.target)?, Path.utf8(options.cache))
 		"check-installed" => LinkInputs.check_installed!(root)
-		"check-source" => match LinkInputs.check_source!(root)? {
-			Current(release) => Script.pass!("the libraries built from this tree are the ones ${release} holds")
-			Stale({ built, locked, release }) => Script.fail!("the libraries built from this tree differ from the ones ${release} holds (built ${built}, locked ${locked}). Something that changes their bytes changed: publish a new linker-input release from this pull request, as the development chapter describes.")
+		"check-source" => match LinkInputs.check_source!(root, Path.utf8(options.cache))? {
+			SameBytes(release) => Script.pass!("the libraries built from this tree are byte-identical to the ones ${release} holds")
+			LockNotCurrent => Script.warn!("the lock is not current for this tree, so there is nothing to compare: these libraries are a candidate for a new release")
+			DifferentBytes({ release, files }) => Script.fail!("the lock says ${release} is current, but building this tree gives different bytes for: ${Str.join_with(files, ", ")}. If the recipe was meant to change them, raise recipe_revision in scripts/native-deps.json and publish a new linker-input release. Otherwise the build has stopped being reproducible.")
 		}
 		_ => Err(UnknownOperation(options.operation))
 	}

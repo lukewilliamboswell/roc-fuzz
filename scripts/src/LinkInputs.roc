@@ -22,38 +22,68 @@ LinkInputs := [].{
 	asset : Targets, Project.Target -> Asset
 	asset = |artifacts, target| if target.name() == "x64musl" artifacts.x64musl else artifacts.arm64mac
 
-	## The identity of a set of linker inputs is the content of the files a
-	## release publishes: every library for every target, and the licence files
-	## packed beside them. The build is byte-reproducible, so two trees that
-	## would produce the same libraries have the same identity, whatever else
-	## differs between them. No script, workflow or lock file is hashed.
+	## What a routine pull request hashes to learn whether the locked release
+	## is still the right one. It is cheap, so no pull request rebuilds the
+	## libraries to find out.
 	##
-	## A manifest and a lock record it as `input_fingerprint`, the name the
-	## shared publisher uses for the producer's identity.
-	content_identity! = |root| {
+	## The list is short on purpose: what the libraries are made from, and the
+	## files packed beside them. `scripts/native-deps.json` holds the Zig
+	## release, the libFuzzer source and the recipe revision, which is raised by
+	## hand when a change to the build recipe alters a library byte. No script
+	## and no lock file is here, so editing tooling never demands a release.
+	##
+	## What keeps the revision honest is `check_source!`: the build is
+	## byte-reproducible, and the producer rebuilds and compares whenever the
+	## recipe is touched.
+	fingerprint_inputs = [
+		"LICENSE",
+		"THIRD_PARTY_LICENSES.md",
+		"scripts/native-deps.json",
+		"src/macos_compat/sys/syscall.h",
+		"src/macos_fuzzer_ext_functions.cpp",
+	]
+	fingerprint! = |root| {
 		var $entries = []
-		for target in Project.all_targets {
-			for name in LinkInputs.files(target) {
-				$entries = $entries.append({ path: "${target.name()}/${name}", sha256: Integrity.digest!(Path.join(target.dir(root), name))? })
-			}
-		}
-		for name in LinkInputs.licenses {
+		for name in LinkInputs.fingerprint_inputs {
 			$entries = $entries.append({ path: name, sha256: Integrity.digest!(Path.join(root, name))? })
 		}
 		Ok(Integrity.digest_bytes(Json.to_str($entries).to_utf8()))
 	}
 
-	## Whether the libraries just built from this tree are the ones the lock
-	## selects. Run it after building every target from source.
-	check_source! = |root| {
-		lock = LinkInputs.read_lock!(root)?
-		built = LinkInputs.content_identity!(root)?
-		if built == lock.source.input_fingerprint Ok(Current(lock.release)) else Ok(Stale({ built, locked: lock.source.input_fingerprint, release: lock.release }))
+	## After building every target from source: are the libraries the ones the
+	## locked release holds? Meaningful only while the fingerprint says the lock
+	## is current. A difference then means the recipe changed the bytes without
+	## the recipe revision being raised, or the build stopped being reproducible.
+	check_source! = |root, cache| {
+		lock = match LinkInputs.read_lock!(root) {
+			Ok(current) => current
+			Err(_) => return Ok(LockNotCurrent)
+		}
+		var $different = []
+		for target in Project.all_targets {
+			(archive, _) = LinkInputs.verify_archive!(root, target, cache)?
+			$different = $different.concat(
+				Env.with_temp_dir!(
+					|temp| {
+						staging = Path.join(temp, "locked")
+						LinkInputs.extract!(target, archive, staging, lock.source.input_fingerprint)?
+						var $changed = []
+						for name in LinkInputs.files(target) {
+							if Integrity.digest!(Path.join(staging, name))? != Integrity.digest!(Path.join(target.dir(root), name))? {
+								$changed = $changed.append("${target.name()}/${name}")
+							}
+						}
+						Ok($changed)
+					},
+				)?,
+			)
+		}
+		if $different.is_empty() Ok(SameBytes(lock.release)) else Ok(DifferentBytes({ release: lock.release, files: $different }))
 	}
 	metadata : Project.Target, Str -> Metadata
 	metadata = |target, fingerprint| { schema_version: 1, kind: "link-inputs", target: target.name(), input_fingerprint: fingerprint, files: LinkInputs.files(target), licenses: LinkInputs.licenses }
 	package! = |root, output, source| {
-		fingerprint = LinkInputs.content_identity!(root)?
+		fingerprint = LinkInputs.fingerprint!(root)?
 		actual_source = { ..source, input_fingerprint: fingerprint }
 		arm64mac = package_target!(root, output, Project.Target.Arm64Mac, fingerprint)?
 		x64musl = package_target!(root, output, Project.Target.X64Musl, fingerprint)?
@@ -61,8 +91,8 @@ LinkInputs := [].{
 		manifest = { schema_version: 1, kind: "link-inputs", source: actual_source, assets: { arm64mac, x64musl } }
 		AutomationIO.json!(Path.join(output, "build-input-release.json"), manifest)
 	}
-	validate_lock : Lock -> Try(Lock, _)
-	validate_lock = |lock| {
+	validate_lock : Lock, Str -> Try(Lock, _)
+	validate_lock = |lock, fingerprint| {
 		if lock.schema_version != 1 or lock.kind != "link-inputs" {
 			return Err(UnsupportedLinkInputLock)
 		}
@@ -82,6 +112,9 @@ LinkInputs := [].{
 				return Err(InvalidLinkInputAsset(target.name()))
 			}
 		}
+		if source.input_fingerprint != fingerprint {
+			return Err(StaleLinkInputLockPublishReviewedInputs)
+		}
 		Ok(lock)
 	}
 	read_lock! = |root| {
@@ -93,7 +126,7 @@ LinkInputs := [].{
 		}
 		lock : Lock
 		lock = Json.parse(Str.replace_each(encoded, "\"targets\"", "\"artifacts\""))?
-		LinkInputs.validate_lock(lock)
+		LinkInputs.validate_lock(lock, LinkInputs.fingerprint!(root)?)
 	}
 	cache_identity! = |root, target| {
 		lock = LinkInputs.read_lock!(root)?

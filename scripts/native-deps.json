@@ -1,6 +1,7 @@
 {
-  "schema": 2,
+  "schema": 3,
   "repository": "lukewilliamboswell/roc-fuzz",
+  "recipe_revision": 1,
   "zig_version": "0.16.0",
   "libfuzzer": {
     "version": "0.4.5",
