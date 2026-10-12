@@ -101,7 +101,7 @@ no publication authority. Release new inputs for changes to their sources,
 runtimes/toolchains, flags, targets, security fixes, or the macOS adapter compiled
 into `libfuzzer.a`. The macOS coverage shim stays with `libhost.a`.
 
-`Publish linker inputs` runs trusted controller code pinned to a reviewed full
+`Publish link inputs` runs trusted controller code pinned to a reviewed full
 `roc-automation` commit. It dispatches the producer at the exact same-repository
 PR head, verifies the workflow/ref/SHA, hashes and attestations, publishes an
 immutable release named from the aggregate manifest hash, and adds only the lock
@@ -131,8 +131,8 @@ When the linker-input fingerprint changes, use this sequence:
   For example, run `gh workflow run native-libraries.yml --ref BRANCH -f release_candidate=true -f expected_sha=SHA`, replacing `BRANCH` and `SHA`.
   Review both target tests, the manifest, archive hashes, and attestations. This
   run does not create a GitHub release or edit the PR.
-. From `trunk`, dispatch `Publish linker inputs` with `pull-request` set to that
-  PR number: `gh workflow run publish-linker-inputs.yml --ref trunk -f pull-request=NUMBER`.
+. From `trunk`, dispatch `Publish link inputs` with `pull-request` set to that
+  PR number: `gh workflow run publish-link-inputs.yml --ref trunk -f pull-request=NUMBER`.
   The trusted publisher reruns the producer at the exact PR head,
   publishes the immutable linker-input release, and appends a GitHub-signed
   `native-libraries.lock.json`-only commit to the PR. Do not dispatch it from
