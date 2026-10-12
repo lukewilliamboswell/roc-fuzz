@@ -61,4 +61,7 @@ config = [
 	# The manual and the API reference.
 	Task("docs", [Use("dev"), Run(["scripts/build_docs.roc", "--"])]),
 	Task("check-docs", [Use("dev"), Run(["scripts/check_docs.roc", "--"])]),
+	# The Pages site: the latest release's documentation, with the working
+	# tree's under unreleased/. Run `docs` first.
+	Task("site", [Use("dev"), Run(["scripts/build_site.roc", "--"])]),
 ]

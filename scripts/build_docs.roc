@@ -96,7 +96,7 @@ cli_parser = Cli.assert_valid(
 	Cli.finish(
 		{
 			automation_root: Opt.maybe({ short: "", long: "automation-root", help: "Use a local checkout at the configured revision; otherwise uses ROC_AUTOMATION_ROOT or the pinned cache.", type: "path", parser: CliValues.path }),
-			docs_version: Opt.str({ short: "", long: "docs-version", help: "Version label embedded in the manual. [default: trunk]", default: Value("trunk") }),
+			docs_version: Opt.str({ short: "", long: "docs-version", help: "Version label embedded in the manual. [default: unreleased]", default: Value("unreleased") }),
 		}.Cli,
 		{
 			name: "build-docs",

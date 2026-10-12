@@ -1,16 +1,23 @@
 name: Documentation
 
+# Builds the manual and the API reference, assembles the site, and deploys it
+# to GitHub Pages from trunk. The site leads with the latest release, whose
+# documentation is restored from the archive that release published; the
+# working tree's documentation sits under unreleased/. A pull request builds
+# everything and deploys nothing. release.yml calls this workflow after it
+# publishes, because a new release changes what the site leads with.
 on:
   push:
     branches: [trunk]
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 permissions: {}
 
 concurrency:
   group: docs-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # One run uses one compiler: the tag is resolved here and passed to every job.
@@ -45,6 +52,7 @@ jobs:
           sha256-x86_64-linux: 3fe15840aa1ae884a943e1973fbf07d67ae53d7a295edd32916f25c962df6480
           sha256-aarch64-linux: 008e44c522ece7263d0871817e3b98693a57f8025878931423479638bba0e5bf
           sha256-aarch64-darwin: 614f58813b91c344c90659cd161fd9afde309a5eab40b85e88ceb0ef4da21743
+
       - name: Install the Roc nightly this run resolved
         uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
         with:
@@ -52,21 +60,27 @@ jobs:
           nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
 
       - id: docs
-        name: Build HTML, PDF, and API documentation
+        name: Build the working tree's HTML, PDF, and API documentation
         uses: lukewilliamboswell/roc-automation/actions/build-docs@26b692c5ce341efd5633793079d70c9e04559eac # 26b692c
         with:
           pdf-filename: roc-fuzz.pdf
-          docs-version: trunk
+          docs-version: unreleased
           api-entrypoint: platform/main.roc
           roc-command: roc
 
       - name: Audit the generated API reference
         run: blueprint run check-docs -- "${{ steps.docs.outputs.site-directory }}/api"
 
+      - name: Assemble the site around the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SITE: ${{ steps.docs.outputs.site-directory }}
+        run: blueprint run site -- --working-tree-site "$SITE" --output "$RUNNER_TEMP/pages"
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
-          path: ${{ steps.docs.outputs.site-directory }}
+          path: ${{ runner.temp }}/pages
 
   deploy:
     if: github.event_name != 'pull_request'

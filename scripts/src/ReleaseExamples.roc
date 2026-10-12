@@ -168,6 +168,32 @@ ReleaseExamples := [].{
 		examples = kits.map_try(asset_identity)?
 		Ok({ schema: 1, repository, release_id: release.id, version: release.tag_name, source_sha: sha, compiler, bundle, examples })
 	}
+
+	## The documentation archive of the latest stable platform release, which
+	## is what a visitor to the site has installed.
+	latest_docs! = |repository| {
+		if !Archive.safe_name(repository) or Str.split_on(repository, "/").len() != 2 {
+			return Err(InvalidReleaseSelection)
+		}
+		release = ReleaseExamples.select_release(releases!(repository, 1, [])?)?
+		match release.assets.keep_if(|item| item.name == "roc-fuzz-docs-${release.tag_name}.zip") {
+			[item] => Ok(Published({ version: release.tag_name, archive: asset_identity(item)? }))
+			_ => Ok(NoDocsArchive(release.tag_name))
+		}
+	}
+
+	## Download a release's documentation archive, check it against the digest
+	## GitHub records, and unpack it into a fresh directory.
+	fetch_docs! = |archive, destination|
+		Env.with_temp_dir!(
+			|temp| {
+				downloaded = Path.join(temp, "docs.zip")
+				download!(archive, downloaded)?
+				_ = Archive.extract!(Archive.Format.Zip, downloaded, destination, ReleaseExamples.limit)?
+				Ok({})
+			},
+		)
+
 	unpack! = |archive, destination| {
 		_ = Archive.extract!(Archive.Format.Zip, archive, destination, ReleaseExamples.limit)?
 		ReleaseExamples.validate_release!(destination)

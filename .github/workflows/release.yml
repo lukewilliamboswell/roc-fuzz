@@ -626,6 +626,19 @@ jobs:
           gh release edit "$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --draft=false "${kind[@]}"
           cat tested.sha256 >> "$GITHUB_STEP_SUMMARY"
 
+  # A new release changes what the site leads with. The called workflow builds
+  # the site in a read-only job and deploys that artifact from a job that holds
+  # only the Pages permissions. A release candidate does not change the site.
+  site:
+    name: Rebuild the documentation site
+    needs: [validate, publish]
+    if: github.event_name == 'workflow_dispatch' && needs.validate.outputs.is_prerelease != 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/docs.yml
+
   required:
     name: Release required
     if: always() && github.event_name == 'pull_request'

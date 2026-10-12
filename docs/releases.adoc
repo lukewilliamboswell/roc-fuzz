@@ -1,0 +1,26 @@
+= Release notes
+
+Each release has its notes in `docs/releases/`, newest first. They are the
+source of the text on that release's GitHub page.
+
+A release's bundle URL holds the content hash of the bundle, which does not
+exist until the release builds it. The notes therefore write `+{platform-url}+`
+where an application header names the platform, and the release workflow fills
+in the real URL when it publishes. Copy the URL from the
+https://github.com/lukewilliamboswell/roc-fuzz/releases[release page].
+
+:manual-url: https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.3/roc-fuzz-0.4.3.pdf
+
+include::releases/0.4.3.adoc[leveloffset=+1]
+
+:manual-url: https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.2/roc-fuzz-0.4.2.pdf
+
+include::releases/0.4.2.adoc[leveloffset=+1]
+
+:manual-url: https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.1/roc-fuzz-0.4.1.pdf
+
+include::releases/0.4.1.adoc[leveloffset=+1]
+
+:manual-url: https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.0/roc-fuzz-0.4.0.pdf
+
+include::releases/0.4.0.adoc[leveloffset=+1]
