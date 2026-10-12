@@ -85,7 +85,10 @@ native_tests! = |_root, source, temp| {
 	fingerprint = LinkInputs.fingerprint!(source)?
 	AutomationIO.write!(Path.join(source, "README.md"), "edited\n".to_utf8())?
 	Script.require!(LinkInputs.fingerprint!(source)? == fingerprint, "An unrelated file must not invalidate native inputs")?
-	for name in ["Blueprint.lock", "scripts/native-deps.json"] {
+	# The tooling environment runs the recipe without changing what it builds.
+	AutomationIO.write!(Path.join(source, "Blueprint.lock"), "relocked tools\n".to_utf8())?
+	Script.require!(LinkInputs.fingerprint!(source)? == fingerprint, "The tooling lock must not invalidate native inputs")?
+	for name in ["scripts/native-deps.json", "LICENSE"] {
 		original = Path.read_bytes!(Path.join(source, name))?
 		AutomationIO.write!(Path.join(source, name), original.concat("changed\n".to_utf8()))?
 		Script.require!(LinkInputs.fingerprint!(source)? != fingerprint, "${name} must invalidate native inputs")?

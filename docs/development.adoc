@@ -71,9 +71,7 @@ Nothing updates the tooling on a schedule. Each of these is a pull request a
 maintainer opens:
 
 Update the lock:: Run `blueprint update`, or `blueprint update INPUT` to move
-one input, then `blueprint run check`. `Blueprint.lock` is part of the
-linker-input fingerprint, so this needs a new linker-input release in the same
-pull request; see <<generate-platform-inputs>>.
+one input, then `blueprint run check`.
 Change the tooling compiler:: Change the tag in `Command("roc-stable", ...)` in
 `Blueprint.roc` and the `roc` field of every script to the same tag. The check
 script fails until they match. Run `blueprint update roc` if the locked overlay
@@ -171,11 +169,16 @@ producer SHA and signed lock commit remain reachable. Ordinary pull requests
 then know only the reviewed lock, cache, verifier, and target files; they
 never dispatch or reproduce linker inputs.
 
-The fingerprint that decides whether the lock is current covers the producer
-workflow, `Blueprint.lock`, `scripts/native-deps.json`, `scripts/build_platform.roc`,
-`scripts/link_input_artifacts.roc`, everything under `scripts/src/`, the macOS
-libFuzzer adapter and the licence files. It does not cover the Roc nightly,
-which plays no part in building the inputs.
+The fingerprint that decides whether the lock is current covers only what can
+change the bytes of an archive: `scripts/native-deps.json` (the Zig release and
+the libFuzzer source), the recipe in `scripts/build_platform.roc`, the targets
+in `scripts/src/Project.roc`, the packing code in `scripts/src/LinkInputs.roc`
+and `scripts/src/Archive.roc`, the macOS libFuzzer adapter, and the licence
+files packed beside the libraries. `LinkInputs.fingerprint_inputs` is the list.
+Neither Roc compiler, the workflows nor the rest of the scripts are in it. Two
+things outside it can still change an archive and are a reviewer's
+responsibility: the runner images named in `link-inputs.yml`, which supply the
+Apple SDK, and `Blueprint.lock` once the Zig toolchain comes from Blueprint.
 
 When the linker-input fingerprint changes, use this sequence:
 

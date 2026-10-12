@@ -21,8 +21,30 @@ LinkInputs := [].{
 	files = |target| Project.library_names(target.spec())
 	asset : Targets, Project.Target -> Asset
 	asset = |artifacts, target| if target.name() == "x64musl" artifacts.x64musl else artifacts.arm64mac
+
+	## Only what can change the bytes of a linker-input archive:
+	##
+	## * the Zig release and the libFuzzer source the libraries are built from;
+	## * the recipe that builds them, and the targets it builds them for;
+	## * the macOS adapter compiled into `libfuzzer.a`;
+	## * the code that packs the archives; and
+	## * the licence files packed beside the libraries.
+	##
+	## The tooling compiler, the workflows and the rest of the scripts run or
+	## call the recipe without changing what it produces, so they are not here.
+	## Add `Blueprint.lock` when the Zig toolchain comes from Blueprint.
+	fingerprint_inputs = [
+		"LICENSE",
+		"THIRD_PARTY_LICENSES.md",
+		"scripts/build_platform.roc",
+		"scripts/native-deps.json",
+		"scripts/src/Archive.roc",
+		"scripts/src/LinkInputs.roc",
+		"scripts/src/Project.roc",
+		"src/macos_fuzzer_ext_functions.cpp",
+	]
 	fingerprint! = |root| {
-		names = AutomationIO.tracked!(root, [".github/workflows/link-inputs.yml", "Blueprint.lock", "scripts/build_platform.roc", "scripts/link_input_artifacts.roc", "scripts/native-deps.json", "scripts/src", "src/macos_fuzzer_ext_functions.cpp", "LICENSE", "THIRD_PARTY_LICENSES.md"])?
+		names = AutomationIO.tracked!(root, LinkInputs.fingerprint_inputs)?
 		var $entries = []
 		for name in names {
 			$entries = $entries.append({ path: name, sha256: Integrity.digest_bytes(Path.read_bytes!(Path.join(root, name))?) })

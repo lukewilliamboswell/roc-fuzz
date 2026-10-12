@@ -6,16 +6,19 @@ name: Linker inputs
 # to obtain the attested candidate it releases.
 on:
   pull_request:
-    # Keep in step with LinkInputs.fingerprint! in scripts/src/LinkInputs.roc.
+    # The fingerprint inputs in scripts/src/LinkInputs.roc, plus this workflow
+    # and the producer's entry point, which can break a build without changing
+    # what a working one produces.
     paths:
       - .github/workflows/link-inputs.yml
-      - Blueprint.lock
       - LICENSE
       - THIRD_PARTY_LICENSES.md
       - scripts/build_platform.roc
       - scripts/link_input_artifacts.roc
       - scripts/native-deps.json
-      - scripts/src/**
+      - scripts/src/Archive.roc
+      - scripts/src/LinkInputs.roc
+      - scripts/src/Project.roc
       - src/macos_fuzzer_ext_functions.cpp
   workflow_dispatch:
     inputs:
