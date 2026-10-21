@@ -13,7 +13,7 @@ main! = |data| {
 	{ value: string, state: choice } = first.arbitrary_str()
 	{ value: retain, state: count_input } = choice.ratio(1, 2)
 	{ value: count, .. } = count_input.u64_in_inclusive_range(0, 512)
-	tmp = if retain string else ""
+	tmp = if (retain) string else ""
 
 	out = if count == 0 {
 		before = Fuzz.alloc_count!()

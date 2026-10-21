@@ -59,7 +59,7 @@ is_json_literal : List(U8), [UnsignedInt, SignedInt, Number] -> Bool
 is_json_literal = |bytes, family| {
 	n = bytes.len()
 	at = |i| NumText.at(bytes, i)
-	start = if at(0) == '-' 1 else 0
+	start = if (at(0) == '-') 1 else 0
 	if start == 1 and family == UnsignedInt {
 		return Bool.False
 	}
@@ -83,7 +83,7 @@ is_json_literal = |bytes, family| {
 		int_end
 	}
 	exp_end = if (at(frac_end) == 'e' or at(frac_end) == 'E') and frac_end < n {
-		sign = if at(frac_end + 1) == '+' or at(frac_end + 1) == '-' 1 else 0
+		sign = if (at(frac_end + 1) == '+' or at(frac_end + 1) == '-') 1 else 0
 		e = digits_end(bytes, frac_end + 1 + sign)
 		if e == frac_end + 1 + sign {
 			return Bool.False
@@ -211,7 +211,7 @@ float_round_trip! = |label, value, finite, parse, render| match Json.to_str_try(
 		Ok(back) => crash "${label}: ${render(value)} encoded as ${Str.inspect(encoded)} decoded as ${render(back)}"
 		Err(_) => crash "${label}: ${render(value)} encoded as ${Str.inspect(encoded)} did not decode"
 	}
-	Err(_) => if finite crash "${label}: finite ${render(value)} could not be encoded" else {}
+	Err(_) => if (finite) crash "${label}: finite ${render(value)} could not be encoded" else {}
 }
 
 check! : Case => {}

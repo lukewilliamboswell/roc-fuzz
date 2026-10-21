@@ -56,7 +56,7 @@ insert_with = |sorted, value, compare| {
 			}
 		},
 	)
-	if placed.inserted placed.out else List.append(placed.out, value)
+	if (placed.inserted) placed.out else List.append(placed.out, value)
 }
 
 reference_sort_with : List(a), (a, a -> Order) -> List(a)
@@ -149,7 +149,7 @@ test_wide! = |input| {
 ## or has to allocate to order pointers and gather afterward (wide, >96
 ## bytes, which is why it gets a looser bound than narrow).
 test! : Input => Fuzz.Outcome
-test! = |input| if input.wide test_wide!(input) else test_narrow!(input)
+test! = |input| if (input.wide) test_wide!(input) else test_narrow!(input)
 
 target = Fuzz.target_with!({
 	name: "listSortWideElements",

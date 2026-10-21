@@ -153,7 +153,7 @@ Arbitrary := [Unstructured(List(U8))].{
 			raw_data
 		}
 
-		value = if seamless_slice List.drop_first(with_capacity, 1) else with_capacity
+		value = if (seamless_slice) List.drop_first(with_capacity, 1) else with_capacity
 		{ value, state }
 	}
 
@@ -193,7 +193,7 @@ Arbitrary := [Unstructured(List(U8))].{
 		raw_string = Str.release_excess_capacity(string_slice)
 		byte_len = Str.count_utf8_bytes(raw_string)
 		minimum_capacity = Arbitrary.next_power_of_two(byte_len) * 2
-		max_capacity = if minimum_capacity < 32 32 else minimum_capacity
+		max_capacity = if (minimum_capacity < 32) 32 else minimum_capacity
 		{ value: capacity, state } = after_utf8.u64_in_inclusive_range(0, max_capacity)
 		value = if capacity > byte_len {
 			Str.reserve(raw_string, capacity - byte_len)
@@ -215,7 +215,7 @@ expect Arbitrary.new([]).u64_in_inclusive_range(0, 100).value == 0
 expect {
 	decode = |input| {
 		{ value, .. } = Arbitrary.new(input).bytes(1)?
-		if value == [0] Err(ZeroByte) else Ok(value)
+		if (value == [0]) Err(ZeroByte) else Ok(value)
 	}
 	decode([1, 2]) == Ok([1]) and decode([]) == Err(NotEnoughData(0)) and decode([0]) == Err(ZeroByte)
 }

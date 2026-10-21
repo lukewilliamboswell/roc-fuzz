@@ -19,7 +19,7 @@ insert_sorted = |sorted, value| {
 			}
 		},
 	)
-	if placed.inserted placed.out else List.append(placed.out, value)
+	if (placed.inserted) placed.out else List.append(placed.out, value)
 }
 
 reference_sort : List(U64) -> List(U64)

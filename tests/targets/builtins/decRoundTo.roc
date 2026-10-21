@@ -19,7 +19,7 @@ Input := { hi : U64, lo : U64, value_mode : U8, offset_mode : U8, step_raw : U64
 }
 
 pow10 : U8 -> I128
-pow10 = |exponent| if exponent == 0 1 else 10 * pow10(exponent - 1)
+pow10 = |exponent| if (exponent == 0) 1 else 10 * pow10(exponent - 1)
 
 attos_from : U64, U64 -> I128
 attos_from = |hi, lo| I128.bitwise_or(I128.shl_wrap(U64.to_i128(hi), 64), U64.to_i128(lo))
@@ -90,8 +90,8 @@ reference = |x, step, ties| {
 		lower + 1
 	} else {
 		match ties {
-			AwayFromZero => if x >= 0 lower + 1 else lower
-			ToEven => if I128.is_even(lower) lower else lower + 1
+			AwayFromZero => if (x >= 0) lower + 1 else lower
+			ToEven => if (I128.is_even(lower)) lower else lower + 1
 		}
 	}
 	match I128.times_try(quotient, step) {
@@ -110,7 +110,7 @@ test! = |input| {
 	x_attos = pick_value(input, step_attos)
 	x = Dec.from_attos(x_attos)
 	step = Dec.from_attos(step_attos)
-	ties = if input.even ToEven else AwayFromZero
+	ties = if (input.even) ToEven else AwayFromZero
 	options = { step, ties }
 
 	result = Fuzz.expect_allocs_at_most!(0, |{}| Dec.round_to_try(x, options))
