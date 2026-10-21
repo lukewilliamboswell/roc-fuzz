@@ -56,7 +56,7 @@ check_list! : Str, Case, Prefix.Ops(a) => {}
 check_list! = |label, case, ops| {
 	holder = case.junk.concat(case.body)
 	holder_copy = List.with_capacity(holder.len()).concat(holder)
-	input = if case.shape == 3 holder.drop_first(case.junk.len()) else shaped_list(case)
+	input = if (case.shape == 3) holder.drop_first(case.junk.len()) else shaped_list(case)
 	original = List.with_capacity(input.len()).concat(input)
 	alias = input
 	{ value: result, allocations } = Fuzz.measure_allocs!(|{}| (ops.utf8_prefix)(input))
@@ -85,7 +85,7 @@ check_str! = |label, case, ops| {
 	junk = Str.from_utf8_lossy(case.junk)
 	holder = junk.concat(Str.from_utf8_lossy(case.body))
 	holder_bytes = List.with_capacity(0).concat(holder.to_utf8())
-	input = if case.shape == 3 holder.drop_prefix(junk) else shaped_str(case)
+	input = if (case.shape == 3) holder.drop_prefix(junk) else shaped_str(case)
 	original = List.with_capacity(0).concat(input.to_utf8())
 	alias = input
 	{ value: result, allocations } = Fuzz.measure_allocs!(|{}| (ops.str_prefix)(input))
@@ -139,7 +139,7 @@ chain = |start, ops, fresh| {
 	var $out = []
 	var $steps = 0
 	while $steps < 8 {
-		current = if fresh List.with_capacity($input.len()).concat($input) else $input
+		current = if (fresh) List.with_capacity($input.len()).concat($input) else $input
 		obs = Prefix.observe_list((ops.utf8_prefix)(current), ops.render)
 		$out = $out.append(obs)
 		$input = match (ops.utf8_prefix)(current) {

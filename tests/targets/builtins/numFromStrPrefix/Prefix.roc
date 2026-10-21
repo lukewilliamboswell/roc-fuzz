@@ -27,7 +27,7 @@ Prefix :: {}.{
 	pieces = |max| Fuzz.map(Fuzz.list(Fuzz.map2(Fuzz.u8_in(0, 19), Fuzz.u64, NumText.piece), max), List.join)
 
 	input : Case -> List(U8)
-	input = |case| if case.use_raw case.raw else case.body
+	input = |case| if (case.use_raw) case.raw else case.body
 
 	show_case : Case -> Str
 	show_case = |case| "input=${NumText.show_bytes(input(case))} raw_bytes=${Str.inspect(input(case))} tail=${NumText.show_bytes(case.tail)}"
@@ -131,7 +131,7 @@ Prefix :: {}.{
 			(NotANumber, _) => {}
 		}
 		# Maximality.
-		limit = if bytes.len() < token_len + 32 bytes.len() else token_len + 32
+		limit = if (bytes.len() < token_len + 32) bytes.len() else token_len + 32
 		var $k = token_len + 1
 		while $k <= limit {
 			match whole(ops, bytes.take_first($k)) {
@@ -212,7 +212,7 @@ Prefix :: {}.{
 			if token.len > 0 and !token.special {
 				match Str.from_utf8(token_bytes) {
 					Ok(s) => match (ops.from_str)(s) {
-						Ok(v) => if !is_finite(v) crash "${label}: finite-syntax token ${Str.inspect(s)} parsed to a non-finite value" else {}
+						Ok(v) => if (!is_finite(v)) crash "${label}: finite-syntax token ${Str.inspect(s)} parsed to a non-finite value" else {}
 						Err(_) => {}
 					}
 					Err(_) => {}
@@ -259,5 +259,5 @@ Prefix :: {}.{
 
 	## Dec is an I128 scaled by 10^18.
 	dec_fits : Bool, U128 -> Bool
-	dec_fits = |negative, m| if negative m <= 170141183460469231731687303715884105728 else m <= 170141183460469231731687303715884105727
+	dec_fits = |negative, m| if (negative) m <= 170141183460469231731687303715884105728 else m <= 170141183460469231731687303715884105727
 }

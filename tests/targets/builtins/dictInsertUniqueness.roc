@@ -46,7 +46,7 @@ main! = |data| {
 	alias = base
 	# An empty input inserts nothing, so there is nothing to copy.
 	shared = Fuzz.expect_allocs_at_least!(
-		if n == 0 0 else 1,
+		if (n == 0) 0 else 1,
 		|{}| {
 			var $dict = base
 			var $j = 0

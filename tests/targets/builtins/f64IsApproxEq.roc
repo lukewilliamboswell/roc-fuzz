@@ -47,7 +47,7 @@ pick_rel = |input| {
 
 pick_abs : Input -> F64
 pick_abs = |input| {
-	magnitude = if F64.is_finite(input.abs_raw) F64.abs(input.abs_raw) else 0.0
+	magnitude = if (F64.is_finite(input.abs_raw)) F64.abs(input.abs_raw) else 0.0
 	match input.abs_mode {
 		0 => 0.0
 		1 => magnitude
@@ -70,7 +70,7 @@ reference = |a, b, rel, abs| {
 		diff = F64.max(a, b) - F64.min(a, b)
 		magnitude = F64.max(F64.max(a, 0.0 - a), F64.max(b, 0.0 - b))
 		scaled = rel * magnitude
-		bound = if abs > scaled abs else scaled
+		bound = if (abs > scaled) abs else scaled
 		diff <= bound
 	} else {
 		False
@@ -107,7 +107,7 @@ test! = |input| {
 		crash "F64.is_approx_eq was not reflexive"
 	}
 
-	doubled_abs = if F64.is_finite(abs * 2.0) abs * 2.0 else abs
+	doubled_abs = if (F64.is_finite(abs * 2.0)) abs * 2.0 else abs
 	looser = { rel: F64.min(1.0, rel * 2.0), abs: doubled_abs }
 	if result and !F64.is_approx_eq(a, b, looser) {
 		crash "F64.is_approx_eq was not monotonic in its tolerances"

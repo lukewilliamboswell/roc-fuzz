@@ -44,7 +44,7 @@ pick_b = |input, a| {
 		1 => a
 		2 => Dec.plus_try(a, offset) ?? a
 		3 => Dec.minus_try(a, offset) ?? a
-		4 => if a == Dec.lowest Dec.highest else Dec.negate(a)
+		4 => if (a == Dec.lowest) Dec.highest else Dec.negate(a)
 		_ => Dec.lowest
 	}
 }
@@ -79,8 +79,8 @@ reference : Dec, Dec, Dec, Dec -> Bool
 reference = |a, b, rel, abs| {
 	a_attos = Dec.to_attos(a)
 	b_attos = Dec.to_attos(b)
-	larger = if a_attos > b_attos a_attos else b_attos
-	smaller = if a_attos > b_attos b_attos else a_attos
+	larger = if (a_attos > b_attos) a_attos else b_attos
+	smaller = if (a_attos > b_attos) b_attos else a_attos
 	match I128.minus_try(larger, smaller) {
 		Err(_) => False
 		Ok(diff) => {
@@ -90,7 +90,7 @@ reference = |a, b, rel, abs| {
 				Dec.max(Dec.abs(a), Dec.abs(b))
 			}
 			scaled = rel * magnitude
-			bound = if abs > scaled abs else scaled
+			bound = if (abs > scaled) abs else scaled
 			diff <= Dec.to_attos(bound)
 		}
 	}

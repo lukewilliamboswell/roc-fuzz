@@ -18,7 +18,7 @@ main! = |data| {
 				1,
 				|{}| List.from_iter(range.iter()),
 			)
-			if List.is_empty(values) 0 else 1
+			if (List.is_empty(values)) 0 else 1
 		}
 		_ => 2
 	}

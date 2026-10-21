@@ -16,7 +16,7 @@ case_gen = Fuzz.map2(Fuzz.list(Fuzz.str, 80), Fuzz.u8, |items, flag| { items, kn
 
 source : List(Str), Bool -> Stream({ index : U64, value : Str })
 source = |items, known| {
-	hint = if known Known(items.len()) else Unknown
+	hint = if (known) Known(items.len()) else Unknown
 	Stream.custom(
 		0,
 		hint,
@@ -52,7 +52,7 @@ test! = |{ items, known }| {
 	var $pulled = 0
 	var $done = Bool.False
 	while !$done {
-		expected_hint = if known Known(items.len() - $pulled) else Unknown
+		expected_hint = if (known) Known(items.len() - $pulled) else Unknown
 		if Stream.size_hint($rest) != expected_hint {
 			crash "size_hint did not count down after ${$pulled.to_str()} pulls"
 		}

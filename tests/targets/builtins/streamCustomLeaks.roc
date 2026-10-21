@@ -26,7 +26,7 @@ finite : List(Str), Bool -> Stream(Str)
 finite = |items, known|
 	Stream.custom(
 		{ items, index: 0 },
-		if known Known(items.len()) else Unknown,
+		if (known) Known(items.len()) else Unknown,
 		|{ items: xs, index }| match xs.get(index) {
 			Ok(value) => Ok((value, { items: xs, index: index + 1 }))
 			Err(_) => Err(NoMore)

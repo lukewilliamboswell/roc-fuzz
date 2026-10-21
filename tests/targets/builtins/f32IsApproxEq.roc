@@ -47,7 +47,7 @@ pick_rel = |input| {
 
 pick_abs : Input -> F32
 pick_abs = |input| {
-	magnitude = if F32.is_finite(input.abs_raw) F32.abs(input.abs_raw) else 0.0
+	magnitude = if (F32.is_finite(input.abs_raw)) F32.abs(input.abs_raw) else 0.0
 	match input.abs_mode {
 		0 => 0.0
 		1 => magnitude
@@ -70,7 +70,7 @@ reference = |a, b, rel, abs| {
 		diff = F32.max(a, b) - F32.min(a, b)
 		magnitude = F32.max(F32.max(a, 0.0 - a), F32.max(b, 0.0 - b))
 		scaled = rel * magnitude
-		bound = if abs > scaled abs else scaled
+		bound = if (abs > scaled) abs else scaled
 		diff <= bound
 	} else {
 		False
@@ -107,7 +107,7 @@ test! = |input| {
 		crash "F32.is_approx_eq was not reflexive"
 	}
 
-	doubled_abs = if F32.is_finite(abs * 2.0) abs * 2.0 else abs
+	doubled_abs = if (F32.is_finite(abs * 2.0)) abs * 2.0 else abs
 	looser = { rel: F32.min(1.0, rel * 2.0), abs: doubled_abs }
 	if result and !F32.is_approx_eq(a, b, looser) {
 		crash "F32.is_approx_eq was not monotonic in its tolerances"

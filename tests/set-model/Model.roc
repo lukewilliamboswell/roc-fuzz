@@ -25,7 +25,7 @@ Model :: {}.{
 	contains = |xs, raw| List.any(xs, |x| x % 32 == raw % 32)
 
 	insert : List(U8), U8 -> List(U8)
-	insert = |xs, raw| if contains(xs, raw) xs else xs.append(raw)
+	insert = |xs, raw| if (contains(xs, raw)) xs else xs.append(raw)
 
 	from_list : List(U8) -> List(U8)
 	from_list = |xs| List.fold(xs, [], insert)
@@ -37,7 +37,7 @@ Model :: {}.{
 		}
 		last = List.last(xs) ?? crash "model lost last element"
 		prefix = List.take_first(xs, xs.len() - 1)
-		List.map(prefix, |x| if x % 32 == raw % 32 last else x)
+		List.map(prefix, |x| if (x % 32 == raw % 32) last else x)
 	}
 
 	verify : Set(item), List(U8), (U8 -> item), (item -> U8), U64 -> {}
@@ -83,7 +83,7 @@ Model :: {}.{
 					crash "Set.fold_until called step after Break"
 				}
 				next = acc.append(token(item))
-				if acc.len() == limit Break(next) else Continue(next)
+				if (acc.len() == limit) Break(next) else Continue(next)
 			},
 		)
 		if folded != expected.take_first(limit + 1) {
@@ -112,7 +112,7 @@ Model :: {}.{
 		verify($set, $model, make, token, input.stop)
 		for op in input.ops {
 			# Generate both unique mutations and mutations with an older live alias.
-			previous = if input.shared $set else Set.empty()
+			previous = if (input.shared) $set else Set.empty()
 			previous_model = $model
 			before_capacity = $set.capacity()
 			match op {
@@ -174,10 +174,10 @@ Model :: {}.{
 					$set = $set.join_map(
 						|item| {
 							k = token(item) % 32
-							if k % 3 == offset % 3 Set.empty() else Set.from_list([make(k), make(k.plus_wrap(offset))])
+							if (k % 3 == offset % 3) Set.empty() else Set.from_list([make(k), make(k.plus_wrap(offset))])
 						},
 					)
-					$model = from_list($model.join_map(|raw| if raw % 32 % 3 == offset % 3 [] else [raw % 32, (raw % 32).plus_wrap(offset)]))
+					$model = from_list($model.join_map(|raw| if (raw % 32 % 3 == offset % 3) [] else [raw % 32, (raw % 32).plus_wrap(offset)]))
 				}
 				FromIter(raws, cutoff) => {
 					# Filtering exercises leading/interleaved/all Skip steps.

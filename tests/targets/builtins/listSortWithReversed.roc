@@ -48,7 +48,7 @@ insert_reversed = |sorted, value| {
 			}
 		},
 	)
-	if placed.inserted placed.out else List.append(placed.out, value)
+	if (placed.inserted) placed.out else List.append(placed.out, value)
 }
 
 reference_sort_with_reversed : List(Item) -> List(Item)

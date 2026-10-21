@@ -17,14 +17,14 @@ mix = |value, seed| value.times_wrap(11400714819323198485).plus_wrap(seed).times
 ## uniformly random input almost never does.
 key_at : Input, U64 -> U64
 key_at = |input, index| {
-	period = if input.period == 0 1 else input.period
+	period = if (input.period == 0) 1 else input.period
 	match input.pattern % 8 {
 		0 => index
 		1 => input.length - index
 		2 => 7
 		3 => index % period
-		4 => if index * 2 < input.length index else input.length - index
-		5 => if mix(index, input.seed) % 64 == 0 mix(index, input.seed) else index
+		4 => if (index * 2 < input.length) index else input.length - index
+		5 => if (mix(index, input.seed) % 64 == 0) mix(index, input.seed) else index
 		6 => mix(index, input.seed) % 4
 		_ => mix(index, input.seed)
 	}

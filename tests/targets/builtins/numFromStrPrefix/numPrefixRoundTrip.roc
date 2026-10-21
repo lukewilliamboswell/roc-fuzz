@@ -57,10 +57,10 @@ eq : a, a -> Bool where [a.is_eq : a, a -> Bool]
 eq = |x, y| x == y
 
 same_f32 : F32, F32 -> Bool
-same_f32 = |x, y| if x.is_nan() y.is_nan() else x.to_bits() == y.to_bits()
+same_f32 = |x, y| if (x.is_nan()) y.is_nan() else x.to_bits() == y.to_bits()
 
 same_f64 : F64, F64 -> Bool
-same_f64 = |x, y| if x.is_nan() y.is_nan() else x.to_bits() == y.to_bits()
+same_f64 = |x, y| if (x.is_nan()) y.is_nan() else x.to_bits() == y.to_bits()
 
 f32_bits : F32 -> Str
 f32_bits = |v| v.to_bits().to_str()
