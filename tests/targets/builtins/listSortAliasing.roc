@@ -30,7 +30,11 @@ reference_sort = |values| List.fold(values, [], insert_sorted)
 ## allocation with something else -- copy-on-write allocation there is
 ## correct and expected, so this asserts allocation happened rather than
 ## asserting it did not. `must_allocate: False` is for a uniquely owned
-## list, where the allocation count must stay flat regardless of length.
+## list, or a shared one too short to need reordering, where the
+## allocation count must stay flat regardless of length.
+needs_reordering : List(U64) -> Bool
+needs_reordering = |values| List.len(values) >= 2
+
 check_sorted! : List(U64), Str, Bool => {}
 check_sorted! = |values, description, must_allocate| {
 	sorted = if must_allocate {
@@ -56,8 +60,14 @@ test! = |input| {
 	# A sort that wrote through to the shared allocation would show up as a
 	# difference from the snapshot taken beforehand. Sorting a shared list is
 	# exactly the case where copy-on-write allocation is correct, so this
-	# asserts the sort DID allocate rather than that it did not.
-	shared_sorted = Fuzz.expect_allocs_at_least!(1, |{}| List.sort(base))
+	# asserts the sort DID allocate rather than that it did not. A list of
+	# fewer than two elements is already sorted, so the sort may return it
+	# without copying.
+	shared_sorted = if needs_reordering(base) {
+		Fuzz.expect_allocs_at_least!(1, |{}| List.sort(base))
+	} else {
+		Fuzz.expect_allocs_at_most!(4, |{}| List.sort(base))
+	}
 	if !List.is_eq(base, snapshot) {
 		crash "sorting a shared list modified the original list"
 	}
@@ -74,7 +84,7 @@ test! = |input| {
 			len: U8.to_u64(input.len),
 		},
 	)
-	check_sorted!(slice, "a sublist of a shared list", True)
+	check_sorted!(slice, "a sublist of a shared list", needs_reordering(slice))
 
 	# Spare capacity puts the elements at the front of a larger allocation,
 	# but `List.map` followed by `List.reserve` here produces a uniquely
