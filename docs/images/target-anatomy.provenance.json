@@ -1,0 +1,6 @@
+{
+  "source": "overview.adoc",
+  "source_sha256": "cc9e7ae87b4f53520dcba49c88423b1284d63350835f4292896b0fa811f091e9",
+  "preparation": "mermaid-cli 12.0.0 from nixpkgs (nix shell nixpkgs#mermaid-cli); the block's text, with a final newline, written to target-anatomy.mmd; mmdc -p puppeteer.json -i target-anatomy.mmd -o target-anatomy.png -b transparent -s 2, where puppeteer.json is {\"args\":[\"--no-sandbox\"]}",
+  "png_sha256": "619668b28224fc421e37f03d2733d44274c5113cbcc4f72ca979c89b434adc25"
+}

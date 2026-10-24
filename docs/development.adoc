@@ -339,13 +339,17 @@ blueprint run docs
 blueprint run site
 ----
 
-`docs` fetches the shared renderer from `roc-automation` at the commit that
-`docs.yml` pins, uses Docker for the Asciidoctor toolchain, and writes the
-working tree's manual, PDF and API reference under `.docs-out/`. `site`
-assembles what GitHub Pages serves: the latest release's documentation,
-restored from the archive that release published, with the working tree's under
-`unreleased/`. Set `ROC_AUTOMATION_ROOT` to a local checkout while developing the
-shared action. The final API audit fails if an exposed module or public entry
+`docs` runs `roc-docs`, the renderer `actions/build-docs` runs, at the
+roc-automation tools release that `Blueprint.roc` names and `Blueprint.lock`
+pins by digest. It writes the working tree's manual, PDF and API reference
+under `.docs-out/`. `site` assembles what GitHub Pages serves: the latest
+release's documentation, restored from the archive that release published, with
+the working tree's under `unreleased/`.
+
+The renderer does not run Mermaid. Each diagram's PNG is prepared once, checked
+in under `docs/images/` with a provenance note saying how it was made, and
+registered with its source's digest in `docs/prepared-diagrams.json`. Editing a
+diagram's source fails the build until its image is prepared again. The final API audit fails if an exposed module or public entry
 has no rendered documentation. The documentation and release workflows run the
 same build and audit.
 

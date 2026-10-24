@@ -56,10 +56,19 @@ jobs:
           version: nightly-new-compiler
           nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
 
+      - id: renderer
+        name: Locate the roc-docs renderer Blueprint.lock pins
+        uses: lukewilliamboswell/roc-automation/actions/blueprint-tool@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
+        with:
+          task: docs-path
+          label: roc-docs tools-0.4.0
+
       - id: docs
         name: Build the working tree's HTML, PDF, and API documentation
-        uses: lukewilliamboswell/roc-automation/actions/build-docs@26b692c5ce341efd5633793079d70c9e04559eac # 26b692c
+        uses: lukewilliamboswell/roc-automation/actions/build-docs@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
         with:
+          renderer-binary: ${{ steps.renderer.outputs.binary }}
+          site-url: https://lukewilliamboswell.github.io/roc-fuzz/unreleased/
           pdf-filename: roc-fuzz.pdf
           docs-version: unreleased
           api-entrypoint: platform/main.roc

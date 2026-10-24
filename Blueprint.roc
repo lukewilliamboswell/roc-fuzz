@@ -11,8 +11,11 @@
 # meant to be the latest nightly, so nothing here provides a bare `roc`.
 app [config] { pf: platform "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.8.0/FbJymjYdCxx9vqMcau7r4tQfeAbnVGqqJoYrLGqPCqKu.tar.zst" }
 
+import pf.Recipes
+
 config = [
 	Name("roc-fuzz"),
+	Systems(["x86_64-linux", "aarch64-linux", "aarch64-darwin"]),
 	Packages("nix", From(NixPackages("github:NixOS/nixpkgs/nixos-unstable"))),
 	Input("roc", "github:roc-lang/roc-overlay"),
 	Input("zig", "github:mitchellh/zig-overlay"),
@@ -34,6 +37,9 @@ config = [
 			# release that builds the host and its linker inputs, taken from
 			# zig-overlay; scripts/native-deps.json names the same version.
 			Tools(["nix#coreutils", "nix#gh", "nix#git", "nix#jq", "nix#unzip", "nix#zip", "nix#zigpkgs.\"0.16.0\""]),
+			# The shared documentation renderer, as actions/build-docs runs it.
+			Programs([Fetch("roc-docs", Recipes.file("https://github.com/lukewilliamboswell/roc-automation/releases/download/tools-0.4.0/roc-docs-{system}"))]),
+			Expect(["sh"]),
 		],
 	),
 	Shell("default", [Use("dev")]),
@@ -62,6 +68,9 @@ config = [
 	# The manual and the API reference.
 	Task("docs", [Use("dev"), Run(["scripts/build_docs.roc", "--"])]),
 	Task("check-docs", [Use("dev"), Run(["scripts/check_docs.roc", "--"])]),
+	# The renderer's persistent path, for actions/blueprint-tool to hand to
+	# actions/build-docs.
+	Task("docs-path", [Use("dev"), Run(["sh", "-c", "realpath \"$(command -v roc-docs)\""])]),
 	# The Pages site: the latest release's documentation, with the working
 	# tree's under unreleased/. Run `docs` first.
 	Task("site", [Use("dev"), Run(["scripts/build_site.roc", "--"])]),
