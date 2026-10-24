@@ -177,6 +177,10 @@ Run `TARGET --help` for the executable's own summary.
 |`TARGET replay INPUT`
 |Run one saved input in a fresh process.
 
+|`TARGET measure [INPUT]`
+|Run one input, or an empty one, outside libFuzzer and print the target's
+allocation reports. See <<allocation-ratchets>>.
+
 |`TARGET minimize INPUT OUTPUT`
 |Find a smaller input that reproduces the same failure and write it to `OUTPUT`.
 

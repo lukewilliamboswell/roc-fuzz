@@ -703,6 +703,76 @@ pub const RocEnv = struct {
     roc_io: RocIo,
 };
 
+/// Element type for __AnonStruct_21ead0ad67315635
+pub const __AnonStruct_21ead0ad67315635 = if (@sizeOf(usize) == 4) extern struct {
+    allocs: u64,
+    deallocs: u64,
+    reallocs: u64,
+    requested_bytes: u64,
+    /// Recursively decrement Roc-owned fields.
+    pub fn decref(self: @This(), roc_host: *RocHost) void {
+        const value = self;
+        _ = value;
+        _ = roc_host;
+    }
+
+    /// Increment Roc-owned fields.
+    pub fn incref(self: @This(), amount: isize) void {
+        const value = self;
+        _ = value;
+        _ = amount;
+    }
+} else extern struct {
+    allocs: u64,
+    deallocs: u64,
+    reallocs: u64,
+    requested_bytes: u64,
+    /// Recursively decrement Roc-owned fields.
+    pub fn decref(self: @This(), roc_host: *RocHost) void {
+        const value = self;
+        _ = value;
+        _ = roc_host;
+    }
+
+    /// Increment Roc-owned fields.
+    pub fn incref(self: @This(), amount: isize) void {
+        const value = self;
+        _ = value;
+        _ = amount;
+    }
+};
+
+comptime {
+    if (@sizeOf(usize) == 8) {
+        if (@sizeOf(__AnonStruct_21ead0ad67315635) != 32) @compileError("__AnonStruct_21ead0ad67315635 size mismatch");
+        if (@alignOf(__AnonStruct_21ead0ad67315635) != 8) @compileError("__AnonStruct_21ead0ad67315635 alignment mismatch");
+    }
+    if (@sizeOf(usize) == 4) {
+        if (@sizeOf(__AnonStruct_21ead0ad67315635) != 32) @compileError("__AnonStruct_21ead0ad67315635 size mismatch");
+        if (@alignOf(__AnonStruct_21ead0ad67315635) != 8) @compileError("__AnonStruct_21ead0ad67315635 alignment mismatch");
+    }
+}
+
+/// Arguments for Fuzz.report_alloc_counts!
+/// Roc signature: Str, { allocs : U64, deallocs : U64, reallocs : U64, requested_bytes : U64 } => {}
+/// Refcounted fields are owned by the hosted function.
+pub const FuzzReport_alloc_countsArgs = extern struct {
+    arg0: RocStr,
+    arg1: __AnonStruct_21ead0ad67315635,
+};
+
+// Platform Type Aliases
+
+pub const FuzzReport_alloc_countsArg1 = __AnonStruct_21ead0ad67315635;
+
+// Generated Refcount Helpers
+
+pub const __AnonStruct_21ead0ad67315635Release = struct {
+    pub fn release(value: __AnonStruct_21ead0ad67315635, roc_host: *RocHost) void {
+        value.decref(roc_host);
+    }
+};
+
 fn rocReleasePolicy(comptime T: type) type {
     if (T == RocStr) return RocStrRelease;
     if (T == RocListWith(u8, false)) return RocListSpineRelease(RocListWith(u8, false));
@@ -735,9 +805,29 @@ pub extern fn roc_crashed(bytes: [*]const u8, len: usize) callconv(.c) void;
 /// Roc signature: {} => U64
 pub extern fn roc_fuzz_alloc_count() callconv(.c) u64;
 
+/// Hosted symbol for Fuzz.dealloc_count!
+/// Roc signature: {} => U64
+pub extern fn roc_fuzz_dealloc_count() callconv(.c) u64;
+
 /// Hosted symbol for Fuzz.live_alloc_count!
 /// Roc signature: {} => U64
 pub extern fn roc_fuzz_live_alloc_count() callconv(.c) u64;
+
+/// Hosted symbol for Fuzz.realloc_count!
+/// Roc signature: {} => U64
+pub extern fn roc_fuzz_realloc_count() callconv(.c) u64;
+
+/// Hosted symbol for Fuzz.report_alloc_counts!
+/// Roc signature: Str, { allocs : U64, deallocs : U64, reallocs : U64, requested_bytes : U64 } => {}
+/// Owned arguments. Release each exactly once before returning, unless it is
+/// moved into storage or into the result:
+///     arg0.decref(roc_host);
+///     arg1.decref(roc_host);
+pub extern fn roc_fuzz_report_alloc_counts(arg0: RocStr, arg1: __AnonStruct_21ead0ad67315635) callconv(.c) void;
+
+/// Hosted symbol for Fuzz.requested_bytes!
+/// Roc signature: {} => U64
+pub extern fn roc_fuzz_requested_bytes() callconv(.c) u64;
 
 /// Default memory management functions for Roc platforms.
 ///

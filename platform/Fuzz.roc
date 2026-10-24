@@ -56,6 +56,35 @@ Fuzz := [].{
 	## [`expect_no_leaks!`](#Fuzz.expect_no_leaks).
 	live_alloc_count! : () => U64
 
+	## `roc_realloc` calls the platform has served this process so far.
+	##
+	## Like [`alloc_count!`](#Fuzz.alloc_count), it is process-wide and never
+	## reset, so only a difference across a region is meaningful.
+	realloc_count! : () => U64
+
+	## `roc_dealloc` calls the platform has served this process so far.
+	##
+	## A reallocation frees the block it replaces without counting a
+	## deallocation. Only a difference across a region is meaningful.
+	dealloc_count! : () => U64
+
+	## Bytes requested from the platform's allocator this process so far.
+	##
+	## An allocation adds its requested length and a reallocation adds the full
+	## new length it asks for, whether it grows or shrinks the block. A
+	## deallocation adds nothing, and a zero-length request adds zero. This is
+	## allocator traffic: it is not the heap still in use, the process's
+	## resident memory, or the bytes a reallocation copies. A request the
+	## allocator cannot serve ends the process, so every request a completed
+	## region made is counted. The total stops at the largest `U64` rather than
+	## wrapping. Only a difference across a region is meaningful.
+	requested_bytes! : () => U64
+
+	## What a region asked of the platform's allocator. `allocs` counts
+	## `roc_alloc` calls only, so `allocs + reallocs` is what
+	## [`measure_allocs!`](#Fuzz.measure_allocs) reports as `allocations`.
+	AllocCounts : { allocs : U64, reallocs : U64, deallocs : U64, requested_bytes : U64 }
+
 	## Run `body!` and report how many allocations it performed.
 	##
 	## ```roc
@@ -67,6 +96,48 @@ Fuzz := [].{
 		value = body!({})
 		after = Fuzz.alloc_count!()
 		{ value, allocations: after - before }
+	}
+
+	## Run `body!` and count its allocations, reallocations, deallocations and
+	## requested bytes separately.
+	##
+	## ```roc
+	## { value: dict, counts } = Fuzz.measure_alloc_counts!(|{}| build_dict(pairs))
+	## ```
+	measure_alloc_counts! : ({} => a) => { value : a, counts : AllocCounts }
+	measure_alloc_counts! = |body!| {
+		allocations_before = Fuzz.alloc_count!()
+		reallocs_before = Fuzz.realloc_count!()
+		deallocs_before = Fuzz.dealloc_count!()
+		bytes_before = Fuzz.requested_bytes!()
+		value = body!({})
+		allocations = Fuzz.alloc_count!() - allocations_before
+		reallocs = Fuzz.realloc_count!() - reallocs_before
+		deallocs = Fuzz.dealloc_count!() - deallocs_before
+		requested_bytes = Fuzz.requested_bytes!() - bytes_before
+		{ value, counts: { allocs: allocations - reallocs, reallocs, deallocs, requested_bytes } }
+	}
+
+	## Report counts measured some other way under `label`, as
+	## [`report_allocs!`](#Fuzz.report_allocs) does. The platform prints the
+	## line only under `TARGET measure`, and never allocates to do so.
+	report_alloc_counts! : Str, AllocCounts => {}
+
+	## Measure `body!` and report its counts to a harness under `label`.
+	##
+	## Under `TARGET measure`, the platform prints one line per report on
+	## standard output. In every other mode, `run` and `replay` included, the
+	## report is discarded, so a target that reports can still be fuzzed. Only
+	## `body!` is measured: building the label and printing the line are not.
+	##
+	## ```roc
+	## _ = Fuzz.report_allocs!("100 inserts", |{}| insert(document, 100))
+	## ```
+	report_allocs! : Str, ({} => a) => a
+	report_allocs! = |label, body!| {
+		measured = Fuzz.measure_alloc_counts!(body!)
+		Fuzz.report_alloc_counts!(label, measured.counts)
+		measured.value
 	}
 
 	## Crash unless `body!` performs at most `limit` allocations.

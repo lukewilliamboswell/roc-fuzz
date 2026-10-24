@@ -73,15 +73,21 @@ counters so a target can assert on cost as well as correctness:
 
 [source,roc]
 ----
-Fuzz.alloc_count! : () => U64          # cumulative allocations served this process
+Fuzz.alloc_count! : () => U64          # roc_alloc and roc_realloc calls served this process
 Fuzz.live_alloc_count! : () => U64     # allocations not yet freed
+Fuzz.realloc_count! : () => U64        # roc_realloc calls alone
+Fuzz.dealloc_count! : () => U64        # roc_dealloc calls
+Fuzz.requested_bytes! : () => U64      # bytes asked for by allocations and reallocations
 Fuzz.measure_allocs! : ({} => a) => { value : a, allocations : U64 }
+Fuzz.measure_alloc_counts! : ({} => a) => { value : a, counts : Fuzz.AllocCounts }
 Fuzz.expect_allocs_at_most! : U64, ({} => a) => a
 Fuzz.expect_allocs_at_least! : U64, ({} => a) => a
 Fuzz.expect_no_leaks! : ({} => a) => {}
+Fuzz.report_allocs! : Str, ({} => a) => a
+Fuzz.report_alloc_counts! : Str, Fuzz.AllocCounts => {}
 ----
 
-`alloc_count!` and `live_alloc_count!` are process-wide and monotonic,
+The counters are process-wide and monotonic,
 and libFuzzer reuses one process across millions of inputs, so never
 assert on a raw value. Always read the counter before and after the
 region you care about and assert on the difference; `measure_allocs!`
@@ -129,6 +135,107 @@ unless the property itself needs one of the allocation combinators above
 -- a pure target is deterministic, and libFuzzer's crash replay and
 minimization rely on that determinism to reproduce and shrink a saved
 failure.
+
+[[separate-counts]]
+=== Count each kind of allocator call
+
+`measure_allocs!` counts allocations and reallocations together, so it
+cannot tell a region that grows one list from a region that allocates
+twice. `measure_alloc_counts!` keeps them apart, in a
+`Fuzz.AllocCounts` record:
+
+`allocs`:: `roc_alloc` calls. `allocs + reallocs` is what
+`measure_allocs!` reports as `allocations` for the same region.
+`reallocs`:: `roc_realloc` calls.
+`deallocs`:: `roc_dealloc` calls. A reallocation frees the block it
+replaces without counting a deallocation.
+`requested_bytes`:: The lengths the region asked for: each allocation's
+length, plus each reallocation's full new length, whether it grows or
+shrinks the block. A deallocation and a zero-length request add nothing.
+
+`requested_bytes` measures allocator traffic. It is not the heap still in
+use, the process's resident memory, or the bytes a reallocation copies,
+and it includes the compiler's header in front of each allocation. The
+platform serves every request or ends the process, so a region that
+completes made no request that went uncounted. The total stops at the
+largest `U64` instead of wrapping.
+
+Count only what a region builds and drops itself. A value that outlives
+the region is freed wherever the optimiser chooses, which can be inside
+the region in one build and after it in another.
+
+[[allocation-ratchets]]
+=== Hold allocation counts with a ratchet
+
+A ratchet keeps each hot operation's counts in a reviewed data file and
+fails a pull request whose counts go up. roc-fuzz can be the platform
+for one, with nothing fuzzed and no host of the package's own.
+
+Wrap each measured operation in `report_allocs!`. Only its body is
+measured; setup outside it, and building the label, are not:
+
+[source,roc]
+----
+test! : List(U8) => U8
+test! = |_| {
+    _ = Fuzz.report_allocs!("100 inserts into the middle", |{}| insert(document, 100))
+    longer = insert(document, 100)
+    _ = Fuzz.report_allocs!("100 deletes from the middle", |{}| delete(longer, 100))
+    0
+}
+
+target = Fuzz.from_bytes!({ name: "allocations", test! })
+----
+
+Then build the target and run `measure`:
+
+[source,sh]
+----
+roc build tests/allocations/main.roc --output=allocations
+./allocations measure
+----
+
+`measure` runs the target once, on the named input file or on an empty
+input, outside libFuzzer's driver. It prints one line per report on
+standard output and exits 0. For example, with illustrative numbers:
+
+[source,json]
+----
+{"format":"roc-fuzz-allocs/1","label":"100 inserts into the middle","allocs":307,"reallocs":0,"deallocs":305,"requested_bytes":9824}
+----
+
+Each line is one JSON object. Check that `format` is
+`roc-fuzz-allocs/1` before reading the other fields; a change to what a
+field means will change the version. A later version 1 may add fields,
+so ignore any you do not know. `label` is the string passed to
+`report_allocs!`, escaped as a JSON string.
+
+A crash, a failed `expect` or a leak under `measure` exits 1, with the
+message on standard error, so a harness never mistakes a failure for a
+report. `measure` creates no files. `run`, `replay` and every other
+command discard reports, so the same target can also be fuzzed.
+
+The harness compares each line with its ceilings, prints the measured
+value beside the ceiling, and fails when a count is higher. It can also
+say when a ceiling could come down. Keep a separate ceiling for
+`requested_bytes`: two regions with the same number of calls can ask for
+very different amounts of memory.
+
+Things that affect the counts:
+
+* A plain `roc build` is enough, and gives the same counts as
+  `roc build --fuzz`; the regression target
+  `tests/targets/fixtures/allocationReport.roc` checks this on each
+  supported host. Record which build, optimisation level and target a
+  ceiling was measured on.
+* Counts depend on the compiler, its optimisation level and possibly the
+  target, so compare with "no more than" and expect to revisit
+  ceilings when the compiler changes.
+* Counts have been reported to differ with the state of the compiler's
+  module cache: a fixed few more allocations on the first measured
+  operation when every module is a cache hit. This has not been reproduced
+  independently; see
+  https://github.com/lukewilliamboswell/roc-fuzz/issues/71[issue 71].
 
 == Use the libFuzzer interface
 
