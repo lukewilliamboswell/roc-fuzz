@@ -91,18 +91,47 @@ fn allocImpl(length: usize, alignment: usize) ?*anyopaque {
     return @ptrFromInt(@intFromPtr(base_bytes) + header_len);
 }
 
-/// Allocation counters served to the running Roc target. `Fuzz.alloc_count!`
-/// and `Fuzz.live_alloc_count!` read these, so a target can assert how many
-/// allocations a region performed and whether that region left anything
-/// outstanding.
+/// Allocation counters served to the running Roc target. `Fuzz.alloc_count!`,
+/// `Fuzz.live_alloc_count!`, `Fuzz.requested_bytes!`, `Fuzz.live_bytes!` and
+/// `Fuzz.swap_peak_live_bytes!` read these, so a target can assert how many
+/// allocations a region performed, how many bytes it asked for, how much memory
+/// it held at once, and whether it left anything outstanding.
 ///
 /// `g_alloc_count` counts every `roc_alloc` and `roc_realloc` served, matching
 /// the roc test platform's `Host.alloc_count!`. `g_live_alloc_count` is the
 /// number of allocations still outstanding: a realloc replaces one block with
 /// another and so leaves the balance unchanged, which is why the reallocation
 /// path frees through the uncounted `deallocImpl` rather than `roc_dealloc`.
+///
+/// The byte counters measure the lengths Roc asked for, excluding the size
+/// header and alignment padding this allocator adds. `g_requested_bytes` adds
+/// the requested length of every `roc_alloc` and the new length of every
+/// `roc_realloc`. `g_live_bytes` is the requested length of every outstanding
+/// block; a realloc changes it by the difference between the new and old
+/// lengths. `g_peak_live_bytes` is the largest value `g_live_bytes` has held
+/// since `Fuzz.swap_peak_live_bytes!` last set it.
 var g_alloc_count: u64 = 0;
 var g_live_alloc_count: u64 = 0;
+var g_requested_bytes: u64 = 0;
+var g_live_bytes: u64 = 0;
+var g_peak_live_bytes: u64 = 0;
+
+/// The requested length of a block served by `allocImpl`, read from the size
+/// header that precedes it.
+fn blockLength(ptr: *anyopaque, alignment: usize) usize {
+    const header_len = @max(alignment, @alignOf(usize));
+    const size_ptr: *const usize = @ptrFromInt(@intFromPtr(ptr) - @sizeOf(usize));
+    return size_ptr.* - header_len;
+}
+
+fn addLiveBytes(length: usize) void {
+    g_live_bytes +%= length;
+    if (g_live_bytes > g_peak_live_bytes) g_peak_live_bytes = g_live_bytes;
+}
+
+fn removeLiveBytes(length: usize) void {
+    g_live_bytes = if (g_live_bytes > length) g_live_bytes - length else 0;
+}
 
 fn deallocImpl(ptr: *anyopaque, alignment: usize) void {
     const header_len = @max(alignment, @alignOf(usize));
@@ -114,21 +143,27 @@ pub export fn roc_alloc(length: usize, alignment: usize) callconv(.c) ?*anyopaqu
     if (ptr != null) {
         g_alloc_count += 1;
         g_live_alloc_count += 1;
+        g_requested_bytes +%= length;
+        addLiveBytes(length);
     }
     return ptr;
 }
 
 pub export fn roc_dealloc(ptr: *anyopaque, alignment: usize) callconv(.c) void {
     if (g_live_alloc_count > 0) g_live_alloc_count -= 1;
+    removeLiveBytes(blockLength(ptr, alignment));
     deallocImpl(ptr, alignment);
 }
 
 pub export fn roc_realloc(ptr: *anyopaque, new_length: usize, alignment: usize) callconv(.c) ?*anyopaque {
-    const header_len = @max(alignment, @alignOf(usize));
-    const old_size_ptr: *const usize = @ptrFromInt(@intFromPtr(ptr) - @sizeOf(usize));
-    const old_length = old_size_ptr.* - header_len;
+    const old_length = blockLength(ptr, alignment);
     const new_ptr = allocImpl(new_length, alignment) orelse return null;
     g_alloc_count += 1;
+    g_requested_bytes +%= new_length;
+    // The old block is released before the new length is added, so the peak
+    // reflects the live bytes after the reallocation, not old and new at once.
+    removeLiveBytes(old_length);
+    addLiveBytes(new_length);
     const copy_len = @min(old_length, new_length);
     @memcpy(@as([*]u8, @ptrCast(new_ptr))[0..copy_len], @as([*]const u8, @ptrCast(ptr))[0..copy_len]);
     deallocImpl(ptr, alignment);
@@ -146,9 +181,30 @@ fn hostedLiveAllocCount() callconv(.c) u64 {
     return g_live_alloc_count;
 }
 
+/// Fuzz.requested_bytes! (hosted): () => U64.
+fn hostedRequestedBytes() callconv(.c) u64 {
+    return g_requested_bytes;
+}
+
+/// Fuzz.live_bytes! (hosted): () => U64.
+fn hostedLiveBytes() callconv(.c) u64 {
+    return g_live_bytes;
+}
+
+/// Fuzz.swap_peak_live_bytes! (hosted): U64 => U64. Returns the high-water
+/// mark and replaces it with the larger of `floor` and the current live bytes.
+fn hostedSwapPeakLiveBytes(floor: u64) callconv(.c) u64 {
+    const previous = g_peak_live_bytes;
+    g_peak_live_bytes = @max(floor, g_live_bytes);
+    return previous;
+}
+
 comptime {
     @export(&hostedAllocCount, .{ .name = "roc_fuzz_alloc_count", .visibility = .hidden });
     @export(&hostedLiveAllocCount, .{ .name = "roc_fuzz_live_alloc_count", .visibility = .hidden });
+    @export(&hostedRequestedBytes, .{ .name = "roc_fuzz_requested_bytes", .visibility = .hidden });
+    @export(&hostedLiveBytes, .{ .name = "roc_fuzz_live_bytes", .visibility = .hidden });
+    @export(&hostedSwapPeakLiveBytes, .{ .name = "roc_fuzz_swap_peak_live_bytes", .visibility = .hidden });
 }
 
 pub export fn roc_dbg(bytes: [*]const u8, len: usize) callconv(.c) void {

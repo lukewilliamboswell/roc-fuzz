@@ -56,6 +56,33 @@ Fuzz := [].{
 	## [`expect_no_leaks!`](#Fuzz.expect_no_leaks).
 	live_alloc_count! : () => U64
 
+	## Total bytes the platform has been asked to allocate this process so far.
+	##
+	## Adds the requested length of every `roc_alloc` and the new length of
+	## every `roc_realloc`. Like [`alloc_count!`](#Fuzz.alloc_count), the
+	## absolute value is meaningless; assert on a difference, or use
+	## [`measure_memory!`](#Fuzz.measure_memory).
+	##
+	## Lengths are what Roc asked for, including any refcount prefix Roc places
+	## before a value's elements, but not the platform allocator's own header or
+	## padding.
+	requested_bytes! : () => U64
+
+	## Bytes in allocations served but not yet freed.
+	##
+	## The sum of the requested lengths of every outstanding allocation. A
+	## reallocation replaces the old length with the new one.
+	live_bytes! : () => U64
+
+	## Read and replace the high-water mark of [`live_bytes!`](#Fuzz.live_bytes).
+	##
+	## Returns the largest value `live_bytes!` has held since the previous call,
+	## and starts a new window whose high-water mark is the larger of the argument and
+	## the current live bytes. [`measure_memory!`](#Fuzz.measure_memory) uses it
+	## to measure one region without disturbing an enclosing measurement; prefer
+	## that over calling this directly.
+	swap_peak_live_bytes! : U64 => U64
+
 	## Run `body!` and report how many allocations it performed.
 	##
 	## ```roc
@@ -67,6 +94,42 @@ Fuzz := [].{
 		value = body!({})
 		after = Fuzz.alloc_count!()
 		{ value, allocations: after - before }
+	}
+
+	## Run `body!` and report what it allocated: the allocation count, the bytes
+	## it requested, and the most memory it held at once.
+	##
+	## ```roc
+	## { value: dict, allocations, requested_bytes, peak_live_bytes } =
+	## 	Fuzz.measure_memory!(|{}| build_dict(pairs))
+	## ```
+	##
+	## `allocations` matches [`measure_allocs!`](#Fuzz.measure_allocs).
+	## `requested_bytes` adds the length of every allocation and the new length
+	## of every reallocation `body!` made, so growing a list repeatedly counts
+	## each intermediate size. `peak_live_bytes` is the high-water mark of live
+	## bytes while `body!` ran, relative to the live bytes when it started: a
+	## region that allocates 1000 bytes, frees them, then allocates 10 reports
+	## 1000. Memory freed before `body!` started does not reduce it, so it is
+	## never negative. Measurements nest; an enclosing `measure_memory!` still
+	## sees the inner region's peak.
+	measure_memory! : ({} => a) => { value : a, allocations : U64, requested_bytes : U64, peak_live_bytes : U64 }
+	measure_memory! = |body!| {
+		outer_peak = Fuzz.swap_peak_live_bytes!(0)
+		live_before = Fuzz.live_bytes!()
+		allocs_before = Fuzz.alloc_count!()
+		requested_before = Fuzz.requested_bytes!()
+		value = body!({})
+		allocs_after = Fuzz.alloc_count!()
+		requested_after = Fuzz.requested_bytes!()
+		inner_peak = Fuzz.swap_peak_live_bytes!(outer_peak)
+		_ = Fuzz.swap_peak_live_bytes!(if (inner_peak > outer_peak) inner_peak else outer_peak)
+		{
+			value,
+			allocations: allocs_after - allocs_before,
+			requested_bytes: requested_after - requested_before,
+			peak_live_bytes: if (inner_peak > live_before) inner_peak - live_before else 0,
+		}
 	}
 
 	## Crash unless `body!` performs at most `limit` allocations.
@@ -103,10 +166,13 @@ Fuzz := [].{
 	expect_no_leaks! : ({} => a) => {}
 	expect_no_leaks! = |body!| {
 		before = Fuzz.live_alloc_count!()
+		bytes_before = Fuzz.live_bytes!()
 		_ = body!({})
 		after = Fuzz.live_alloc_count!()
+		bytes_after = Fuzz.live_bytes!()
 		if after > before {
-			crash "expected no leaked allocations, but ${(after - before).to_str()} were still outstanding"
+			leaked_bytes = if (bytes_after > bytes_before) bytes_after - bytes_before else 0
+			crash "expected no leaked allocations, but ${(after - before).to_str()} were still outstanding (${leaked_bytes.to_str()} bytes)"
 		}
 		{}
 	}
