@@ -7,13 +7,17 @@ app [main!] {
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
 }
 
+import cli.Duration
 import cli.Env
+import cli.Monotonic
 import cli.OsStr
 import cli.Path
+import cli.Stdout
 import weaver.Cli
 import weaver.Opt
 import src/CliValues
 import src/Files
+import src/Report
 import src/RocSource
 import src/Script
 import src/SkipNotes
@@ -45,20 +49,6 @@ PlatformUrl :: Str.{
 	to_str = |PlatformUrl.(value)| value
 }
 
-## A switched-off part of a case is never silent: every run names it, with the
-## reason and the issue that will switch it back on.
-report_skips! = |selected, notes| {
-	Script.info!("SUITE", "${selected.len().to_str()} targets")?
-	for item in selected {
-		for (skipped, operation) in [(item.skip_seed, "seed"), (item.skip_fuzz, "fuzz")] {
-			if skipped {
-				Script.warn!("SKIP ${item.name} ${operation}: ${SkipNotes.describe(notes, item.name, operation)}")?
-			}
-		}
-	}
-	Ok({})
-}
-
 main! = |raw_args| {
 	cli_options = match WeaverCli.parse!(cli_parser, raw_args)? {
 		Run(parsed) => parsed
@@ -66,19 +56,17 @@ main! = |raw_args| {
 	}
 	suite_root = Path.absolute!(cli_options.suite_root)?
 	inventory = load_inventory!(Path.join(suite_root, "tests/targets.json"))?
-	selected = select_targets(cli_options.selected, inventory)?
+	selected = select_targets(cli_options.selected, cli_options.path_prefix, inventory)?
 	notes = SkipNotes.load!(Path.join(suite_root, "tests/targets.json"))?
-	report_skips!(selected, notes)?
+	settings = { max_total_time: cli_options.max_total_time, verbose: cli_options.verbose, campaign: cli_options.campaign_dir }
 	roc = Script.roc!()?
 	Env.with_temp_dir!(
 		|work| {
-			match cli_options.platform_url {
-				Ok(url) => {
-					local = prepare_platform_tests!(work, selected, url.to_str(), suite_root)?
-					run_operation!(cli_options.operation, cli_options.max_total_time, cli_options.verbose, cli_options.campaign_dir, roc, local, work)
-				}
-				Err(NoValue) => run_operation!(cli_options.operation, cli_options.max_total_time, cli_options.verbose, cli_options.campaign_dir, roc, selected.map(|item| rebase(item, Path.join(suite_root, Path.display(item.path)))), work)
+			cases = match cli_options.platform_url {
+				Ok(url) => prepare_platform_tests!(work, selected, url.to_str(), suite_root)?
+				Err(NoValue) => selected.map(|item| rebase(item, Path.join(suite_root, Path.display(item.path))))
 			}
+			run_operation!(cli_options.operation, settings, roc, cases, notes, work)
 		},
 	)
 }
@@ -91,6 +79,7 @@ cli_parser = Cli.assert_valid(
 			operation: Opt.single({ short: "", long: "operation", help: "One of check, test, build, seed, fuzz, or all. [default: all]", type: "operation", default: Value(All), parser: parse_operation }),
 			platform_url: Opt.maybe({ short: "", long: "platform-url", help: "Rewrite copied examples to use this platform bundle URL.", type: "url", parser: parse_url }),
 			selected: Opt.str_list({ short: "", long: "target", help: "Target name to run; repeat for multiple targets." }),
+			path_prefix: Opt.maybe_str({ short: "", long: "path-prefix", help: "Run only the targets whose path starts with this prefix, such as tests/targets/builtins/." }),
 			verbose: Opt.flag({ short: "v", long: "verbose", help: "Print commands and runner statistics." }),
 			campaign_dir: Opt.maybe({ short: "", long: "campaign-dir", help: "Keep each fuzz target's corpus in DIR/corpus/NAME and its failures in DIR/failures/NAME across runs, and fuzz every target before reporting the ones that failed.", type: "path", parser: CliValues.path }),
 		}.Cli,
@@ -145,16 +134,20 @@ load_inventory! = |path| {
 	Ok($cases)
 }
 
-select_targets = |requested, available| {
-	if requested.is_empty() {
-		return Ok(available)
-	}
+select_targets = |requested, prefix, available| {
 	for name in requested {
 		if !available.any(|item| item.name == name) {
 			return Err(UnknownTestTarget(name))
 		}
 	}
-	Ok(available.keep_if(|item| requested.contains(item.name)))
+	named = if (requested.is_empty()) available else available.keep_if(|item| requested.contains(item.name))
+	match prefix {
+		Ok(start) => {
+			under = named.keep_if(|item| Script.starts_with(Path.display(item.path), start))
+			if (under.is_empty()) Err(NoTargetsUnder(start)) else Ok(under)
+		}
+		Err(NoValue) => Ok(named)
+	}
 }
 
 ## Copy the suite and point every application in it at one platform bundle.
@@ -174,159 +167,207 @@ prepare_platform_tests! = |temporary, selected, url, suite_root| {
 	Ok(selected.map(|item| rebase(item, Path.join(temporary, Path.display(item.path)))))
 }
 
-run_operation! = |operation, max_total_time, verbose, campaign, roc, selected, work|
+Stage : [Check, Test, Build, Seed, Measure, Fuzz]
+
+stages_for = |operation|
 	match operation {
-		Check => check_targets!(roc, selected)
-		Test => test_targets!(roc, selected)
-		Build => build_targets!(roc, selected, work).map_ok(|_| {})
+		Check => [Check]
+		Test => [Test]
+		Build => [Build]
+		Seed => [Build, Seed, Measure]
+		Fuzz => [Build, Fuzz]
+		All => [Check, Test, Build, Seed, Measure, Fuzz]
+	}
+
+stage_name = |stage|
+	match stage {
+		Check => "check"
+		Test => "test"
+		Build => "build"
+		Seed => "seed"
+		Measure => "measure"
+		Fuzz => "fuzz"
+	}
+
+## Run each stage over every case, printing each step as it finishes and a
+## summary at the end. A case that fails a stage is skipped by the stages after
+## it; every other case carries on, so one run reports every failure. A switched
+## off seed or fuzz run is a skip with its note.
+run_operation! = |operation, settings, roc, cases, notes, work| {
+	colored = Report.color!()
+	started = Monotonic.now!()
+	stages = stages_for(operation)
+	Stdout.line!("Running ${cases.len().to_str()} cases: ${Str.join_with(stages.map(stage_name), ", ")}")?
+	var $steps = []
+	var $blocked = []
+	for stage in stages {
+		var $position = 0
+		for item in cases {
+			$position = $position + 1
+			attempt = if $blocked.contains(item.name) {
+				{ outcome: Skip("an earlier step failed"), millis: 0 }
+			} else {
+				match skip_note(stage, item, notes) {
+					Ok(note) => { outcome: Skip(note), millis: 0 }
+					Err(NotSkipped) => {
+						step_started = Monotonic.now!()
+						result = run_step!(stage, settings, roc, item, work)
+						millis = Duration.to_millis(Monotonic.elapsed!(step_started))
+						match result {
+							Ok({}) => { outcome: Pass, millis }
+							Err(StepFailed(detail)) => { outcome: Fail(detail), millis }
+							Err(other) => { outcome: Fail(Str.inspect(other)), millis }
+						}
+					}
+				}
+			}
+			step = { stage: stage_name(stage), name: item.name, outcome: attempt.outcome, millis: attempt.millis }
+			Stdout.line!(Report.line($position, cases.len(), step, colored))?
+			match attempt.outcome {
+				Fail(_) => {
+					$blocked = $blocked.append(item.name)
+				}
+				_ => {}
+			}
+			$steps = $steps.append(step)
+		}
+	}
+	for text in Report.summary($steps, Duration.to_millis(Monotonic.elapsed!(started)), colored) {
+		Stdout.line!(text)?
+	}
+	failed = $steps.keep_if(|step| step.outcome != Pass and !is_skip(step.outcome))
+	if (failed.is_empty()) Ok({}) else Err(TargetsFailed(failed.map(|step| "${step.stage} ${step.name}")))
+}
+
+is_skip = |outcome|
+	match outcome {
+		Skip(_) => Bool.True
+		_ => Bool.False
+	}
+
+## Why `stage` is switched off for `item`, from its note in tests/targets.json.
+skip_note = |stage, item, notes|
+	match stage {
+		Seed | Measure if item.skip_seed => Ok(SkipNotes.describe(notes, item.name, "seed"))
+		Fuzz if item.skip_fuzz => Ok(SkipNotes.describe(notes, item.name, "fuzz"))
+		_ => Err(NotSkipped)
+	}
+
+executable_path = |work, item| Path.join(Path.join(work, "executables"), item.name)
+
+run_step! = |stage, settings, roc, item, work|
+	match stage {
+		Check => run_quiet!(settings.verbose, roc, ["check", Path.to_os_str(item.path)], 0)
+		Test => run_quiet!(settings.verbose, roc, ["test", Path.to_os_str(item.path)], 0)
+		Build => {
+			Path.create_all!(Path.join(work, "executables"))?
+			run_quiet!(settings.verbose, roc, ["build", "--fuzz", Path.to_os_str(item.path), OsStr.from_str("--output=${Path.display(executable_path(work, item))}")], 0)
+		}
 		Seed => {
-			executables = build_targets!(roc, selected, work)?
-			replay_seeds!(executables, work)?
-			measure_seeds!(roc, executables, work)
-		}
-		Fuzz => fuzz_targets!(build_targets!(roc, selected, work)?, max_total_time, verbose, campaign, work)
-		All => {
-			check_targets!(roc, selected)?
-			test_targets!(roc, selected)?
-			executables = build_targets!(roc, selected, work)?
-			replay_seeds!(executables, work)?
-			measure_seeds!(roc, executables, work)?
-			fuzz_targets!(executables, max_total_time, verbose, campaign, work)
-		}
-	}
-
-check_targets! = |roc, selected| {
-	for item in selected {
-		run_allow_pin_warning!(roc, ["check", Path.to_os_str(item.path)])?
-	}
-	Ok({})
-}
-
-test_targets! = |roc, selected| {
-	for item in selected {
-		run_allow_pin_warning!(roc, ["test", Path.to_os_str(item.path)])?
-	}
-	Ok({})
-}
-
-build_targets! = |roc, selected, work| {
-	directory : Path
-	directory = Path.join(work, "executables")
-	Path.create_all!(directory)?
-	var $executables = []
-	for item in selected {
-		output = Path.join(directory, item.name)
-		run_allow_pin_warning!(roc, ["build", "--fuzz", Path.to_os_str(item.path), OsStr.from_str("--output=${Path.display(output)}")])?
-		$executables = $executables.append((item, output))
-	}
-	Ok($executables)
-}
-
-run_allow_pin_warning! : Script.Command, List(OsStr) => Try({}, _)
-run_allow_pin_warning! = |roc, args| {
-	Script.info!("RUN", Str.join_with([roc.program].concat(args).map(OsStr.display), " "))?
-	code = Script.exit_code!(roc.cmd(args))?
-	# Roc returns 2 for a version-mismatch warning. The examples archives of
-	# releases up to 0.4.3 pin every example to the compiler of their day, so
-	# the nightly workflow meets that warning until a later release is the
-	# latest. The application itself still checked successfully.
-	if (code == 0 or code == 2) Ok({}) else Err(RocCommandExited(code))
-}
-
-replay_seeds! = |executables, work| {
-	for (item, executable) in executables {
-		if !item.skip_seed {
 			seed = seed_path!(item, work)?
-			Script.command(Path.to_os_str(executable)).run!(["show", Path.to_os_str(seed)])?
-			run_expectation!(item, executable, ["replay", Path.to_os_str(seed)])?
+			executable = Script.command(Path.to_os_str(executable_path(work, item)))
+			run_quiet!(settings.verbose, executable, ["show", Path.to_os_str(seed)], 0)?
+			run_quiet!(settings.verbose, executable, ["replay", Path.to_os_str(seed)], expected_code(item))
+		}
+		Measure => measure_step!(roc, item, work)
+		Fuzz => fuzz_step!(settings, item, work)
+	}
+
+## A case that is expected to fail must fail the way a target failure does.
+expected_code = |item| if (item.expected_failure) 77 else 0
+
+## Run one command of a step and require `expected` as its exit code. The
+## output is kept and shown only on failure, so a passing run prints one line
+## per step; `--verbose` shows everything as it happens.
+run_quiet! : Bool, Script.Command, List(OsStr), I32 => Try({}, _)
+run_quiet! = |verbose, command, args, expected| {
+	display = Str.join_with([command.program].concat(args).map(OsStr.display), " ")
+	if verbose {
+		Stdout.line!("$ ${display}")?
+		code = Script.exit_code!(command.cmd(args))?
+		if (code == expected) Ok({}) else Err(StepFailed("`${display}` exited with code ${code.to_str()}, expected ${expected.to_str()}"))
+	} else {
+		output = command.output!(args, Path.utf8("."))?
+		match output.status {
+			Exited(code) if code == expected => Ok({})
+			Exited(code) => Err(StepFailed("`${display}` exited with code ${code.to_str()}, expected ${expected.to_str()}\n${tail(output)}"))
+			Signaled(signal) => Err(StepFailed("`${display}` ended on signal ${Str.inspect(signal)}\n${tail(output)}"))
 		}
 	}
-	Ok({})
+}
+
+## The last lines of a command's output, enough to act on a failure.
+tail = |output| {
+	lines = Str.from_utf8_lossy(output.stdout_bytes.concat(output.stderr_bytes)).split_on("\n").keep_if(|line| !line.is_empty())
+	Str.join_with(lines.drop_first(if (lines.len() > 30) lines.len() - 30 else 0), "\n")
 }
 
 ## The start of every line `measure` prints. A reader checks the version
 ## before it trusts the fields.
 report_prefix = "{\"format\":\"roc-fuzz-allocs/1\","
 
-## Run each seed under `measure`, in an empty directory. It must exit 0 and
+## Run the seed under `measure`, in an empty directory. It must exit 0 and
 ## print nothing but report lines, or fail for a case that is expected to
-## fail, and it must not create `.roc-fuzz/` there as libFuzzer's commands do. A target that reports must
-## report the same counts from a build without `--fuzz`, and `replay` must not
-## print its reports.
-measure_seeds! = |roc, executables, work| {
-	for (item, executable) in executables {
-		if !item.skip_seed {
-			seed = seed_path!(item, work)?
-			directory = Path.join(Path.join(work, "measure"), item.name)
-			Path.create_all!(directory)?
-			Script.info!("MEASURE", item.name)?
-			measured = Script.command(Path.to_os_str(executable)).capture!(["measure", Path.to_os_str(seed)], directory, [])
-			Script.require!(!Path.exists!(Path.join(directory, ".roc-fuzz"))?, "measure created .roc-fuzz/ for ${item.name}")?
-			match (item.expected_failure, measured) {
-				(True, Err(CommandExited(code))) if code != 0 => {}
-				(True, other) => return Err(ExpectedMeasureFailure(item.name, Str.inspect(other)))
-				(False, Err(err)) => return Err(err)
-				(False, Ok(stdout)) => {
-					reports = Str.from_utf8_lossy(stdout).split_on("\n").keep_if(|line| !line.is_empty())
-					for line in reports {
-						Script.require!(Script.starts_with(line, report_prefix), "measure printed something other than a report for ${item.name}: ${line}")?
-					}
-					if !reports.is_empty() {
-						Script.info!("REPORTS", "${item.name}: ${reports.len().to_str()}")?
-						replayed = Script.command(Path.to_os_str(executable)).capture!(["replay", Path.to_os_str(seed)], directory, [])?
-						Script.require!(!Str.from_utf8_lossy(replayed).contains(report_prefix), "replay printed reports for ${item.name}")?
-						plain = Path.join(Path.join(work, "plain"), item.name)
-						Path.create_all!(Path.join(work, "plain"))?
-						run_allow_pin_warning!(roc, ["build", Path.to_os_str(item.path), OsStr.from_str("--output=${Path.display(plain)}")])?
-						from_plain = Script.command(Path.to_os_str(plain)).capture!(["measure", Path.to_os_str(seed)], directory, [])?
-						Script.require!(from_plain == stdout, "${item.name} reports different counts when built without --fuzz")?
-					}
+## fail, and it must not create `.roc-fuzz/` there as libFuzzer's commands do.
+## A target that reports must report the same counts from a build without
+## `--fuzz`, and `replay` must not print its reports.
+measure_step! = |roc, item, work| {
+	seed = seed_path!(item, work)?
+	directory = Path.join(Path.join(work, "measure"), item.name)
+	Path.create_all!(directory)?
+	executable = Script.command(Path.to_os_str(executable_path(work, item)))
+	measured = executable.output!(["measure", Path.to_os_str(seed)], directory)?
+	if Path.exists!(Path.join(directory, ".roc-fuzz"))? {
+		return Err(StepFailed("measure created .roc-fuzz/"))
+	}
+	match (item.expected_failure, measured.status) {
+		(True, Exited(code)) if code != 0 => Ok({})
+		(True, _) => Err(StepFailed("measure did not fail on a case that is expected to fail"))
+		(False, Exited(0)) => {
+			reports = Str.from_utf8_lossy(measured.stdout_bytes).split_on("\n").keep_if(|line| !line.is_empty())
+			for line in reports {
+				if !Script.starts_with(line, report_prefix) {
+					return Err(StepFailed("measure printed something other than a report: ${line}"))
 				}
 			}
+			if !reports.is_empty() {
+				replayed = executable.output!(["replay", Path.to_os_str(seed)], directory)?
+				if Str.from_utf8_lossy(replayed.stdout_bytes).contains(report_prefix) {
+					return Err(StepFailed("replay printed reports"))
+				}
+				plain = Path.join(Path.join(work, "plain"), item.name)
+				Path.create_all!(Path.join(work, "plain"))?
+				run_quiet!(Bool.False, roc, ["build", Path.to_os_str(item.path), OsStr.from_str("--output=${Path.display(plain)}")], 0)?
+				from_plain = Script.command(Path.to_os_str(plain)).output!(["measure", Path.to_os_str(seed)], directory)?
+				if from_plain.stdout_bytes != measured.stdout_bytes {
+					return Err(StepFailed("reports different counts when built without --fuzz"))
+				}
+			}
+			Ok({})
 		}
+		(False, _) => Err(StepFailed("measure failed\n${tail(measured)}"))
 	}
-	Ok({})
 }
 
-## Fuzz each target for `seconds`. In a campaign the corpus outlives the run,
-## each failure's input is kept, and one target's failure does not stop the rest.
-fuzz_targets! = |executables, seconds, verbose, campaign, work| {
-	root = match campaign {
+## Fuzz the target for the configured time. In a campaign the corpus outlives
+## the run and each failure's input is kept.
+fuzz_step! = |settings, item, work| {
+	root = match settings.campaign {
 		Ok(directory) => Path.absolute!(directory)?
 		Err(NoValue) => work
 	}
-	var $failed = []
-	for (item, executable) in executables {
-		if !item.skip_fuzz {
-			_ = seed_path!(item, root)?
-			base_args = ["run", Path.to_os_str(Path.join(Path.join(root, "corpus"), item.name)), OsStr.from_str("--time=${seconds.to_str()}")]
-			args = if (verbose) base_args.append("--print-final-stats") else base_args
-			match campaign {
-				Ok(_) => {
-					failures = Path.join(Path.join(root, "failures"), item.name)
-					Path.create_all!(failures)?
-					match run_expectation!(item, executable, args.append(OsStr.from_str("--artifact-dir=${Path.display(failures)}"))) {
-						Ok({}) => {}
-						Err(err) => {
-							Script.warn!("${item.name} failed: ${Str.inspect(err)}")?
-							$failed = $failed.append(item.name)
-						}
-					}
-				}
-				Err(NoValue) => run_expectation!(item, executable, args)?
-			}
+	_ = seed_path!(item, root)?
+	base_args = ["run", Path.to_os_str(Path.join(Path.join(root, "corpus"), item.name)), OsStr.from_str("--time=${settings.max_total_time.to_str()}")]
+	args = if (settings.verbose) base_args.append("--print-final-stats") else base_args
+	full_args = match settings.campaign {
+		Ok(_) => {
+			failures = Path.join(Path.join(root, "failures"), item.name)
+			Path.create_all!(failures)?
+			args.append(OsStr.from_str("--artifact-dir=${Path.display(failures)}"))
 		}
+		Err(NoValue) => args
 	}
-	if ($failed.is_empty()) Ok({}) else Err(CampaignTargetsFailed($failed))
-}
-
-run_expectation! = |item, executable, args| {
-	if item.expected_failure {
-		code = Script.exit_code!(Script.command(Path.to_os_str(executable)).cmd(args))?
-		if (code == 77) Ok({}) else Err(ExpectedTargetFailure(item.name, code))
-	} else {
-		Script.command(Path.to_os_str(executable)).run!(args)
-	}
+	run_quiet!(settings.verbose, Script.command(Path.to_os_str(executable_path(work, item))), full_args, expected_code(item))
 }
 
 seed_path! = |item, work| {

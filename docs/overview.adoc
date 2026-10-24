@@ -72,6 +72,7 @@ After roc-fuzz finds a bug, fix the code and keep the minimized case as a normal
 regression test. The unit test prevents that exact bug from returning. Future
 fuzzing continues searching for cases nobody has named yet.
 
+[#typed-and-coverage-guided]
 == What “typed” and “coverage-guided” mean
 
 *Typed* means the test receives ordinary Roc values rather than making every

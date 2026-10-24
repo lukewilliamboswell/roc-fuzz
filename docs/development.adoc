@@ -323,9 +323,21 @@ blueprint run test-targets -- --operation fuzz --max-total-time 2
 ----
 
 `blueprint run check` needs no native inputs: it formats, tests the scripts,
-runs the pin and supply-chain checks, and type-checks the platform and every
-case in `tests/targets.json`. After native inputs are prepared, `test-targets`
+runs the pin and supply-chain checks, type-checks the platform and runs its
+`expect` tests from `platform/main.roc`, and type-checks every case in
+`tests/targets.json`. After native inputs are prepared, `test-targets`
 provides the focused operations shown above.
+
+`test-targets` runs each stage of the operation (check, test, build, seed,
+measure, fuzz) over every selected case and prints one line per step as it
+finishes, with its position, `PASS`, `FAIL` or `SKIP`, and its time in
+milliseconds. A failed step does not stop the run: the case's later stages are
+skipped and every other case carries on. The run ends with each failure and the
+end of its output, each skip with its note, the counts, the total time and the
+slowest steps, and exits non-zero if anything failed. A command's output is
+shown only when its step fails; `--verbose` shows all of it as it runs. Colour
+is used only on a terminal and never when `NO_COLOR` is set. `--target NAME`
+and `--path-prefix PREFIX` narrow the selection.
 Checked-in examples and test targets use the local platform. The nightly
 compatibility workflow uses the latest release's own archived examples and
 immutable bundle. Validation
@@ -390,7 +402,7 @@ runs daily; see <<release-bundle>>.
 `fuzz.yml`:: Has today's compiler broken a builtin? Once a day, and only on
 `trunk`, it fuzzes every builtin target in `tests/targets.json` on the latest
 nightly for a few seconds each, about ten minutes in all. It runs
-`blueprint run test-targets -- --operation fuzz --campaign-dir DIR`. The corpus
+`blueprint run test-targets -- --operation fuzz --campaign-dir DIR --path-prefix tests/targets/builtins/`. The corpus
 under `DIR/corpus/` carries over between runs through the Actions cache. Each
 target's failing inputs are kept under `DIR/failures/` and uploaded as the
 `fuzz-failures` artifact. Every target runs before the job fails. Reproduce a
@@ -429,8 +441,9 @@ manual URL follow-up could occur after tagging). Newer releases must include the
 examples archive. The compatibility artifact records the release, source commit,
 compiler and asset identities used; a missing archive or failed download cannot
 become a passing test. Archives up to 0.4.3 pin every example to the compiler of
-their day, so the driver accepts the resulting version-mismatch warning; later
-archives carry no pin.
+their day, and the driver treats Roc's version-mismatch warning as a failure, so
+those archives pass only with the compiler they name. Later archives carry no
+pin.
 
 Every target asserts on allocation behaviour as well as on results. A
 property can check what an operation computes but not what it costs, so
