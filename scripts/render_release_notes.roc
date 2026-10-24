@@ -96,7 +96,7 @@ compilers! = || {
 
 ## Where the bundle's SBOM is, what it is, and what it does not establish.
 sbom_section = |bundle_url|
-	"## Software bill of materials\n\nThe bundle's SBOM sits beside it, bound to its SHA-256 and attested with it: [SPDX 3.0.1](${bundle_url}.spdx.json), [CycloneDX 1.7](${bundle_url}.cdx.json) and the [evidence manifest](${bundle_url}.sbom-manifest.json). It lists every member of the archive by digest, and the platform, libFuzzer, Zig runtime, musl and LLVM runtimes as components; Zig is a build dependency. It marks as incomplete which upstream sources each object file holds, and the compiler that ran `roc bundle`, which is named under Compilers.\n"
+	"## Software bill of materials\n\nThe bundle's SBOM sits beside it, bound to its SHA-256 and attested with it: [SPDX](${bundle_url}.spdx.json), [CycloneDX](${bundle_url}.cdx.json) and the [evidence manifest](${bundle_url}.sbom-manifest.json). It lists every member of the archive by digest, and the platform, libFuzzer, Zig runtime, musl and LLVM runtimes as components; Zig is a build dependency. It marks as incomplete which upstream sources each object file holds, and the compiler that ran `roc bundle`, which is named under Compilers.\n"
 
 valid_release_version = |value| Version.semantic(value) or (ReleaseCandidate.parse(value) |> Try.is_ok)
 

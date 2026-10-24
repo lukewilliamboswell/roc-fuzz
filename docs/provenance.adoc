@@ -28,8 +28,8 @@ Each release also publishes `<bundle>.intoto.jsonl` for offline
 attestation verification, and three files beside the bundle that describe
 what it holds:
 
-* `<bundle>.spdx.json`, an SPDX 3.0.1 software bill of materials;
-* `<bundle>.cdx.json`, the same graph as CycloneDX 1.7;
+* `<bundle>.spdx.json`, an SPDX software bill of materials;
+* `<bundle>.cdx.json`, the same graph in CycloneDX;
 * `<bundle>.sbom-manifest.json`, the evidence manifest that names the bundle
   and each SBOM by size and SHA-256.
 
@@ -43,8 +43,8 @@ runtime, musl and LLVM runtime code in the native inputs; Zig is a build
 dependency. What the documents do not establish is stated as incomplete
 coverage, not left out.
 
-The build pins Zig 0.16.0 and the SHA-256 of the `libfuzzer-sys` 0.4.5
-source archive. Both targets are compiled against the headers Zig bundles; the
+The build pins the Zig release and the SHA-256 of the `libfuzzer-sys` source
+archive that `scripts/native-deps.json` names. Both targets are compiled against the headers Zig bundles; the
 build reads no installed Apple SDK. The libraries are byte-reproducible, so
 anyone with that Zig release can rebuild them from the recorded source revision
 and compare digests. Native-library archives and the

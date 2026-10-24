@@ -39,10 +39,10 @@ on every CI runner. To work on roc-fuzz you need:
   or the release's prebuilt binary checked against its published SHA-256;
 * a current Roc nightly installed as `roc`.
 
-The environment supplies Zig 0.16.0, from
+The environment supplies the Zig release that `Blueprint.roc` names, from
 https://github.com/mitchellh/zig-overlay[zig-overlay], to build the host and its
 linker inputs and to format the host bindings. `scripts/native-deps.json` names
-the same version, and the supply-chain check holds the two together.
+the same release, and the supply-chain check holds the two together.
 
 [source,sh]
 ----
@@ -506,7 +506,7 @@ One immutable GitHub release per version holds:
 | The manual.
 
 | `<bundle>.spdx.json`, `<bundle>.cdx.json`
-| The bundle's SBOM, as SPDX 3.0.1 and CycloneDX 1.7, written from `sbom/composition.json`.
+| The bundle's SBOM, in SPDX and CycloneDX, written from `sbom/composition.json`.
 
 | `<bundle>.sbom-manifest.json`
 | The evidence manifest binding the bundle and its SBOM documents by digest.
