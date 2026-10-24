@@ -703,6 +703,13 @@ pub const RocEnv = struct {
     roc_io: RocIo,
 };
 
+/// Arguments for Fuzz.swap_peak_live_bytes!
+/// Roc signature: U64 => U64
+/// Refcounted fields are owned by the hosted function.
+pub const FuzzSwap_peak_live_bytesArgs = extern struct {
+    arg0: u64,
+};
+
 fn rocReleasePolicy(comptime T: type) type {
     if (T == RocStr) return RocStrRelease;
     if (T == RocListWith(u8, false)) return RocListSpineRelease(RocListWith(u8, false));
@@ -738,6 +745,18 @@ pub extern fn roc_fuzz_alloc_count() callconv(.c) u64;
 /// Hosted symbol for Fuzz.live_alloc_count!
 /// Roc signature: {} => U64
 pub extern fn roc_fuzz_live_alloc_count() callconv(.c) u64;
+
+/// Hosted symbol for Fuzz.live_bytes!
+/// Roc signature: {} => U64
+pub extern fn roc_fuzz_live_bytes() callconv(.c) u64;
+
+/// Hosted symbol for Fuzz.requested_bytes!
+/// Roc signature: {} => U64
+pub extern fn roc_fuzz_requested_bytes() callconv(.c) u64;
+
+/// Hosted symbol for Fuzz.swap_peak_live_bytes!
+/// Roc signature: U64 => U64
+pub extern fn roc_fuzz_swap_peak_live_bytes(arg0: u64) callconv(.c) u64;
 
 /// Default memory management functions for Roc platforms.
 ///

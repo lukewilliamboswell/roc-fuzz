@@ -15,6 +15,9 @@ platform "roc-fuzz"
 	hosted {
 		"roc_fuzz_alloc_count": Fuzz.alloc_count!,
 		"roc_fuzz_live_alloc_count": Fuzz.live_alloc_count!,
+		"roc_fuzz_live_bytes": Fuzz.live_bytes!,
+		"roc_fuzz_requested_bytes": Fuzz.requested_bytes!,
+		"roc_fuzz_swap_peak_live_bytes": Fuzz.swap_peak_live_bytes!,
 	}
 	targets: {
 		inputs_dir: "targets/",

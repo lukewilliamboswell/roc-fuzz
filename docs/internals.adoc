@@ -75,7 +75,10 @@ counters so a target can assert on cost as well as correctness:
 ----
 Fuzz.alloc_count! : () => U64          # cumulative allocations served this process
 Fuzz.live_alloc_count! : () => U64     # allocations not yet freed
+Fuzz.requested_bytes! : () => U64      # cumulative bytes requested this process
+Fuzz.live_bytes! : () => U64           # bytes in allocations not yet freed
 Fuzz.measure_allocs! : ({} => a) => { value : a, allocations : U64 }
+Fuzz.measure_memory! : ({} => a) => { value : a, allocations : U64, requested_bytes : U64, peak_live_bytes : U64 }
 Fuzz.expect_allocs_at_most! : U64, ({} => a) => a
 Fuzz.expect_allocs_at_least! : U64, ({} => a) => a
 Fuzz.expect_no_leaks! : ({} => a) => {}
@@ -87,6 +90,18 @@ assert on a raw value. Always read the counter before and after the
 region you care about and assert on the difference; `measure_allocs!`
 and `expect_allocs_at_most!` and `expect_allocs_at_least!` do this for
 you.
+
+`measure_memory!` reports bytes as well as allocation counts.
+`requested_bytes` adds the length of every allocation and the new length of
+every reallocation in the region, so a list grown step by step counts each
+intermediate size. `peak_live_bytes` is the most memory the region held at
+once, measured from the live bytes when it started: memory freed inside the
+region still counts toward the peak, and a reallocation replaces the old
+block's length with the new one rather than holding both. Lengths are those
+Roc asked for, including the refcount prefix Roc places before a list's
+elements, and exclude the platform allocator's own header. Measurements nest.
+`measure_allocs!` keeps its two-field record so existing destructuring
+patterns continue to compile.
 
 Only assert zero allocations for a value that is genuinely uniquely
 owned and pre-sized. If the value is aliased anywhere, copy-on-write
