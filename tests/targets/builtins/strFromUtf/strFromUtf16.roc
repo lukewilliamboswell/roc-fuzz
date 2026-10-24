@@ -2,57 +2,26 @@ app [target] { pf: platform "../../../../platform/main.roc" }
 
 import pf.Fuzz
 import Utf
+import Wide
 
-## Differential checker for strict `Str.from_utf16`.
+## Differential checker for the UTF-16 decoders: `Str.from_utf16_le`,
+## `Str.from_utf16_be` and `Str.from_utf16_bom`, each strict and `_lossy`.
 ##
-## Units are shaped toward surrogate, noncharacter, BOM, and range-boundary
-## values, then compared against the hand-written oracle in Utf.roc:
-## the exact first problem and code-unit index on failure, the exact string on
-## success. Allocation contract (`Utf.strict_alloc_bound`): failures allocate
-## nothing, inline-sized output allocates nothing, and longer output allocates
-## exactly once. A successful decode must also agree with the lossy decoder and
-## re-encode to the original units, and nothing leaks.
-generator : Fuzz.Generator(List(U16))
-generator = Fuzz.map(
-	Fuzz.list(Fuzz.map2(Fuzz.u8_in(0, 9), Fuzz.u64, Utf.utf16_chunk), 128),
-	|chunks| List.join(chunks),
-)
+## Code units are shaped toward surrogates, pairs, byte order marks in either
+## order, noncharacters and long runs, encoded in one byte order after an
+## optional leading marker, and may end partway through a unit; one input in
+## eight is raw bytes. The same bytes go through all six decoders, which are
+## compared with the Utf.roc oracle: the exact first problem and its byte
+## offset on failure, the exact string on success, and one U+FFFD per invalid
+## unit or partial tail in lossy output. Strict must agree with lossy on
+## valid input and re-encode to the original bytes. Allocation counts are
+## pinned (`Utf.allocs_for`) and nothing leaks.
+generator : Fuzz.Generator(Utf.Case(U16))
+generator = Utf.case_generator(Utf.units16(128), 3)
 
-actual_problem = |result| match result {
-	Ok(_) => NoProblem
-	Err(BadUtf16({ problem, index })) => match problem {
-		UnpairedHighSurrogate => UnpairedHigh(index)
-		UnpairedLowSurrogate => UnpairedLow(index)
-	}
-}
-
-test! : List(U16) => Fuzz.Outcome
-test! = |units| {
-	expected = Utf.decode_utf16(units)
-	{ value: result, allocations } = Fuzz.measure_allocs!(|{}| Str.from_utf16(units))
-	got = actual_problem(result)
-	if got != expected.problem {
-		crash "problem mismatch: got ${Str.inspect(got)}, expected ${Str.inspect(expected.problem)}"
-	}
-	bound = Utf.strict_alloc_bound(expected)
-	if allocations > bound {
-		crash "strict decode allocated ${allocations.to_str()} times (expected <= ${bound.to_str()})"
-	}
-	match result {
-		Err(_) => {}
-		Ok(decoded) => {
-			if decoded.to_utf8() != expected.bytes {
-				crash "decoded bytes differ from oracle"
-			}
-			if Str.from_utf16_lossy(units) != decoded {
-				crash "lossy decode disagrees with strict decode on valid input"
-			}
-			if Utf.encode_utf16(decoded) != units {
-				crash "decoded string did not re-encode to the original units"
-			}
-		}
-	}
-	Fuzz.expect_no_leaks!(|{}| Str.from_utf16(units))
+test! : Utf.Case(U16) => Fuzz.Outcome
+test! = |case| {
+	Wide.check!(Wide.utf16, Utf.case16_bytes(case))
 	Fuzz.keep
 }
 
@@ -60,5 +29,5 @@ target = Fuzz.target_with!({
 	name: "strFromUtf16",
 	generator,
 	test!,
-	show: |units| Str.inspect(units),
+	show: |case| Str.inspect(Utf.case16_bytes(case)),
 })

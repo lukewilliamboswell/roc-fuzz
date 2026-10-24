@@ -2,26 +2,35 @@ app [target] { pf: platform "../../../../platform/main.roc" }
 
 import pf.Fuzz
 import Utf
+import Wide
 
-## Boundary checker for the wide-UTF decoders (roc-lang/roc#11700).
+## Boundary checker for the wide-UTF decoders.
 ##
-## Both decoder passes check ASCII 16 units at a time with Roc SIMD, output of
-## at most 23 bytes takes a scalar inline path, and longer output is encoded
-## into one exact-capacity list. Each input is an ASCII prefix of chosen
-## length, one probe (a 1-4 byte scalar or an invalid unit) placed right at
-## that offset, and a suffix of ASCII or dense multi-byte scalars, so the probe
-## lands on every SIMD chunk edge and both sides of the inline limit. Strict
-## and lossy results are compared with the oracle, allocations match
-## `Utf.strict_alloc_bound` and `Utf.alloc_bound`, and nothing leaks.
-Case : { utf32 : Bool, prefix : U64, probe : U64, suffix_dense : Bool, suffix : U64, seed : U64 }
+## Both decoder passes skip ASCII 16 code units at a time (32 bytes of UTF-16,
+## 64 of UTF-32), output of at most 23 bytes is built as a small string, and
+## longer output is encoded into one exact-capacity list. Each input is an
+## ASCII prefix of chosen length, one probe (a 1-4 byte scalar or an invalid
+## unit) placed right at that offset, and a suffix of ASCII or dense
+## multi-byte scalars, encoded in either byte order, optionally after a
+## marker that shifts everything by one unit, and optionally cut short by a
+## partial final unit. The probe so lands on every chunk edge and both sides
+## of the small-string limit. All six decoders of the encoding are checked
+## against the Utf.roc oracle with pinned allocation counts (`Wide.check!`).
+Case : { utf32 : Bool, little : Bool, marked : Bool, prefix : U64, probe : U64, suffix_dense : Bool, suffix : U64, partial : U64, seed : U64 }
+
+flag : Fuzz.Generator(Bool)
+flag = Fuzz.map(Fuzz.u8_in(0, 1), |n| n == 1)
 
 generator : Fuzz.Generator(Case)
 generator = {
-	utf32: Fuzz.map(Fuzz.u8_in(0, 1), |n| n == 1),
+	utf32: flag,
+	little: flag,
+	marked: flag,
 	prefix: Fuzz.u64_in(0, 200),
 	probe: Fuzz.u64_in(0, 15),
-	suffix_dense: Fuzz.map(Fuzz.u8_in(0, 1), |n| n == 1),
+	suffix_dense: flag,
 	suffix: Fuzz.u64_in(0, 300),
+	partial: Fuzz.u64_in(0, 3),
 	seed: Fuzz.u64,
 }.Fuzz
 
@@ -32,74 +41,36 @@ probe_units = |utf32, probe|
 		[Utf.width_scalar(probe)]
 	} else {
 		invalid : List(U32)
-		invalid = if utf32 [0xD800, 0xDFFF, 0x110000, 0xFFFFFFFF, 0xDC00] else [0xD800, 0xDBFF, 0xDC00, 0xDFFF, 0xD83D]
+		invalid = if (utf32) [0xD800, 0xDFFF, 0x110000, 0xFFFFFFFF, 0xDC00] else [0xD800, 0xDBFF, 0xDC00, 0xDFFF, 0xD83D]
 		[invalid.get(probe - 11) ?? 0xD800]
 	}
 
 scalars : Case -> List(U32)
 scalars = |case| {
-	suffix = if case.suffix_dense List.repeat(Utf.width_scalar(case.seed // 0x80), case.suffix) else Utf.ascii_seq(case.seed, case.suffix)
-	Utf.ascii_seq(case.seed, case.prefix).concat(probe_units(case.utf32, case.probe)).concat(suffix)
+	suffix = if (case.suffix_dense) List.repeat(Utf.width_scalar(case.seed // 0x80), case.suffix) else Utf.ascii_seq(case.seed, case.suffix)
+	marker = if (case.marked) [0xFEFF] else []
+	marker.concat(Utf.ascii_seq(case.seed, case.prefix)).concat(probe_units(case.utf32, case.probe)).concat(suffix)
 }
 
-check_bound! = |label, allocations, bound|
-	if allocations > bound {
-		crash "${label} allocated ${allocations.to_str()} times (expected <= ${bound.to_str()})"
+## The encoded input, ending with up to three bytes of a cut-short unit.
+bytes : Case -> List(U8)
+bytes = |case| {
+	cps = scalars(case)
+	if case.utf32 {
+		Utf.units32_bytes(cps, case.little).concat(List.repeat(0x41, case.partial))
+	} else {
+		units = List.join(cps.map(|cp| if (cp > 0xFFFF) Utf.scalar_utf16(cp) else [cp.to_u16_wrap()]))
+		Utf.units16_bytes(units, case.little).concat(List.repeat(0x41, case.partial % 2))
 	}
-
-check_utf16! : List(U16) => {}
-check_utf16! = |units| {
-	expected = Utf.decode_utf16(units)
-	{ value: strict, allocations: strict_allocs } = Fuzz.measure_allocs!(|{}| Str.from_utf16(units))
-	{ value: lossy, allocations: lossy_allocs } = Fuzz.measure_allocs!(|{}| Str.from_utf16_lossy(units))
-	check_bound!("Str.from_utf16", strict_allocs, Utf.strict_alloc_bound(expected))
-	check_bound!("Str.from_utf16_lossy", lossy_allocs, Utf.alloc_bound(expected.bytes))
-	if lossy.to_utf8() != expected.bytes {
-		crash "UTF-16 lossy output differs from oracle"
-	}
-	agrees = match strict {
-		Ok(s) => expected.problem == NoProblem and s == lossy
-		Err(BadUtf16({ index, problem })) => match problem {
-			UnpairedHighSurrogate => expected.problem == UnpairedHigh(index)
-			UnpairedLowSurrogate => expected.problem == UnpairedLow(index)
-		}
-	}
-	if !agrees {
-		crash "UTF-16 strict result ${Str.inspect(strict)} disagrees with oracle ${Str.inspect(expected.problem)}"
-	}
-	Fuzz.expect_no_leaks!(|{}| (Str.from_utf16(units), Str.from_utf16_lossy(units)))
-}
-
-check_utf32! : List(U32) => {}
-check_utf32! = |units| {
-	expected = Utf.decode_utf32(units)
-	{ value: strict, allocations: strict_allocs } = Fuzz.measure_allocs!(|{}| Str.from_utf32(units))
-	{ value: lossy, allocations: lossy_allocs } = Fuzz.measure_allocs!(|{}| Str.from_utf32_lossy(units))
-	check_bound!("Str.from_utf32", strict_allocs, Utf.strict_alloc_bound(expected))
-	check_bound!("Str.from_utf32_lossy", lossy_allocs, Utf.alloc_bound(expected.bytes))
-	if lossy.to_utf8() != expected.bytes {
-		crash "UTF-32 lossy output differs from oracle"
-	}
-	agrees = match strict {
-		Ok(s) => expected.problem == NoProblem and s == lossy
-		Err(BadUtf32({ index, problem })) => match problem {
-			CodePointTooLarge => expected.problem == TooLarge(index)
-			SurrogateCodePoint => expected.problem == Surrogate(index)
-		}
-	}
-	if !agrees {
-		crash "UTF-32 strict result ${Str.inspect(strict)} disagrees with oracle ${Str.inspect(expected.problem)}"
-	}
-	Fuzz.expect_no_leaks!(|{}| (Str.from_utf32(units), Str.from_utf32_lossy(units)))
 }
 
 test! : Case => Fuzz.Outcome
 test! = |case| {
-	cps = scalars(case)
+	input = bytes(case)
 	if case.utf32 {
-		check_utf32!(cps)
+		Wide.check!(Wide.utf32, input)
 	} else {
-		check_utf16!(List.join(cps.map(|cp| if cp > 0xFFFF Utf.scalar_utf16(cp) else [cp.to_u16_wrap()])))
+		Wide.check!(Wide.utf16, input)
 	}
 	Fuzz.keep
 }

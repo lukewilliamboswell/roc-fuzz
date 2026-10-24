@@ -2,8 +2,10 @@ app [target] { pf: platform "../../../../platform/main.roc" }
 
 import pf.Fuzz
 
-## Checker for the public `U16x8.load_units` / `U32x4.load_units` loads that
-## the wide-UTF decoders are built on (roc-lang/roc#11700).
+## Checker for the public `U16x8.load_units` / `U32x4.load_units` loads, which
+## read SIMD vectors out of a list of code units (roc-lang/roc#11700). The
+## byte-based wide-UTF decoders load bytes instead, so this target stands on
+## its own.
 ##
 ## Units come from a seamless slice of a larger parent at any unit offset, so
 ## loads are exercised misaligned for 16-byte vectors and right up against the
