@@ -7,7 +7,7 @@ Version := [].{
 
 	## The version a pull request's release dry run uses. Roc rejects `0.0.0`
 	## in a package URL.
-	dry_run = "0.0.1-dry-run"
+	dry_run = "0.0.1-dryrun"
 
 	nightly = |value|
 		match Str.split_on(value, "-") {
