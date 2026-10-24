@@ -382,7 +382,7 @@ assembles a single bundle, and a job on each
 target downloads that bundle and runs every case against it. `CI required`
 aggregates them.
 `release.yml`:: Do these exact bytes work? On a pull request it is a dry run
-under the version `0.0.1-dry-run`: it builds the bundle, the examples archive,
+under the version `0.0.1-dryrun`: it builds the bundle, the examples archive,
 the SBOM, the documentation archive and the release notes, and tests the
 archive against the bundle on both targets. `Release required` aggregates it.
 `nightly.yml`:: Does the latest release still work with today's compiler? It
