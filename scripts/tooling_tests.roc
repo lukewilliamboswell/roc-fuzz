@@ -14,6 +14,7 @@ import src/Glue
 import src/Integrity
 import src/LibrarySource
 import src/RocSource
+import src/Report
 import src/SkipNotes
 import src/Tooling
 

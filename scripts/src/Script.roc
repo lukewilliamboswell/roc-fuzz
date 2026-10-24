@@ -19,6 +19,11 @@ Script := [].{
 		capture! = |self, args, cwd, stdin|
 			run_capture!(self.base, args, cwd, stdin)
 
+		## Run to completion with both streams captured, whatever the exit
+		## status, for a caller that reports the output only on failure.
+		output! = |self, args, cwd|
+			self.base.args(args).cwd(cwd).run!().map_err(|err| CommandRunFailed(err))
+
 		spawn! = |self, args, cwd|
 			self.base.args(args).cwd(cwd).stdout(Capture).stderr(Capture).spawn!().map_err(|err| CommandSpawnFailed(err))
 
