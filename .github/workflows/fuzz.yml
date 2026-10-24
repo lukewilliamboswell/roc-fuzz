@@ -94,25 +94,12 @@ jobs:
       - name: Build the host around the reviewed linker inputs
         run: blueprint run build-platform -- --target x64musl
 
-      - id: targets
-        name: Select the builtin targets
-        run: |
-          targets=$(jq -r '.cases[] | select((.path | startswith("tests/targets/builtins/")) and (.expected_failure | not) and (.skip_fuzz | not)) | .name' tests/targets.json)
-          test -n "$targets"
-          {
-            echo "count=$(wc -l <<< "$targets")"
-            echo "args=$(sed 's/^/--target /' <<< "$targets" | tr '\n' ' ')"
-          } >> "$GITHUB_OUTPUT"
-
       - name: Fuzz each target
         env:
           SECONDS_PER_TARGET: ${{ inputs.seconds || '8' }}
-          TARGET_ARGS: ${{ steps.targets.outputs.args }}
-        run: |
-          # TARGET_ARGS holds only names from tests/targets.json.
-          # shellcheck disable=SC2086
-          blueprint run test-targets -- --operation fuzz --max-total-time "$SECONDS_PER_TARGET" \
-            --campaign-dir "$CAMPAIGN" $TARGET_ARGS
+        run: >-
+          blueprint run test-targets -- --operation fuzz --max-total-time "$SECONDS_PER_TARGET"
+          --campaign-dir "$CAMPAIGN" --path-prefix tests/targets/builtins/
 
       - name: Save the evolving corpus
         if: always()
@@ -134,7 +121,6 @@ jobs:
         if: always()
         env:
           NIGHTLY_TAG: ${{ steps.nightly.outputs.tag }}
-          COUNT: ${{ steps.targets.outputs.count }}
           SECONDS_PER_TARGET: ${{ inputs.seconds || '8' }}
         run: |
           {
@@ -143,7 +129,7 @@ jobs:
             echo "- Nightly: \`$NIGHTLY_TAG\`"
             echo "- \`roc version\`: \`$(roc version)\`"
             echo "- Source commit: \`$GITHUB_SHA\`"
-            echo "- Targets: $COUNT, $SECONDS_PER_TARGET seconds each, on x64musl"
+            echo "- Targets: every case under \`tests/targets/builtins/\`, $SECONDS_PER_TARGET seconds each, on x64musl"
             echo "- Corpus inputs after the run: $(find "$CAMPAIGN/corpus" -type f 2>/dev/null | wc -l)"
             echo "- Failing inputs kept: $(find "$CAMPAIGN/failures" -type f 2>/dev/null | wc -l)"
           } >> "$GITHUB_STEP_SUMMARY"
