@@ -693,6 +693,15 @@
       "expected_failure": false,
       "skip_seed": false,
       "skip_fuzz": false
+    },
+    {
+      "name": "lateDropThroughFunctionValue",
+      "path": "trophy-case/repros/late_drop_through_function_value.roc",
+      "seed_hex": "526f63",
+      "libfuzzer_seed": 2234,
+      "expected_failure": true,
+      "skip_seed": false,
+      "skip_fuzz": false
     }
   ],
   "skips": [],
