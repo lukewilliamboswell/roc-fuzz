@@ -36,9 +36,11 @@ check_tooling! = |stable| {
 }
 
 check_platform! = |roc| {
-	Script.info!("CHECK", "Formatting and type-checking the platform with the latest nightly")?
+	Script.info!("CHECK", "Formatting, type-checking and testing the platform with the latest nightly")?
 	roc.run!(["fmt", "--check", "platform", "examples", "tests", "trophy-case"])?
 	roc.run!(["check", "platform/main.roc"])?
+	# One run on the root covers the expects of every module it imports.
+	roc.run!(["test", "platform/main.roc"])?
 	check_repros!(roc)
 }
 
