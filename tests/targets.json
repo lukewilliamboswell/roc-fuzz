@@ -695,6 +695,60 @@
       "skip_fuzz": false
     },
     {
+      "name": "strFromUtf16",
+      "path": "tests/targets/builtins/strFromUtf/strFromUtf16.roc",
+      "seed_hex": "cf3d3188004da1a1582758a121304514f90145ed",
+      "libfuzzer_seed": 2228,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strFromUtf32",
+      "path": "tests/targets/builtins/strFromUtf/strFromUtf32.roc",
+      "seed_hex": "06ff001200ff00be0000000e0ea701bffa",
+      "libfuzzer_seed": 2229,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strFromUtfBoundaries",
+      "path": "tests/targets/builtins/strFromUtf/strFromUtfBoundaries.roc",
+      "seed_hex": "fdfdfdfdfdfdfdfd0000",
+      "libfuzzer_seed": 2230,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strFromUtfSlices",
+      "path": "tests/targets/builtins/strFromUtf/strFromUtfSlices.roc",
+      "seed_hex": "0001de5d00de00dede16ffff00faf72bf7cd00",
+      "libfuzzer_seed": 2231,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "strUtfRoundTrip",
+      "path": "tests/targets/builtins/strFromUtf/strUtfRoundTrip.roc",
+      "seed_hex": "d3882440404061192161616161696119216161616169616114141414141461611414141414141414010014141414144d144040d398006c",
+      "libfuzzer_seed": 2232,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "simdLoadUnits",
+      "path": "tests/targets/builtins/strFromUtf/simdLoadUnits.roc",
+      "seed_hex": "98ffffffff2198",
+      "libfuzzer_seed": 2233,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
       "name": "lateDropThroughFunctionValue",
       "path": "trophy-case/repros/late_drop_through_function_value.roc",
       "seed_hex": "526f63",
