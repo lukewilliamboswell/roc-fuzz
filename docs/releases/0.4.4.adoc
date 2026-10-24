@@ -1,0 +1,47 @@
+= roc-fuzz 0.4.4
+
+This patch makes the published platform work with current Roc nightlies again.
+Release 0.4.3 fails the daily compatibility check on current nightlies, and a
+release cannot change, so 0.4.4 replaces it. The platform API is
+unchanged from 0.4.3; `roc bump` reports no API changes.
+
+== What changed
+
+* The host's bindings are regenerated from the current compiler's platform ABI.
+* The examples archive no longer pins a compiler. Each archived example differs
+  from the repository's only in its platform URL, so it builds with whichever
+  compiler you run, without a version-mismatch warning. The compiler the
+  release was built with is recorded under *Compilers* below and in the
+  archive's `release.json`.
+* The host and the native linker inputs are byte-reproducible: the same sources,
+  Zig release and flags give identical libraries on any machine. Nothing is
+  compiled with debug information, and the Linux libraries are much smaller.
+* The bundle comes with SPDX and CycloneDX documents and an evidence manifest
+  that binds them to the bundle's exact bytes. They are linked below.
+* The manual and API reference are built with the shared Roc documentation
+  renderer.
+
+== Use this release
+
+[source,roc]
+----
+app [target] { fuzz: platform "{platform-url}" }
+----
+
+Download `roc-fuzz-examples-0.4.4.zip` from the release assets for the complete
+example suite, its supporting modules, and the cases that describe them, bound
+to this exact bundle.
+
+Linux x86-64 with musl and Apple Silicon macOS are supported. Both hosts test
+the packaged bundle and the archived examples before publication.
+
+== Upgrade and verification
+
+Change your application's platform URL to the one above. No code changes are
+needed from 0.4.3. If your header has a `roc` field from an earlier release's
+examples, you can remove it.
+
+The release includes the versioned manual at {manual-url}, a zipped
+documentation site, the SBOM documents, and provenance attestations for the
+bundle and the examples archive. Report regressions through the repository's
+issue tracker with the compiler version, target, and reproducing input.

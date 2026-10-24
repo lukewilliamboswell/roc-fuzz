@@ -308,7 +308,7 @@ valid_version = |version| if (version == Version.dry_run) Bool.True else match S
 expect legacy("0.4.1")
 expect !legacy("0.4.2")
 expect !valid_version("1.02.3")
-expect valid_version("0.0.1-dry-run")
+expect valid_version("0.0.1-dryrun")
 expect !valid_version("0.0.1-dry")
 
 fixture_release : Str, Bool, Bool -> ReleaseExamples.Release

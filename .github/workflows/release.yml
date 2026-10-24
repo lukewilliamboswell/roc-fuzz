@@ -4,7 +4,7 @@ name: Release
 # and publishes them once. A maintainer dispatches it from trunk with a version;
 # a prerelease version such as 0.5.0-rc1 publishes a release candidate through
 # the same steps. A pull request runs the same build and tests as a dry run,
-# under the version 0.0.1-dry-run, and publishes nothing.
+# under the version 0.0.1-dryrun, and publishes nothing.
 on:
   workflow_dispatch:
     inputs:
@@ -51,14 +51,14 @@ jobs:
           persist-credentials: false
 
       # Rejects a version whose tag or release already exists. Roc rejects
-      # 0.0.0 in a package URL, so the dry run is 0.0.1-dry-run.
+      # 0.0.0 in a package URL, so the dry run is 0.0.1-dryrun.
       - name: Validate the version
         id: validate
         uses: roc-lang/release-package/actions/validate-release@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
           release_version: ${{ github.event_name == 'workflow_dispatch' && inputs.release_version || '' }}
           dry_run: ${{ github.event_name != 'workflow_dispatch' }}
-          dry_run_version: 0.0.1-dry-run
+          dry_run_version: 0.0.1-dryrun
           github_token: ${{ github.token }}
 
       - name: Require the default branch
@@ -248,14 +248,12 @@ jobs:
       # of the archive, and binds SPDX 3.0.1 and CycloneDX 1.7 documents and
       # an evidence manifest to the bundle's final bytes. No component comes
       # from a locked supplier file, so there is no supplier SBOM to fetch.
-      # The action does not yet accept the manual's dry-run version, whose
-      # pre-release part has a hyphen, so a dry run names one without it.
       - id: sbom
         name: Bind the bundle's SBOM sidecars
         uses: lukewilliamboswell/roc-automation/actions/sbom-sidecars@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
         with:
           files: ${{ steps.bundle.outputs.file }}
-          version: ${{ needs.validate.outputs.release_version == '0.0.1-dry-run' && '0.0.1-dryrun' || needs.validate.outputs.release_version }}
+          version: ${{ needs.validate.outputs.release_version }}
           target: source
           author: 'Person: Luke Boswell'
           url-base: https://github.com/${{ github.repository }}/releases/download/${{ needs.validate.outputs.release_version }}
