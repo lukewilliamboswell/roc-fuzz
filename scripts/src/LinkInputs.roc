@@ -20,7 +20,7 @@ LinkInputs := [].{
 	limit = 512 * 1024 * 1024
 	files = |target| Project.library_names(target.spec())
 	asset : Targets, Project.Target -> Asset
-	asset = |artifacts, target| if target.name() == "x64musl" artifacts.x64musl else artifacts.arm64mac
+	asset = |artifacts, target| if (target.name() == "x64musl") artifacts.x64musl else artifacts.arm64mac
 
 	## What a routine pull request hashes to learn whether the locked release
 	## is still the right one. It is cheap, so no pull request rebuilds the
@@ -109,7 +109,7 @@ LinkInputs := [].{
 				)?,
 			)
 		}
-		if $different.is_empty() Ok(SameBytes(lock.release)) else Ok(DifferentBytes({ release: lock.release, files: $different }))
+		if ($different.is_empty()) Ok(SameBytes(lock.release)) else Ok(DifferentBytes({ release: lock.release, files: $different }))
 	}
 	metadata : Project.Target, Str -> Metadata
 	metadata = |target, fingerprint| { schema_version: 1, kind: "link-inputs", target: target.name(), input_fingerprint: fingerprint, files: LinkInputs.files(target), licenses: LinkInputs.licenses }

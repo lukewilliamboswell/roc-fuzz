@@ -98,12 +98,9 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
         with:
-          version: "0.4.1"
-          sha256-x86_64-linux: 4ad2477b11211e963f4844554d909b939bd3419e94a8faec335ca619d41e37b6
-          sha256-aarch64-linux: 7ba164c03bdda8323b1a8edb315ded20549f31b4683429a6a0f9e96ba9d12301
-          sha256-aarch64-darwin: 7d9060a50c0e52960499ea6a4cb6aa5fd0bcccb14485d4c02829b56b4d8fcdaa
+          install-nix: 'true'
 
       - name: Install the Roc nightly this run resolved
         uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
@@ -128,12 +125,9 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
         with:
-          version: "0.4.1"
-          sha256-x86_64-linux: 4ad2477b11211e963f4844554d909b939bd3419e94a8faec335ca619d41e37b6
-          sha256-aarch64-linux: 7ba164c03bdda8323b1a8edb315ded20549f31b4683429a6a0f9e96ba9d12301
-          sha256-aarch64-darwin: 7d9060a50c0e52960499ea6a4cb6aa5fd0bcccb14485d4c02829b56b4d8fcdaa
+          install-nix: 'true'
 
       - name: Build and run the pinned libFuzzer with AddressSanitizer
         run: blueprint run native-sanitizers
@@ -156,12 +150,9 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
         with:
-          version: "0.4.1"
-          sha256-x86_64-linux: 4ad2477b11211e963f4844554d909b939bd3419e94a8faec335ca619d41e37b6
-          sha256-aarch64-linux: 7ba164c03bdda8323b1a8edb315ded20549f31b4683429a6a0f9e96ba9d12301
-          sha256-aarch64-darwin: 7d9060a50c0e52960499ea6a4cb6aa5fd0bcccb14485d4c02829b56b4d8fcdaa
+          install-nix: 'true'
 
       - name: Install the Roc nightly this run resolved
         uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
@@ -245,22 +236,32 @@ jobs:
             --platform-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_VERSION/$(basename "${bundles[0]}")" \
             --output ".release/assets/roc-fuzz-examples-$RELEASE_VERSION.zip"
 
-      - name: Generate and validate the SPDX 2.3 SBOM
-        env:
-          RELEASE_VERSION: ${{ needs.validate.outputs.release_version }}
+      - id: bundle
+        name: Name the bundle the release publishes
         run: |
           bundles=(.release/bundles/*.tar.zst)
-          blueprint run sbom -- \
-            --bundle "${bundles[0]}" \
-            --release-version "$RELEASE_VERSION" \
-            --library-manifest platform/targets/x64musl/NATIVE_LIBRARIES.json \
-            --library-manifest platform/targets/arm64mac/NATIVE_LIBRARIES.json \
-            --native-manifest x64musl=platform/targets/x64musl/SHA256SUMS \
-            --native-manifest arm64mac=platform/targets/arm64mac/SHA256SUMS \
-            --output ".release/assets/$(basename "${bundles[0]}").spdx.json"
+          test "${#bundles[@]}" -eq 1
+          echo "file=${bundles[0]}" >> "$GITHUB_OUTPUT"
 
-      # A release renders its own notes. A dry run renders every notes file
-      # newer than the previous release, so a mistake fails on the pull request.
+      # sbom/composition.json says what the bundle holds and why; the tool
+      # checks it against Blueprint.roc and Blueprint.lock, lists every member
+      # of the archive, and binds SPDX 3.0.1 and CycloneDX 1.7 documents and
+      # an evidence manifest to the bundle's final bytes. No component comes
+      # from a locked supplier file, so there is no supplier SBOM to fetch.
+      # The action does not yet accept the manual's dry-run version, whose
+      # pre-release part has a hyphen, so a dry run names one without it.
+      - id: sbom
+        name: Bind the bundle's SBOM sidecars
+        uses: lukewilliamboswell/roc-automation/actions/sbom-sidecars@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
+        with:
+          files: ${{ steps.bundle.outputs.file }}
+          version: ${{ needs.validate.outputs.release_version == '0.0.1-dry-run' && '0.0.1-dryrun' || needs.validate.outputs.release_version }}
+          target: source
+          author: 'Person: Luke Boswell'
+          url-base: https://github.com/${{ github.repository }}/releases/download/${{ needs.validate.outputs.release_version }}
+
+      # A release renders its own notes. A dry run renders the highest version
+      # under docs/releases/, so a mistake fails on the pull request.
       - name: Render the release notes
         env:
           RELEASE_VERSION: ${{ needs.validate.outputs.release_version }}
@@ -272,15 +273,15 @@ jobs:
           blueprint run release-notes
           cat .release/notes/release-notes.md >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload the bundle
+      - name: Upload the bundle and its SBOM sidecars
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-bundles
-          path: .release/bundles/*.tar.zst
+          path: ${{ steps.sbom.outputs.assets }}
           if-no-files-found: error
           retention-days: 7
 
-      - name: Upload the examples archive and the SBOM
+      - name: Upload the examples archive
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-assets
@@ -309,12 +310,9 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
         with:
-          version: "0.4.1"
-          sha256-x86_64-linux: 4ad2477b11211e963f4844554d909b939bd3419e94a8faec335ca619d41e37b6
-          sha256-aarch64-linux: 7ba164c03bdda8323b1a8edb315ded20549f31b4683429a6a0f9e96ba9d12301
-          sha256-aarch64-darwin: 7d9060a50c0e52960499ea6a4cb6aa5fd0bcccb14485d4c02829b56b4d8fcdaa
+          install-nix: 'true'
 
       - name: Install the Roc nightly this run resolved
         uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
@@ -322,10 +320,19 @@ jobs:
           version: nightly-new-compiler
           nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
 
+      - id: renderer
+        name: Locate the roc-docs renderer Blueprint.lock pins
+        uses: lukewilliamboswell/roc-automation/actions/blueprint-tool@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
+        with:
+          task: docs-path
+          label: roc-docs tools-0.4.0
+
       - id: docs
         name: Build versioned HTML, PDF, and API documentation
-        uses: lukewilliamboswell/roc-automation/actions/build-docs@26b692c5ce341efd5633793079d70c9e04559eac # 26b692c
+        uses: lukewilliamboswell/roc-automation/actions/build-docs@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
         with:
+          renderer-binary: ${{ steps.renderer.outputs.binary }}
+          site-url: https://lukewilliamboswell.github.io/roc-fuzz/
           pdf-filename: roc-fuzz.pdf
           docs-version: ${{ needs.validate.outputs.release_version }}
           api-entrypoint: platform/main.roc
@@ -371,12 +378,9 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7fdb8be46b12da9b119023c3a5aac28a9fdaa72b # 7fdb8be
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
         with:
-          version: "0.4.1"
-          sha256-x86_64-linux: 4ad2477b11211e963f4844554d909b939bd3419e94a8faec335ca619d41e37b6
-          sha256-aarch64-linux: 7ba164c03bdda8323b1a8edb315ded20549f31b4683429a6a0f9e96ba9d12301
-          sha256-aarch64-darwin: 7d9060a50c0e52960499ea6a4cb6aa5fd0bcccb14485d4c02829b56b4d8fcdaa
+          install-nix: 'true'
 
       - name: Install the Roc nightly this run resolved
         uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
@@ -429,29 +433,30 @@ jobs:
           name: release-bundles
           path: .release/bundles
 
-      - name: Download the tested examples archive and the SBOM
+      - name: Download the tested examples archive
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: release-assets
           path: .release/assets
 
+      # Every published file, the SBOM sidecars included.
       - name: Attest SLSA build provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: |
-            .release/bundles/*.tar.zst
+            .release/bundles/*
             .release/assets/*.zip
 
-      - name: Resolve the single SBOM file
+      - name: Resolve the bundle's CycloneDX SBOM
         id: sbom-file
         run: |
-          files=(.release/assets/*.spdx.json)
+          files=(.release/bundles/*.tar.zst.cdx.json)
           test "${#files[@]}" -eq 1
           test -f "${files[0]}"
           echo "path=${files[0]}" >> "$GITHUB_OUTPUT"
 
-      - name: Attest the SPDX SBOM
-        # sbom-path is a single file path, not a glob.
+      # sbom-path is a single file path, not a glob.
+      - name: Attest the bundle's SBOM
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: .release/bundles/*.tar.zst
@@ -484,9 +489,8 @@ jobs:
           retention-days: 7
 
   # The only job that can write. It checks out nothing and runs no repository
-  # script: it downloads the tested artifacts of this run, stages them in a
-  # draft release at the tested commit, downloads every asset back and compares
-  # it with the tested file, and only then publishes.
+  # script: it downloads the tested artifacts of this run and hands them to
+  # actions/publish-release.
   publish:
     name: Publish the release
     needs: [validate, check, native-sanitizers, build, docs, test, attest]
@@ -503,7 +507,7 @@ jobs:
           name: release-bundles
           path: assets
 
-      - name: Download the tested examples archive and the SBOM
+      - name: Download the tested examples archive
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: release-assets
@@ -527,35 +531,22 @@ jobs:
           name: release-notes
           path: notes
 
-      - name: Stage a draft, verify every asset, then publish
+      # The shared action stages a draft at the tested commit, downloads every
+      # asset back and compares it with the tested file, and only then
+      # publishes. It refuses a tag that already exists.
+      - id: publish
+        name: Stage a draft, verify every asset, then publish
+        uses: lukewilliamboswell/roc-automation/actions/publish-release@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
+        with:
+          version: ${{ needs.validate.outputs.release_version }}
+          prerelease: ${{ needs.validate.outputs.is_prerelease }}
+          notes-file: notes/release-notes.md
+          assets: assets/*
+
+      - name: Record the published digests
         env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_VERSION: ${{ needs.validate.outputs.release_version }}
-          IS_PRERELEASE: ${{ needs.validate.outputs.is_prerelease }}
-        run: |
-          set -euo pipefail
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_VERSION" >/dev/null 2>&1; then
-            echo "The tag $RELEASE_VERSION already exists; changed bytes are always a new version." >&2
-            exit 1
-          fi
-          # A release candidate is a prerelease and is never the latest release.
-          kind=(--prerelease=false --latest)
-          if [ "$IS_PRERELEASE" = true ]; then
-            kind=(--prerelease --latest=false)
-          fi
-          gh release create "$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --draft \
-            --target "$GITHUB_SHA" --title "$RELEASE_VERSION" \
-            --notes-file notes/release-notes.md
-          gh release upload "$RELEASE_VERSION" assets/* --repo "$GITHUB_REPOSITORY"
-          gh release download "$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --dir published
-          (cd assets && sha256sum -- * | sort) > tested.sha256
-          (cd published && sha256sum -- * | sort) > published.sha256
-          if ! diff tested.sha256 published.sha256; then
-            echo "The draft's assets differ from the tested artifacts. The draft is left unpublished." >&2
-            exit 1
-          fi
-          gh release edit "$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --draft=false "${kind[@]}"
-          cat tested.sha256 >> "$GITHUB_STEP_SUMMARY"
+          DIGESTS: ${{ steps.publish.outputs.digests }}
+        run: cat "$DIGESTS" >> "$GITHUB_STEP_SUMMARY"
 
   # A new release changes what the site leads with. The called workflow builds
   # the site in a read-only job and deploys that artifact from a job that holds

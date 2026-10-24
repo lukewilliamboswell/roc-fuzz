@@ -1,4 +1,5 @@
 import cli.Env
+import cli.System
 import cli.Path
 import AutomationIO
 import Script
@@ -13,14 +14,14 @@ Archive := [].{
 		parts = Str.split_on(name, "/")
 		!name.is_empty() and !Script.starts_with(name, "/") and !Script.starts_with(name, "-")
 			and !parts.any(|part| part.is_empty() or part == ".." or part == "." or part == ".git")
-				and name.to_utf8().all(|b| (b >= 'a' and b <= 'z') or (b >= 'A' and b <= 'Z') or (b >= '0' and b <= '9') or [43, 45, 46, 47, 95].contains(b))
+			and name.to_utf8().all(|b| (b >= 'a' and b <= 'z') or (b >= 'A' and b <= 'Z') or (b >= '0' and b <= '9') or [43, 45, 46, 47, 95].contains(b))
 	}
 	validate : List(Entry), U64 -> Try(List(Entry), _)
 	validate = |entries, limit| {
 		var $seen = []
 		var $total = 0
 		for entry in entries {
-			name = if Script.ends_with(entry.name, "/") Str.from_utf8_lossy(entry.name.to_utf8().drop_last(1)) else entry.name
+			name = if (Script.ends_with(entry.name, "/")) Str.from_utf8_lossy(entry.name.to_utf8().drop_last(1)) else entry.name
 			if !Archive.safe_name(name) or $seen.contains(name) {
 				return Err(UnsafeArchiveName(entry.name))
 			}
@@ -36,7 +37,7 @@ Archive := [].{
 	entries! = |format, archive, limit| {
 		root = Env.cwd!()?
 		file = Path.display(Path.absolute!(archive)?)
-		is_mac = Env.platform!().os == MACOS
+		is_mac = is_mac!()
 		listing = match format {
 			Tar => AutomationIO.text!("tar", ["-tvf", file], root)?
 			Zip => AutomationIO.text!("unzip", ["-Z", "-l", file], root)?
@@ -46,10 +47,12 @@ Archive := [].{
 		for line in lines {
 			# Zipinfo has summary/header lines
 			# Tar lists only entries.
-			if (match format {
-				Tar => Bool.True
-				Zip => Bool.False
-			}) or Script.starts_with(line, "-") or Script.starts_with(line, "d") or Script.starts_with(line, "l") or Script.starts_with(line, "c") or Script.starts_with(line, "b") or Script.starts_with(line, "p") or Script.starts_with(line, "s") {
+			if (
+				match format {
+					Tar => Bool.True
+					Zip => Bool.False
+				}
+			) or Script.starts_with(line, "-") or Script.starts_with(line, "d") or Script.starts_with(line, "l") or Script.starts_with(line, "c") or Script.starts_with(line, "b") or Script.starts_with(line, "p") or Script.starts_with(line, "s") {
 				fields = AutomationIO.words(line)
 				mode = fields.first().map_err(|_| InvalidArchiveListing)?
 				if !Script.starts_with(mode, "-") and !Script.starts_with(mode, "d") {
@@ -57,7 +60,7 @@ Archive := [].{
 				}
 				index = match format {
 					Zip => 3
-					Tar => if is_mac 4 else 2
+					Tar => if (is_mac) 4 else 2
 				}
 				size = U64.from_str(fields.get(index).map_err(|_| InvalidArchiveListing)?).map_err(|_| InvalidArchiveListing)?
 				name = fields.last().map_err(|_| InvalidArchiveListing)?
@@ -105,7 +108,7 @@ Archive := [].{
 		match format {
 			Zip => AutomationIO.run!("zip", ["-X", "-q", Path.display(output_absolute)].concat(names), source)
 			Tar => {
-				ownership = if Env.platform!().os == MACOS ["--uid", "0", "--gid", "0", "--uname", "", "--gname", ""] else ["--owner=0", "--group=0", "--numeric-owner"]
+				ownership = if (is_mac!()) ["--uid", "0", "--gid", "0", "--uname", "", "--gname", ""] else ["--owner=0", "--group=0", "--numeric-owner"]
 				AutomationIO.run!("tar", ["--format=ustar"].concat(ownership).concat(["-cf", Path.display(output_absolute)]).concat(names), source)
 			}
 		}
@@ -118,3 +121,10 @@ expect !Archive.safe_name("examples/*.roc")
 expect Archive.safe_name("examples/stack/main.roc")
 expect Archive.validate([{ name: "a", size: 1, directory: Bool.False }, { name: "a", size: 1, directory: Bool.False }], 100) |> Try.is_err
 expect Archive.validate([{ name: "a", size: 101, directory: Bool.False }], 100) |> Try.is_err
+
+## BSD tar on macOS spells listings and ownership differently from GNU tar.
+is_mac! = ||
+	match System.target!().os() {
+		MacOS(_) => True
+		_ => False
+	}

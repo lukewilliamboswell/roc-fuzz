@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "diagrams": [
+    {
+      "source_sha256": "cc9e7ae87b4f53520dcba49c88423b1284d63350835f4292896b0fa811f091e9",
+      "href": "images/target-anatomy.png",
+      "png": "images/target-anatomy.png",
+      "png_sha256": "619668b28224fc421e37f03d2733d44274c5113cbcc4f72ca979c89b434adc25"
+    },
+    {
+      "source_sha256": "ec4cb8093c3e17647d49586bcc1f5a877083d1101f7ccc2489469e0b9567d9ce",
+      "href": "images/search-workflow.png",
+      "png": "images/search-workflow.png",
+      "png_sha256": "23bd83def4115093fcab9b71c8084a3f458362adf4b4edb15bcf97b7537587ce"
+    }
+  ]
+}

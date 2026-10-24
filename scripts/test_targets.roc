@@ -1,11 +1,10 @@
 #!/usr/bin/env roc-stable
 app [main!] {
-	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.24.0/AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH.tar.zst",
-	ascii: "https://github.com/Hasnep/roc-ascii/releases/download/v0.5.0/5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H.tar.zst",
 	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst",
 	arg_path: "https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst",
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.26.0/GddgvsGjiNXrHFW6au5i5dUDbTs8FinQdrgE2Gqmw53t.tar.zst",
+	roc: "nightly-2026-10-23-18478ff",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
-	roc: "nightly-2026-09-29-7f11a82",
 }
 
 import cli.Env
@@ -76,9 +75,9 @@ main! = |raw_args| {
 			match cli_options.platform_url {
 				Ok(url) => {
 					local = prepare_platform_tests!(work, selected, url.to_str(), suite_root)?
-					run_operation!(cli_options.operation, cli_options.max_total_time, cli_options.verbose, roc, local, work)
+					run_operation!(cli_options.operation, cli_options.max_total_time, cli_options.verbose, cli_options.campaign_dir, roc, local, work)
 				}
-				Err(NoValue) => run_operation!(cli_options.operation, cli_options.max_total_time, cli_options.verbose, roc, selected.map(|item| rebase(item, Path.join(suite_root, Path.display(item.path)))), work)
+				Err(NoValue) => run_operation!(cli_options.operation, cli_options.max_total_time, cli_options.verbose, cli_options.campaign_dir, roc, selected.map(|item| rebase(item, Path.join(suite_root, Path.display(item.path)))), work)
 			}
 		},
 	)
@@ -93,6 +92,7 @@ cli_parser = Cli.assert_valid(
 			platform_url: Opt.maybe({ short: "", long: "platform-url", help: "Rewrite copied examples to use this platform bundle URL.", type: "url", parser: parse_url }),
 			selected: Opt.str_list({ short: "", long: "target", help: "Target name to run; repeat for multiple targets." }),
 			verbose: Opt.flag({ short: "v", long: "verbose", help: "Print commands and runner statistics." }),
+			campaign_dir: Opt.maybe({ short: "", long: "campaign-dir", help: "Keep each fuzz target's corpus in DIR/corpus/NAME and its failures in DIR/failures/NAME across runs, and fuzz every target before reporting the ones that failed.", type: "path", parser: CliValues.path }),
 		}.Cli,
 		{
 			name: "test-targets",
@@ -174,19 +174,19 @@ prepare_platform_tests! = |temporary, selected, url, suite_root| {
 	Ok(selected.map(|item| rebase(item, Path.join(temporary, Path.display(item.path)))))
 }
 
-run_operation! = |operation, max_total_time, verbose, roc, selected, work|
+run_operation! = |operation, max_total_time, verbose, campaign, roc, selected, work|
 	match operation {
 		Check => check_targets!(roc, selected)
 		Test => test_targets!(roc, selected)
 		Build => build_targets!(roc, selected, work).map_ok(|_| {})
 		Seed => replay_seeds!(build_targets!(roc, selected, work)?, work)
-		Fuzz => fuzz_targets!(build_targets!(roc, selected, work)?, max_total_time, verbose, work)
+		Fuzz => fuzz_targets!(build_targets!(roc, selected, work)?, max_total_time, verbose, campaign, work)
 		All => {
 			check_targets!(roc, selected)?
 			test_targets!(roc, selected)?
 			executables = build_targets!(roc, selected, work)?
 			replay_seeds!(executables, work)?
-			fuzz_targets!(executables, max_total_time, verbose, work)
+			fuzz_targets!(executables, max_total_time, verbose, campaign, work)
 		}
 	}
 
@@ -220,12 +220,12 @@ build_targets! = |roc, selected, work| {
 run_allow_pin_warning! : Script.Command, List(OsStr) => Try({}, _)
 run_allow_pin_warning! = |roc, args| {
 	Script.info!("RUN", Str.join_with([roc.program].concat(args).map(OsStr.display), " "))?
-	code = roc.cmd(args).exec_exit_code!()?
+	code = Script.exit_code!(roc.cmd(args))?
 	# Roc returns 2 for a version-mismatch warning. The examples archives of
 	# releases up to 0.4.3 pin every example to the compiler of their day, so
 	# the nightly workflow meets that warning until a later release is the
 	# latest. The application itself still checked successfully.
-	if code == 0 or code == 2 Ok({}) else Err(RocCommandExited(code))
+	if (code == 0 or code == 2) Ok({}) else Err(RocCommandExited(code))
 }
 
 replay_seeds! = |executables, work| {
@@ -239,22 +239,42 @@ replay_seeds! = |executables, work| {
 	Ok({})
 }
 
-fuzz_targets! = |executables, seconds, verbose, work| {
+## Fuzz each target for `seconds`. In a campaign the corpus outlives the run,
+## each failure's input is kept, and one target's failure does not stop the rest.
+fuzz_targets! = |executables, seconds, verbose, campaign, work| {
+	root = match campaign {
+		Ok(directory) => Path.absolute!(directory)?
+		Err(NoValue) => work
+	}
+	var $failed = []
 	for (item, executable) in executables {
 		if !item.skip_fuzz {
-			_ = seed_path!(item, work)?
-			base_args = ["run", Path.to_os_str(Path.join(Path.join(work, "corpus"), item.name)), OsStr.from_str("--time=${seconds.to_str()}")]
-			args = if verbose base_args.append("--print-final-stats") else base_args
-			run_expectation!(item, executable, args)?
+			_ = seed_path!(item, root)?
+			base_args = ["run", Path.to_os_str(Path.join(Path.join(root, "corpus"), item.name)), OsStr.from_str("--time=${seconds.to_str()}")]
+			args = if (verbose) base_args.append("--print-final-stats") else base_args
+			match campaign {
+				Ok(_) => {
+					failures = Path.join(Path.join(root, "failures"), item.name)
+					Path.create_all!(failures)?
+					match run_expectation!(item, executable, args.append(OsStr.from_str("--artifact-dir=${Path.display(failures)}"))) {
+						Ok({}) => {}
+						Err(err) => {
+							Script.warn!("${item.name} failed: ${Str.inspect(err)}")?
+							$failed = $failed.append(item.name)
+						}
+					}
+				}
+				Err(NoValue) => run_expectation!(item, executable, args)?
+			}
 		}
 	}
-	Ok({})
+	if ($failed.is_empty()) Ok({}) else Err(CampaignTargetsFailed($failed))
 }
 
 run_expectation! = |item, executable, args| {
 	if item.expected_failure {
-		code = Script.command(Path.to_os_str(executable)).cmd(args).exec_exit_code!()?
-		if code == 77 Ok({}) else Err(ExpectedTargetFailure(item.name, code))
+		code = Script.exit_code!(Script.command(Path.to_os_str(executable)).cmd(args))?
+		if (code == 77) Ok({}) else Err(ExpectedTargetFailure(item.name, code))
 	} else {
 		Script.command(Path.to_os_str(executable)).run!(args)
 	}
@@ -286,8 +306,8 @@ decode_hex = |encoded| {
 }
 
 hex_nibble = |byte|
-	if byte >= '0' and byte <= '9' Ok(byte - '0')
-	else if byte >= 'a' and byte <= 'f' Ok(byte - 'a' + 10)
+	if (byte >= '0' and byte <= '9') Ok(byte - '0')
+	else if (byte >= 'a' and byte <= 'f') Ok(byte - 'a' + 10)
 	else Err(InvalidSeedHex(byte))
 
 rebase = |item, path| TestCase.{ expected_failure: item.expected_failure, name: item.name, path, seed: item.seed, skip_fuzz: item.skip_fuzz, skip_seed: item.skip_seed }

@@ -39,10 +39,10 @@ on every CI runner. To work on roc-fuzz you need:
   or the release's prebuilt binary checked against its published SHA-256;
 * a current Roc nightly installed as `roc`.
 
-The environment supplies Zig 0.16.0, from
+The environment supplies the Zig release that `Blueprint.roc` names, from
 https://github.com/mitchellh/zig-overlay[zig-overlay], to build the host and its
 linker inputs and to format the host bindings. `scripts/native-deps.json` names
-the same version, and the supply-chain check holds the two together.
+the same release, and the supply-chain check holds the two together.
 
 [source,sh]
 ----
@@ -78,13 +78,21 @@ Change the tooling compiler:: Change the tag in `Command("roc-stable", ...)` in
 `Blueprint.roc` and the `roc` field of every script to the same tag. The check
 script fails until they match. Run `blueprint update roc` if the locked overlay
 predates that nightly.
-Upgrade Blueprint:: Change the platform URL in the `Blueprint.roc` header and,
-in every workflow, the `version` and SHA-256 values passed to
-`actions/setup-blueprint`, taken from that release's `blueprint.sha256`.
+Upgrade Blueprint:: Change the platform URL in the `Blueprint.roc` header, run
+`blueprint check` and then a full `blueprint update`, and review the new lock.
+No workflow names the version: `actions/setup-blueprint` reads it from
+`Blueprint.roc` and verifies the binary against the checksums roc-automation
+records, so a release it does not record yet needs that action repinned first.
 Update a script dependency:: Change the release URL in each script header and
 under `RocPackages` in `Blueprint.roc`, adding any new dependency of that
 dependency (`roc-stable deps scripts/check_all.roc` lists them), then run
 `blueprint update`.
+Keep the SBOM composition current:: `sbom/composition.json` gives every input
+`Blueprint.roc` declares (each source, tool, fetched program, script package
+and task) a disposition. A new task or tool needs an entry there too, or the
+release dry run's SBOM step refuses the composition. A change to what the
+native inputs contain, such as a new library or a new Zig release, changes its
+components.
 Regenerate the host bindings:: See <<host-bindings>>.
 
 == Repository scripting convention
@@ -337,13 +345,17 @@ blueprint run docs
 blueprint run site
 ----
 
-`docs` fetches the shared renderer from `roc-automation` at the commit that
-`docs.yml` pins, uses Docker for the Asciidoctor toolchain, and writes the
-working tree's manual, PDF and API reference under `.docs-out/`. `site`
-assembles what GitHub Pages serves: the latest release's documentation,
-restored from the archive that release published, with the working tree's under
-`unreleased/`. Set `ROC_AUTOMATION_ROOT` to a local checkout while developing the
-shared action. The final API audit fails if an exposed module or public entry
+`docs` runs `roc-docs`, the renderer `actions/build-docs` runs, at the
+roc-automation tools release that `Blueprint.roc` names and `Blueprint.lock`
+pins by digest. It writes the working tree's manual, PDF and API reference
+under `.docs-out/`. `site` assembles what GitHub Pages serves: the latest
+release's documentation, restored from the archive that release published, with
+the working tree's under `unreleased/`.
+
+The renderer does not run Mermaid. Each diagram's PNG is prepared once, checked
+in under `docs/images/` with a provenance note saying how it was made, and
+registered with its source's digest in `docs/prepared-diagrams.json`. Editing a
+diagram's source fails the build until its image is prepared again. The final API audit fails if an exposed module or public entry
 has no rendered documentation. The documentation and release workflows run the
 same build and audit.
 
@@ -360,7 +372,7 @@ A file under `trophy-case/repros/` that can run is a case in
 compiler once panicked on; `blueprint run check` requires `roc check` to report
 it.
 
-Three workflows each answer one question:
+Four workflows each answer one question:
 
 `ci.yml`:: Does this change work with today's compiler? One job runs
 `blueprint run check` and audits the API reference. One job regenerates the
@@ -375,6 +387,15 @@ the SBOM, the documentation archive and the release notes, and tests the
 archive against the bundle on both targets. `Release required` aggregates it.
 `nightly.yml`:: Does the latest release still work with today's compiler? It
 runs daily; see <<release-bundle>>.
+`fuzz.yml`:: Has today's compiler broken a builtin? Once a day, and only on
+`trunk`, it fuzzes every builtin target in `tests/targets.json` on the latest
+nightly for a few seconds each, about ten minutes in all. It runs
+`blueprint run test-targets -- --operation fuzz --campaign-dir DIR`. The corpus
+under `DIR/corpus/` carries over between runs through the Actions cache. Each
+target's failing inputs are kept under `DIR/failures/` and uploaded as the
+`fuzz-failures` artifact. Every target runs before the job fails. Reproduce a
+failure with the target's `replay` command and the kept input, then report it
+upstream if it is the compiler's.
 
 A new nightly can fail an untouched pull request. Compare with the latest
 `Nightly compatibility` run and with `trunk` before treating a failure as a
@@ -394,7 +415,8 @@ execute directly with the fixed tooling compiler; compilation errors, warnings,
 and application failures retain their normal Roc exit status.
 
 Use `--suite-root PATH` to run an unpacked examples archive containing `examples/` and
-`tests/targets.json`. Each invocation has fresh temporary executables and corpora.
+`tests/targets.json`. Each invocation has fresh temporary executables and, unless
+`--campaign-dir` names a directory to keep them in, fresh corpora.
 Fuzz smoke tests pass corpus directories to libFuzzer; passing an individual seed
 file would only replay it. Repository formatting is checked separately, not against
 an older release's frozen source.
@@ -483,8 +505,11 @@ One immutable GitHub release per version holds:
 | `roc-fuzz-VERSION.pdf`
 | The manual.
 
-| `<bundle>.spdx.json`
-| The SPDX SBOM.
+| `<bundle>.spdx.json`, `<bundle>.cdx.json`
+| The bundle's SBOM, in SPDX and CycloneDX, written from `sbom/composition.json`.
+
+| `<bundle>.sbom-manifest.json`
+| The evidence manifest binding the bundle and its SBOM documents by digest.
 
 | `*.intoto.jsonl`
 | The exported build-provenance attestations for the bundle and the examples archive.
@@ -504,14 +529,16 @@ Use `+{platform-url}+` where the copyable application header needs the
 content-addressed bundle URL, and `+{manual-url}+` for the release's PDF. Do not
 put a `roc` field in that header. The build job fills both in after it has made
 the bundle, translates the note's headings and source blocks to GitHub Markdown
-with `scripts/render_release_notes.roc`, and appends the output of `roc version`
-and `roc-stable version`. That record is the release's statement of what it was
+with `scripts/render_release_notes.roc`, and appends links to the bundle's SBOM
+documents and, under *Compilers*, the output of `roc version` and
+`roc-stable version`. That record is the release's statement of what it was
 built and tested with. Notes that never use `+{platform-url}+`, or that leave a
 placeholder unresolved, fail the build.
 
 The committed file keeps its placeholders and is never rewritten after the
-release. A pull request renders every notes file newer than the latest release,
-so a mistake in unreleased notes fails on the pull request that makes it.
+release. A pull request renders the highest version under `docs/releases/`, so
+a mistake in the notes being written fails on the pull request that makes it.
+While that version is still the latest release, there is nothing to render.
 
 === Publish a release
 
@@ -528,10 +555,11 @@ version. The workflow:
   documentation archive, the manual and the rendered notes;
 . on each target, serves the bundle on a loopback address and runs the archived
   examples against it, with an empty package cache;
-. attests the tested bundle and examples archive; and
-. publishes from a job that checks out nothing and runs no repository script. It
-  stages a draft release at the tested commit, uploads every asset, downloads
-  each one back and compares it with the tested file, and only then publishes.
+. attests the tested bundle, its SBOM documents and the examples archive; and
+. publishes from a job that checks out nothing and runs no repository script.
+  roc-automation's `actions/publish-release` stages a draft release at the
+  tested commit, uploads every asset, downloads each one back and compares it
+  with the tested file, and only then publishes.
 
 After a final release the workflow rebuilds and deploys the documentation site,
 which leads with the latest release.

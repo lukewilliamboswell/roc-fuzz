@@ -1,11 +1,10 @@
 #!/usr/bin/env roc-stable
 app [main!] {
-	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.24.0/AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH.tar.zst",
-	ascii: "https://github.com/Hasnep/roc-ascii/releases/download/v0.5.0/5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H.tar.zst",
 	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst",
 	arg_path: "https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst",
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.26.0/GddgvsGjiNXrHFW6au5i5dUDbTs8FinQdrgE2Gqmw53t.tar.zst",
+	roc: "nightly-2026-10-23-18478ff",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
-	roc: "nightly-2026-09-29-7f11a82",
 }
 
 import cli.Path
@@ -74,7 +73,7 @@ check! = |options, root, work| {
 		Script.pass!("${committed_name} matches what ${version} generates")
 	} else {
 		# Show the difference; the exit code of the diff itself is the answer above.
-		_ = Script.command("git").cmd(["--no-pager", "diff", "--no-index", Path.to_os_str(committed), Path.to_os_str(generated)]).exec_exit_code!()
+		_ = Script.exit_code!(Script.command("git").cmd(["--no-pager", "diff", "--no-index", Path.to_os_str(committed), Path.to_os_str(generated)]))
 		Script.fail!("${committed_name} differs from what ${version} generates. If this change did not touch platform/, the compiler changed the interface: review the diff, run `blueprint run check-glue -- --update`, and make any host change it needs in the same pull request.")
 	}
 }

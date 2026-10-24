@@ -1,4 +1,5 @@
 import cli.Env
+import cli.System
 import cli.Path
 
 ## Repository layout and native target definitions.
@@ -65,11 +66,11 @@ Project := [].{
 
 	host_target! : () => Try(Target, _)
 	host_target! = || {
-		host = Env.platform!()
-		match (host.os, host.arch) {
-			(LINUX, X64) => Ok(Target.X64Musl)
-			(MACOS, AARCH64) => Ok(Target.Arm64Mac)
-			_ => Err(UnsupportedHost(host.os, host.arch))
+		host = System.target!()
+		match (host.os(), host.arch()) {
+			(Linux(_), X64) => Ok(Target.X64Musl)
+			(MacOS(_), Arm64) => Ok(Target.Arm64Mac)
+			_ => Err(UnsupportedHost)
 		}
 	}
 
