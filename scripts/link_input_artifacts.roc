@@ -1,10 +1,9 @@
 #!/usr/bin/env roc-stable
 app [main!] {
-	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.24.0/AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH.tar.zst",
-	ascii: "https://github.com/Hasnep/roc-ascii/releases/download/v0.5.0/5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H.tar.zst",
 	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst",
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.26.0/GddgvsGjiNXrHFW6au5i5dUDbTs8FinQdrgE2Gqmw53t.tar.zst",
+	roc: "nightly-2026-10-23-18478ff",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
-	roc: "nightly-2026-09-29-7f11a82",
 }
 
 import cli.Path
@@ -27,7 +26,7 @@ main! = |args| {
 		"cache-identity" => Stdout.line!(LinkInputs.cache_identity!(root, Project.Target.parse(options.target)?)?)
 		"install" => LinkInputs.install!(root, Project.Target.parse(options.target)?, Path.utf8(options.cache))
 		"check-installed" => LinkInputs.check_installed!(root)
-		"recipe-changed" => Stdout.line!(if LinkInputs.recipe_changed!(root, options.base)? "true" else "false")
+		"recipe-changed" => Stdout.line!(if (LinkInputs.recipe_changed!(root, options.base)?) "true" else "false")
 		"check-source" => match LinkInputs.check_source!(root, Path.utf8(options.cache))? {
 			SameBytes(release) => Script.pass!("the libraries built from this tree are byte-identical to the ones ${release} holds")
 			LockNotCurrent => Script.warn!("the lock is not current for this tree, so there is nothing to compare: these libraries are a candidate for a new release")

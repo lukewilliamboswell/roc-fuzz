@@ -14,11 +14,11 @@ Version := [].{
 			["nightly", year, month, day, revision] =>
 				year.to_utf8().len() == 4
 					and month.to_utf8().len() == 2
-						and day.to_utf8().len() == 2
-							and [year, month, day].all(nonempty_digits)
-								and revision.to_utf8().len() >= 7
-									and revision.to_utf8().len() <= 40
-										and revision.to_utf8().all(lower_hex_digit)
+					and day.to_utf8().len() == 2
+					and [year, month, day].all(nonempty_digits)
+					and revision.to_utf8().len() >= 7
+					and revision.to_utf8().len() <= 40
+					and revision.to_utf8().all(lower_hex_digit)
 			_ => Bool.False
 		}
 

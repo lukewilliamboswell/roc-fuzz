@@ -1,11 +1,10 @@
 #!/usr/bin/env roc-stable
 app [main!] {
-	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.24.0/AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH.tar.zst",
-	ascii: "https://github.com/Hasnep/roc-ascii/releases/download/v0.5.0/5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H.tar.zst",
 	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst",
 	arg_path: "https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst",
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.26.0/GddgvsGjiNXrHFW6au5i5dUDbTs8FinQdrgE2Gqmw53t.tar.zst",
+	roc: "nightly-2026-10-23-18478ff",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
-	roc: "nightly-2026-09-29-7f11a82",
 }
 
 import cli.Env
@@ -220,12 +219,12 @@ build_targets! = |roc, selected, work| {
 run_allow_pin_warning! : Script.Command, List(OsStr) => Try({}, _)
 run_allow_pin_warning! = |roc, args| {
 	Script.info!("RUN", Str.join_with([roc.program].concat(args).map(OsStr.display), " "))?
-	code = roc.cmd(args).exec_exit_code!()?
+	code = Script.exit_code!(roc.cmd(args))?
 	# Roc returns 2 for a version-mismatch warning. The examples archives of
 	# releases up to 0.4.3 pin every example to the compiler of their day, so
 	# the nightly workflow meets that warning until a later release is the
 	# latest. The application itself still checked successfully.
-	if code == 0 or code == 2 Ok({}) else Err(RocCommandExited(code))
+	if (code == 0 or code == 2) Ok({}) else Err(RocCommandExited(code))
 }
 
 replay_seeds! = |executables, work| {
@@ -244,7 +243,7 @@ fuzz_targets! = |executables, seconds, verbose, work| {
 		if !item.skip_fuzz {
 			_ = seed_path!(item, work)?
 			base_args = ["run", Path.to_os_str(Path.join(Path.join(work, "corpus"), item.name)), OsStr.from_str("--time=${seconds.to_str()}")]
-			args = if verbose base_args.append("--print-final-stats") else base_args
+			args = if (verbose) base_args.append("--print-final-stats") else base_args
 			run_expectation!(item, executable, args)?
 		}
 	}
@@ -253,8 +252,8 @@ fuzz_targets! = |executables, seconds, verbose, work| {
 
 run_expectation! = |item, executable, args| {
 	if item.expected_failure {
-		code = Script.command(Path.to_os_str(executable)).cmd(args).exec_exit_code!()?
-		if code == 77 Ok({}) else Err(ExpectedTargetFailure(item.name, code))
+		code = Script.exit_code!(Script.command(Path.to_os_str(executable)).cmd(args))?
+		if (code == 77) Ok({}) else Err(ExpectedTargetFailure(item.name, code))
 	} else {
 		Script.command(Path.to_os_str(executable)).run!(args)
 	}
@@ -286,8 +285,8 @@ decode_hex = |encoded| {
 }
 
 hex_nibble = |byte|
-	if byte >= '0' and byte <= '9' Ok(byte - '0')
-	else if byte >= 'a' and byte <= 'f' Ok(byte - 'a' + 10)
+	if (byte >= '0' and byte <= '9') Ok(byte - '0')
+	else if (byte >= 'a' and byte <= 'f') Ok(byte - 'a' + 10)
 	else Err(InvalidSeedHex(byte))
 
 rebase = |item, path| TestCase.{ expected_failure: item.expected_failure, name: item.name, path, seed: item.seed, skip_fuzz: item.skip_fuzz, skip_seed: item.skip_seed }

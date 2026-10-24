@@ -8,7 +8,7 @@ import Integrity
 AutomationIO := [].{
 	parent = |path| {
 		name = Str.join_with(Str.split_on(Path.display(path), "/").drop_last(1), "/")
-		Path.utf8(if name.is_empty() "." else name)
+		Path.utf8(if (name.is_empty()) "." else name)
 	}
 	bytes! = |program, args, cwd| Script.command(OsStr.from_str(program)).capture!(args.map(OsStr.from_str), cwd, [])
 	text! = |program, args, cwd| AutomationIO.bytes!(program, args, cwd).map_ok(Str.from_utf8_lossy)

@@ -1,9 +1,8 @@
 #!/usr/bin/env roc-stable
 app [main!] {
-	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.24.0/AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH.tar.zst",
-	ascii: "https://github.com/Hasnep/roc-ascii/releases/download/v0.5.0/5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H.tar.zst",
 	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst",
-	roc: "nightly-2026-09-29-7f11a82",
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.26.0/GddgvsGjiNXrHFW6au5i5dUDbTs8FinQdrgE2Gqmw53t.tar.zst",
+	roc: "nightly-2026-10-23-18478ff",
 }
 
 import cli.OsStr
@@ -49,7 +48,7 @@ check_platform! = |roc| {
 check_repros! = |roc| {
 	repro = "trophy-case/repros/postcheck_panic_on_type_error.roc"
 	Script.info!("RUN", "roc check ${repro} (expecting a reported type error)")?
-	code = roc.cmd(["check", OsStr.from_str(repro)]).exec_exit_code!()?
+	code = Script.exit_code!(roc.cmd(["check", OsStr.from_str(repro)]))?
 	Script.require!(code == 1, "roc check ${repro} exited with code ${code.to_str()}; it must report the type error and exit with 1")
 }
 

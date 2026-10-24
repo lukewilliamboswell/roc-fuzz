@@ -235,7 +235,7 @@ releases! = |repository, page, found| {
 	batch : List(ReleaseExamples.Release)
 	batch = Json.parse(api!("repos/${repository}/releases?per_page=100&page=${page.to_str()}")?)?
 	all = found.concat(batch)
-	if batch.len() < 100 Ok(all) else releases!(repository, page + 1, all)
+	if (batch.len() < 100) Ok(all) else releases!(repository, page + 1, all)
 }
 
 resolve_tag! : Str, { type : Str, sha : Str }, U64 => Try(Str, _)
@@ -299,7 +299,7 @@ legacy = |version| match semantic(version) {
 	Err(_) => Bool.False
 }
 
-valid_version = |version| if version == Version.dry_run Bool.True else match Str.split_on(version, "-rc") {
+valid_version = |version| if (version == Version.dry_run) Bool.True else match Str.split_on(version, "-rc") {
 	[base] => semantic(base) |> Try.is_ok
 	[base, rc] => (semantic(base) |> Try.is_ok) and (U64.from_str(rc) |> Try.is_ok)
 	_ => Bool.False

@@ -1,4 +1,5 @@
 import cli.Cmd
+import cli.Duration
 import cli.Tcp
 
 ## An ephemeral localhost HTTP server for one in-memory Roc package bundle.
@@ -11,7 +12,7 @@ BundleServer := {
 	url : Str,
 }.{
 	open! = |filename, bundle_bytes| {
-		listener = Tcp.listen!("127.0.0.1", 0, accept_timeout_ms)?
+		listener = Tcp.listen!("127.0.0.1", 0, Duration.seconds(5))?
 		port = listener.local_port!()?
 		Ok(
 			BundleServer.{
@@ -27,18 +28,17 @@ BundleServer := {
 	## Service package requests until the captured child terminates.
 	serve_child! : BundleServer, Cmd.Child => Try(_, _)
 	serve_child! = |self, child|
-		match child.try_wait!().map_err(|err| BundleChildWaitFailed(err))? {
-			[output] => Ok(output)
-			[_, _, ..] => Err(UnexpectedBundleChildWaitResult)
-			[] =>
-				match self.listener.accept!(accept_timeout_ms) {
-					Ok(stream) => {
-						_ = stream.read_until!(10, max_request_line_bytes, io_timeout_ms)?
-						stream.write_utf8!(ok_headers(self.bundle_bytes.len()), io_timeout_ms)?
-						stream.write!(self.bundle_bytes, body_timeout_ms)?
+		match child.poll!().map_err(|err| BundleChildWaitFailed(err))? {
+			Finished(output) => Ok(output)
+			Running =>
+				match self.listener.accept!({ accept_timeout: After(accept_timeout), io_timeout }) {
+					Ok(conn) => {
+						_ = conn.with_line_limit(max_request_line_bytes).read_until!('\n')?
+						conn.write_bytes!(ok_headers(self.bundle_bytes.len()).to_utf8())?
+						conn.with_timeout(body_timeout).write_bytes!(self.bundle_bytes)?
 						self.serve_child!(child)
 					}
-					Err(TcpListenErr(TimedOut)) => self.serve_child!(child)
+					Err(TcpErr(TimedOut)) => self.serve_child!(child)
 					Err(err) => Err(BundleServeFailed(err))
 				}
 		}
@@ -63,11 +63,11 @@ BundleServer := {
 	}
 }
 
-accept_timeout_ms = 100
+accept_timeout = Duration.millis(100)
 
-io_timeout_ms = 5_000
+io_timeout = Duration.seconds(5)
 
-body_timeout_ms = 30_000
+body_timeout = Duration.seconds(30)
 
 max_request_line_bytes = 65_536
 

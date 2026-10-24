@@ -49,7 +49,7 @@ SkipNotes := [].{
 	}
 }
 
-switched_off = |item, operation| if operation == "seed" item.skip_seed else item.skip_fuzz
+switched_off = |item, operation| if (operation == "seed") item.skip_seed else item.skip_fuzz
 
 running : SkipNotes.Switch
 running = { name: "running", skip_seed: Bool.False, skip_fuzz: Bool.False }

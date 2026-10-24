@@ -31,7 +31,7 @@ RocSource := [].{
 					[] if name == "roc" => {
 						before = Str.from_utf8_lossy(bytes.take_first(header.close))
 						last_token = tokenize(bytes.take_first(header.close), 0, [])?.last().map_err(|_| MalformedAppHeader)?
-						separator = if [",", "{"].contains(last_token.text) " " else ", "
+						separator = if ([",", "{"].contains(last_token.text)) " " else ", "
 						Ok("${before}${separator}roc: ${Json.to_str(value)} ${Str.from_utf8_lossy(bytes.drop_first(header.close))}")
 					}
 					_ => Err(MissingAppField(name))
@@ -64,7 +64,7 @@ tokenize = |bytes, offset, found| match bytes {
 		tokenize(bytes.drop_first(count), offset + count, found.append({ text: Str.from_utf8_lossy(bytes.take_first(count)), start: offset, end: offset + count }))
 	}
 	[first, ..] => {
-		count = if punctuation(first) 1 else until(bytes, |b| punctuation(b) or [9, 10, 13, 32, 35, 34].contains(b))
+		count = if (punctuation(first)) 1 else until(bytes, |b| punctuation(b) or [9, 10, 13, 32, 35, 34].contains(b))
 		text = Str.from_utf8_lossy(bytes.take_first(count))
 		if found.is_empty() and text != "app" {
 			return Ok([])
@@ -82,7 +82,7 @@ punctuation = |byte| [123, 125, 91, 93, 40, 41, 58, 44].contains(byte)
 until : List(U8), (U8 -> Bool) -> U64
 until = |bytes, predicate| match bytes {
 	[] => 0
-	[first, .. as rest] => if predicate(first) 0 else 1 + until(rest, predicate)
+	[first, .. as rest] => if (predicate(first)) 0 else 1 + until(rest, predicate)
 }
 
 quoted : List(U8), U64 -> Try(U64, _)
@@ -94,7 +94,7 @@ quoted = |bytes, count| match bytes {
 }
 
 find_record = |tokens| match tokens {
-	[token, .. as rest] => if token.text == "{" scan_fields(rest, 0, []) else find_record(rest)
+	[token, .. as rest] => if (token.text == "{") scan_fields(rest, 0, []) else find_record(rest)
 	[] => Err(MissingAppRecord)
 }
 
@@ -105,7 +105,7 @@ scan_fields = |tokens, depth, fields| match tokens {
 			return Ok([{ fields, close: token.start }])
 		}
 		if depth == 0 and (token.text == "platform" or token.text == "roc") {
-			values = if token.text == "roc" match rest {
+			values = if (token.text == "roc") match rest {
 				[colon, .. as tail] if colon.text == ":" => tail
 				_ => return Err(MalformedAppField)
 			} else rest
@@ -122,7 +122,7 @@ scan_fields = |tokens, depth, fields| match tokens {
 			if depth == 0 and ["]", ")"].contains(token.text) {
 				return Err(MalformedAppHeader)
 			}
-			next_depth = if ["{", "[", "("].contains(token.text) depth + 1 else if ["}", "]", ")"].contains(token.text) depth - 1 else depth
+			next_depth = if (["{", "[", "("].contains(token.text)) depth + 1 else if (["}", "]", ")"].contains(token.text)) depth - 1 else depth
 			scan_fields(rest, next_depth, fields)
 		}
 	}

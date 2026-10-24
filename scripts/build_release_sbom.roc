@@ -1,11 +1,10 @@
 #!/usr/bin/env roc-stable
 app [main!] {
-	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.24.0/AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH.tar.zst",
-	ascii: "https://github.com/Hasnep/roc-ascii/releases/download/v0.5.0/5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H.tar.zst",
 	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst",
 	arg_path: "https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst",
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.26.0/GddgvsGjiNXrHFW6au5i5dUDbTs8FinQdrgE2Gqmw53t.tar.zst",
+	roc: "nightly-2026-10-23-18478ff",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
-	roc: "nightly-2026-09-29-7f11a82",
 }
 
 import cli.Path
@@ -215,7 +214,7 @@ native_version = |name, release, dependencies| match name {
 
 render_document = |bundle_name, release, digest, created, repository, components| {
 	package_json = Str.join_with(components.map(render_package), ",\n")
-	relations = components.drop_first(1).map(|item| "    {\"spdxElementId\":\"SPDXRef-Package-roc-fuzz\",\"relationshipType\":\"${if Script.starts_with(item.identifier, "SPDXRef-NativeRelease-") "DEPENDS_ON" else "CONTAINS"}\",\"relatedSpdxElement\":${Json.to_str(item.identifier)}}")
+	relations = components.drop_first(1).map(|item| "    {\"spdxElementId\":\"SPDXRef-Package-roc-fuzz\",\"relationshipType\":\"${if (Script.starts_with(item.identifier, "SPDXRef-NativeRelease-")) "DEPENDS_ON" else "CONTAINS"}\",\"relatedSpdxElement\":${Json.to_str(item.identifier)}}")
 	relation_json = Str.join_with(["    {\"spdxElementId\":\"SPDXRef-DOCUMENT\",\"relationshipType\":\"DESCRIBES\",\"relatedSpdxElement\":\"SPDXRef-Package-roc-fuzz\"}"].concat(relations), ",\n")
 	"{\n  \"SPDXID\": \"SPDXRef-DOCUMENT\",\n  \"creationInfo\": {\"created\": ${Json.to_str(created)}, \"creators\": [\"Tool: roc-fuzz/scripts/build_release_sbom.roc\"], \"licenseListVersion\": \"3.27.0\"},\n  \"dataLicense\": \"CC0-1.0\",\n  \"documentDescribes\": [\"SPDXRef-Package-roc-fuzz\"],\n  \"documentNamespace\": ${Json.to_str("https://github.com/${repository}/sbom/${release}/${digest}")},\n  \"name\": ${Json.to_str("${bundle_name} release SBOM")},\n  \"packages\": [\n${package_json}\n  ],\n  \"relationships\": [\n${relation_json}\n  ],\n  \"spdxVersion\": \"SPDX-2.3\"\n}\n"
 }

@@ -3,13 +3,13 @@
 ## subprocess argument.
 Identity := [].{
 	Sha256 :: Str.{
-		parse = |value| if is_lower_hex(value, 64) Ok(Sha256.(value)) else Err(InvalidSha256(value))
+		parse = |value| if (is_lower_hex(value, 64)) Ok(Sha256.(value)) else Err(InvalidSha256(value))
 		to_str = |Sha256.(value)| value
 		is_eq = |Sha256.(left), Sha256.(right)| left == right
 	}
 
 	GitRevision :: Str.{
-		parse = |value| if is_lower_hex(value, 40) Ok(GitRevision.(value)) else Err(InvalidGitRevision(value))
+		parse = |value| if (is_lower_hex(value, 40)) Ok(GitRevision.(value)) else Err(InvalidGitRevision(value))
 		to_str = |GitRevision.(value)| value
 		is_eq = |GitRevision.(left), GitRevision.(right)| left == right
 	}
