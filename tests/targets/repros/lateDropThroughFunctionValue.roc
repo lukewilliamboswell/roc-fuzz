@@ -1,4 +1,4 @@
-app [target] { pf: platform "../../platform/main.roc" }
+app [target] { pf: platform "../../../platform/main.roc" }
 
 import pf.Fuzz
 

@@ -759,7 +759,7 @@
     },
     {
       "name": "lateDropThroughFunctionValue",
-      "path": "trophy-case/repros/late_drop_through_function_value.roc",
+      "path": "tests/targets/repros/lateDropThroughFunctionValue.roc",
       "seed_hex": "526f63",
       "libfuzzer_seed": 2234,
       "expected_failure": true,
