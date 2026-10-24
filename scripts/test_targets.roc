@@ -159,15 +159,19 @@ select_targets = |requested, available| {
 
 ## Copy the suite and point every application in it at one platform bundle.
 ## Targets keep their place under the suite root, so their relative imports of
-## sibling modules and helper packages still resolve.
+## sibling modules and helper packages still resolve. A release's examples
+## archive has no `trophy-case/`, so it is copied only where it exists.
 prepare_platform_tests! = |temporary, selected, url, suite_root| {
-	for directory in ["examples", "tests"] {
-		copied = Path.join(temporary, directory)
-		Path.copy_dir!(Path.join(suite_root, directory), copied)?
-		for path in Files.roc_files!(copied)? {
-			match RocSource.replace_platform_if_present(Path.read_utf8!(path)?, url)? {
-				Updated(source) => Path.write_utf8!(path, source)?
-				Unchanged => {}
+	for directory in ["examples", "tests", "trophy-case"] {
+		source_directory = Path.join(suite_root, directory)
+		if directory == "examples" or directory == "tests" or Path.exists!(source_directory)? {
+			copied = Path.join(temporary, directory)
+			Path.copy_dir!(source_directory, copied)?
+			for path in Files.roc_files!(copied)? {
+				match RocSource.replace_platform_if_present(Path.read_utf8!(path)?, url)? {
+					Updated(source) => Path.write_utf8!(path, source)?
+					Unchanged => {}
+				}
 			}
 		}
 	}
