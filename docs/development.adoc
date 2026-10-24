@@ -519,14 +519,16 @@ Use `+{platform-url}+` where the copyable application header needs the
 content-addressed bundle URL, and `+{manual-url}+` for the release's PDF. Do not
 put a `roc` field in that header. The build job fills both in after it has made
 the bundle, translates the note's headings and source blocks to GitHub Markdown
-with `scripts/render_release_notes.roc`, and appends the output of `roc version`
-and `roc-stable version`. That record is the release's statement of what it was
+with `scripts/render_release_notes.roc`, and appends links to the bundle's SBOM
+documents and, under *Compilers*, the output of `roc version` and
+`roc-stable version`. That record is the release's statement of what it was
 built and tested with. Notes that never use `+{platform-url}+`, or that leave a
 placeholder unresolved, fail the build.
 
 The committed file keeps its placeholders and is never rewritten after the
-release. A pull request renders every notes file newer than the latest release,
-so a mistake in unreleased notes fails on the pull request that makes it.
+release. A pull request renders the highest version under `docs/releases/`, so
+a mistake in the notes being written fails on the pull request that makes it.
+While that version is still the latest release, there is nothing to render.
 
 === Publish a release
 

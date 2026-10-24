@@ -260,8 +260,8 @@ jobs:
           author: 'Person: Luke Boswell'
           url-base: https://github.com/${{ github.repository }}/releases/download/${{ needs.validate.outputs.release_version }}
 
-      # A release renders its own notes. A dry run renders every notes file
-      # newer than the previous release, so a mistake fails on the pull request.
+      # A release renders its own notes. A dry run renders the highest version
+      # under docs/releases/, so a mistake fails on the pull request.
       - name: Render the release notes
         env:
           RELEASE_VERSION: ${{ needs.validate.outputs.release_version }}
