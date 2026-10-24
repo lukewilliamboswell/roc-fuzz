@@ -1,0 +1,356 @@
+{
+  "profile": "blueprint-spdx-3.0-v1",
+  "components": [
+    {
+      "id": "roc-fuzz",
+      "name": "roc-fuzz",
+      "version": "NOASSERTION",
+      "producer": "Person: Luke Boswell",
+      "license": "MIT",
+      "license_url": "",
+      "identity": "https://github.com/lukewilliamboswell/roc-fuzz",
+      "download": "https://github.com/lukewilliamboswell/roc-fuzz",
+      "sha256": "",
+      "modified": "",
+      "target": "",
+      "origin": "reviewed"
+    },
+    {
+      "id": "libfuzzer",
+      "name": "LLVM libFuzzer from libfuzzer-sys",
+      "version": "0.4.5",
+      "producer": "Organization: LLVM Project",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_url": "",
+      "identity": "pkg:cargo/libfuzzer-sys@0.4.5",
+      "download": "https://crates.io/api/v1/crates/libfuzzer-sys/0.4.5/download",
+      "sha256": "c8fff891139ee62800da71b7fd5b508d570b9ad95e614a53c6f453ca08366038",
+      "modified": "",
+      "target": "",
+      "origin": "reviewed"
+    },
+    {
+      "id": "zig-runtime",
+      "name": "Zig runtime and compiler runtime",
+      "version": "0.16.0",
+      "producer": "Organization: Zig Software Foundation",
+      "license": "MIT",
+      "license_url": "",
+      "identity": "pkg:generic/zig-runtime@0.16.0?download_url=https://github.com/ziglang/zig/tree/0.16.0/lib",
+      "download": "https://github.com/ziglang/zig/tree/0.16.0/lib",
+      "sha256": "",
+      "modified": "",
+      "target": "",
+      "origin": "reviewed"
+    },
+    {
+      "id": "musl",
+      "name": "musl libc as bundled by Zig 0.16.0",
+      "version": "0.16.0",
+      "producer": "Organization: musl libc contributors",
+      "license": "MIT",
+      "license_url": "",
+      "identity": "pkg:generic/zig-musl@0.16.0?download_url=https://github.com/ziglang/zig/tree/0.16.0/lib/libc/musl",
+      "download": "https://github.com/ziglang/zig/tree/0.16.0/lib/libc/musl",
+      "sha256": "",
+      "modified": "",
+      "target": "",
+      "origin": "reviewed"
+    },
+    {
+      "id": "llvm-runtimes",
+      "name": "LLVM libc++, libc++abi, libunwind and compiler-rt as bundled by Zig 0.16.0",
+      "version": "0.16.0",
+      "producer": "Organization: LLVM Project",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_url": "",
+      "identity": "pkg:generic/zig-llvm-runtimes@0.16.0?download_url=https://github.com/ziglang/zig/tree/0.16.0/lib",
+      "download": "https://github.com/ziglang/zig/tree/0.16.0/lib",
+      "sha256": "",
+      "modified": "",
+      "target": "",
+      "origin": "reviewed"
+    },
+    {
+      "id": "zig",
+      "name": "Zig compiler",
+      "version": "0.16.0",
+      "producer": "Organization: Zig Software Foundation",
+      "license": "MIT",
+      "license_url": "",
+      "identity": "pkg:generic/zig@0.16.0",
+      "download": "https://ziglang.org/download/0.16.0/",
+      "sha256": "",
+      "modified": "",
+      "target": "",
+      "origin": "reviewed"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "Subject",
+      "to": "roc-fuzz",
+      "relation": "contains",
+      "scope": "",
+      "basis": "The platform's Roc modules under platform/, and the host library built from src/"
+    },
+    {
+      "from": "Subject",
+      "to": "libfuzzer",
+      "relation": "contains",
+      "scope": "",
+      "basis": "targets/*/libfuzzer.a is libFuzzer from this crate, compiled by Zig"
+    },
+    {
+      "from": "Subject",
+      "to": "zig-runtime",
+      "relation": "contains",
+      "scope": "",
+      "basis": "targets/*/libzigc.a and the compiler runtime Zig links into each host"
+    },
+    {
+      "from": "Subject",
+      "to": "musl",
+      "relation": "contains",
+      "scope": "",
+      "basis": "targets/x64musl/libc.a and crt1.o are Zig's bundled musl"
+    },
+    {
+      "from": "Subject",
+      "to": "llvm-runtimes",
+      "relation": "contains",
+      "scope": "",
+      "basis": "targets/*/libc++.a, libc++abi.a, libunwind.a and libcompiler_rt.a"
+    },
+    {
+      "from": "Subject",
+      "to": "zig",
+      "relation": "dependsOn",
+      "scope": "build",
+      "basis": "Compiles the host and every library; it does not ship"
+    }
+  ],
+  "coverage": [
+    {
+      "scope": "native-closure",
+      "status": "incomplete",
+      "reason": "Each archive member is listed by digest. Which upstream sources each library holds is stated per library above, not per object file.",
+      "contact": "https://github.com/lukewilliamboswell/roc-fuzz/security"
+    },
+    {
+      "scope": "bundling-compiler",
+      "status": "incomplete",
+      "reason": "roc bundle runs the latest nightly at release time; the release notes name it under Compilers. It compresses files and adds nothing of its own.",
+      "contact": "https://github.com/lukewilliamboswell/roc-fuzz/security"
+    }
+  ],
+  "inputs": [
+    {
+      "input": "source:nix",
+      "component": "",
+      "reason": "Package set the development environment's tools come from; nothing from it ships"
+    },
+    {
+      "input": "source:roc",
+      "component": "",
+      "reason": "Overlay that provides roc-stable, the compiler that runs the repository scripts; it does not build the bundle"
+    },
+    {
+      "input": "source:zig",
+      "component": "zig",
+      "reason": "Overlay that provides the Zig release that compiles the host and libraries"
+    },
+    {
+      "input": "tool:nix#zigpkgs.\"0.16.0\"",
+      "component": "zig",
+      "reason": "Compiles the host and every library in the bundle"
+    },
+    {
+      "input": "tool:nix#coreutils",
+      "component": "",
+      "reason": "coreutils is a development and release tool; nothing it provides ships"
+    },
+    {
+      "input": "tool:nix#gh",
+      "component": "",
+      "reason": "gh is a development and release tool; nothing it provides ships"
+    },
+    {
+      "input": "tool:nix#git",
+      "component": "",
+      "reason": "git is a development and release tool; nothing it provides ships"
+    },
+    {
+      "input": "tool:nix#jq",
+      "component": "",
+      "reason": "jq is a development and release tool; nothing it provides ships"
+    },
+    {
+      "input": "tool:nix#unzip",
+      "component": "",
+      "reason": "unzip is a development and release tool; nothing it provides ships"
+    },
+    {
+      "input": "tool:nix#zip",
+      "component": "",
+      "reason": "zip is a development and release tool; nothing it provides ships"
+    },
+    {
+      "input": "program:roc-docs:x86_64-linux",
+      "component": "",
+      "reason": "Documentation renderer; the manual is a separate release file"
+    },
+    {
+      "input": "program:roc-docs:aarch64-linux",
+      "component": "",
+      "reason": "Documentation renderer; the manual is a separate release file"
+    },
+    {
+      "input": "program:roc-docs:aarch64-darwin",
+      "component": "",
+      "reason": "Documentation renderer; the manual is a separate release file"
+    },
+    {
+      "input": "roc-package:GddgvsGjiNXrHFW6au5i5dUDbTs8FinQdrgE2Gqmw53t",
+      "component": "",
+      "reason": "Package the repository scripts import (https://github.com/roc-lang/basic-cli/releases/download/0.26.0/GddgvsGjiNXrHFW6au5i5dUDbTs8FinQdrgE2Gqmw53t.tar.zst); scripts do not ship"
+    },
+    {
+      "input": "build-source:roc-GddgvsGjiNXrHFW6au5i5dUDbTs8FinQdrgE2Gqmw53t",
+      "component": "",
+      "reason": "The same script package, as the source the environment prefetches; scripts do not ship"
+    },
+    {
+      "input": "roc-package:6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS",
+      "component": "",
+      "reason": "Package the repository scripts import (https://github.com/roc-lang/http/releases/download/1.0.0/6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS.tar.zst); scripts do not ship"
+    },
+    {
+      "input": "build-source:roc-6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS",
+      "component": "",
+      "reason": "The same script package, as the source the environment prefetches; scripts do not ship"
+    },
+    {
+      "input": "roc-package:JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL",
+      "component": "",
+      "reason": "Package the repository scripts import (https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst); scripts do not ship"
+    },
+    {
+      "input": "build-source:roc-JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL",
+      "component": "",
+      "reason": "The same script package, as the source the environment prefetches; scripts do not ship"
+    },
+    {
+      "input": "roc-package:7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE",
+      "component": "",
+      "reason": "Package the repository scripts import (https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst); scripts do not ship"
+    },
+    {
+      "input": "build-source:roc-7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE",
+      "component": "",
+      "reason": "The same script package, as the source the environment prefetches; scripts do not ship"
+    },
+    {
+      "input": "roc-package:7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77",
+      "component": "",
+      "reason": "Package the repository scripts import (https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst); scripts do not ship"
+    },
+    {
+      "input": "build-source:roc-7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77",
+      "component": "",
+      "reason": "The same script package, as the source the environment prefetches; scripts do not ship"
+    },
+    {
+      "input": "task:check",
+      "component": "",
+      "reason": "Development or release task; the bundle's contents are stated by its components and archive members"
+    },
+    {
+      "input": "task:check-supply-chain",
+      "component": "",
+      "reason": "Development or release task; the bundle's contents are stated by its components and archive members"
+    },
+    {
+      "input": "task:native-sanitizers",
+      "component": "",
+      "reason": "Development or release task; the bundle's contents are stated by its components and archive members"
+    },
+    {
+      "input": "task:build-platform",
+      "component": "",
+      "reason": "Development or release task; the bundle's contents are stated by its components and archive members"
+    },
+    {
+      "input": "task:check-glue",
+      "component": "",
+      "reason": "Development or release task; the bundle's contents are stated by its components and archive members"
+    },
+    {
+      "input": "task:link-inputs",
+      "component": "",
+      "reason": "Development or release task; the bundle's contents are stated by its components and archive members"
+    },
+    {
+      "input": "task:check-link-inputs",
+      "component": "",
+      "reason": "Development or release task; the bundle's contents are stated by its components and archive members"
+    },
+    {
+      "input": "task:test-targets",
+      "component": "",
+      "reason": "Development or release task; the bundle's contents are stated by its components and archive members"
+    },
+    {
+      "input": "task:run-target",
+      "component": "",
+      "reason": "Development or release task; the bundle's contents are stated by its components and archive members"
+    },
+    {
+      "input": "task:bundle",
+      "component": "",
+      "reason": "Development or release task; the bundle's contents are stated by its components and archive members"
+    },
+    {
+      "input": "task:test-bundle",
+      "component": "",
+      "reason": "Development or release task; the bundle's contents are stated by its components and archive members"
+    },
+    {
+      "input": "task:release-examples",
+      "component": "",
+      "reason": "Development or release task; the bundle's contents are stated by its components and archive members"
+    },
+    {
+      "input": "task:release-notes",
+      "component": "",
+      "reason": "Development or release task; the bundle's contents are stated by its components and archive members"
+    },
+    {
+      "input": "task:stable-version",
+      "component": "",
+      "reason": "Development or release task; the bundle's contents are stated by its components and archive members"
+    },
+    {
+      "input": "task:docs",
+      "component": "",
+      "reason": "Development or release task; the bundle's contents are stated by its components and archive members"
+    },
+    {
+      "input": "task:check-docs",
+      "component": "",
+      "reason": "Development or release task; the bundle's contents are stated by its components and archive members"
+    },
+    {
+      "input": "task:docs-path",
+      "component": "",
+      "reason": "Development or release task; the bundle's contents are stated by its components and archive members"
+    },
+    {
+      "input": "task:site",
+      "component": "",
+      "reason": "Development or release task; the bundle's contents are stated by its components and archive members"
+    }
+  ],
+  "imported_documents": [],
+  "unavailable_sboms": []
+}

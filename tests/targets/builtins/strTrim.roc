@@ -10,7 +10,7 @@ main! : List(U8) => U8
 main! = |data| {
 	{ value: string, state } = Arbitrary.new(data).arbitrary_str()
 	{ value: retain, .. } = state.ratio(1, 2)
-	tmp = if retain string else ""
+	tmp = if (retain) string else ""
 	trimmed = Fuzz.expect_allocs_at_most!(0, |{}| string.trim())
 	if trimmed != string.trim_start().trim_end() {
 		crash "trim disagreed with trim_start followed by trim_end"

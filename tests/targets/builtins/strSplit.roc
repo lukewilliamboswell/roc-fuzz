@@ -13,8 +13,8 @@ main! = |data| {
 	{ value: delimiter, state: choices } = second.arbitrary_str()
 	{ value: retain1, state: last_choice } = choices.ratio(1, 2)
 	{ value: retain2, .. } = last_choice.ratio(1, 2)
-	tmp1 = if retain1 string else ""
-	tmp2 = if retain2 delimiter else ""
+	tmp1 = if (retain1) string else ""
+	tmp2 = if (retain2) delimiter else ""
 
 	limit = 2 * string.count_utf8_bytes() + 4
 	parts = Fuzz.expect_allocs_at_most!(limit, |{}| string.split_on(delimiter))

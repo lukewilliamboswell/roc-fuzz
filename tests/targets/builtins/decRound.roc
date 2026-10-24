@@ -26,7 +26,7 @@ pick_value : Input -> I128
 pick_value = |input| {
 	raw = I128.bitwise_or(I128.shl_wrap(U64.to_i128(input.hi), 64), U64.to_i128(input.lo))
 	whole = I128.times_wrap(I128.div_trunc_by(raw, one), one)
-	sign = if raw < 0 -1 else 1
+	sign = if (raw < 0) -1 else 1
 	match input.mode {
 		0 => Dec.to_attos(Dec.lowest)
 		1 => Dec.to_attos(Dec.highest)
@@ -54,7 +54,7 @@ floor_ref = |x| to_dec_try(I128.minus_try(x, I128.mod_by(x, one)))
 ceiling_ref : I128 -> Try(Dec, [Overflow])
 ceiling_ref = |x| {
 	below = I128.mod_by(x, one)
-	if below == 0 Ok(Dec.from_attos(x)) else to_dec_try(I128.plus_try(x, one - below))
+	if (below == 0) Ok(Dec.from_attos(x)) else to_dec_try(I128.plus_try(x, one - below))
 }
 
 round_ref : I128 -> Try(Dec, [Overflow])

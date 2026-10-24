@@ -24,7 +24,7 @@ insert_by_key_descending = |sorted, value| {
 			}
 		},
 	)
-	if placed.inserted placed.out else List.append(placed.out, value)
+	if (placed.inserted) placed.out else List.append(placed.out, value)
 }
 
 reference_sort_by_descending : List(Item) -> List(Item)

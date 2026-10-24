@@ -20,7 +20,7 @@ case_gen = Fuzz.map2(
 	Fuzz.list(Fuzz.str, 80),
 	Fuzz.u8,
 	|items, h| {
-		hint = if h == 255 Unknown else if h >= 128 Known(items.len()) else Known(items.len() + h.to_u64())
+		hint = if (h == 255) Unknown else if (h >= 128) Known(items.len()) else Known(items.len() + h.to_u64())
 		{ items, hint }
 	},
 )

@@ -8,12 +8,12 @@ import ansi.ANSI
 
 ## Shared command, environment, error, and terminal-output helpers.
 Script := [].{
-	Command := { base : Cmd, program : OsStr }.{
+	Command := { base : Cmd.Command, program : OsStr }.{
 		run! = |self, args| {
 			command = self.base.args(args)
 			display = Str.join_with([self.program].concat(args).map(OsStr.display), " ")
 			Stdout.line!("\n${heading("RUN", Cyan)} ${display}")?
-			command.exec_cmd!()
+			command.call!()
 		}
 
 		capture! = |self, args, cwd, stdin|
@@ -83,10 +83,10 @@ Script := [].{
 		Err(ScriptFailed)
 	}
 
-	require! = |condition, message| if condition Ok({}) else fail!(message)
+	require! = |condition, message| if (condition) Ok({}) else fail!(message)
 
 	require_file! = |path|
-		if Path.is_file!(path)? Ok({}) else Script.fail!("file does not exist: ${Path.display(path)}")
+		if (Path.is_file!(path)?) Ok({}) else Script.fail!("file does not exist: ${Path.display(path)}")
 
 	run_capture! = |base, args, cwd, stdin| {
 		output = base.args(args).cwd(cwd).stdin(Bytes(stdin)).run!().map_err(|err| CommandRunFailed(err))?
@@ -97,6 +97,14 @@ Script := [].{
 		output = child.wait!().map_err(|err| CommandWaitFailed(err))?
 		command_output!(output)
 	}
+
+	## Run with the terminal inherited and return the exit code for the caller
+	## to judge. Ending on a signal is still a failure.
+	exit_code! = |cmd|
+		match cmd.inherit_stdio().run!()?.status {
+			Exited(code) => Ok(code)
+			Signaled(signal) => Err(CommandSignaled(signal))
+		}
 
 	starts_with = |value, prefix| value.to_utf8().take_first(prefix.to_utf8().len()) == prefix.to_utf8()
 	ends_with = |value, suffix| {

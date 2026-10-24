@@ -33,7 +33,7 @@ NumText :: {}.{
 	## its entropy.
 	piece : U8, U64 -> List(U8)
 	piece = |class, n| match class {
-		0 => if n % 2 == 0 ['-'] else ['+']
+		0 => if (n % 2 == 0) ['-'] else ['+']
 		1 | 2 | 3 | 4 => digit_run(n)
 		5 => ['_']
 		6 => radix_prefix(n)
@@ -74,7 +74,7 @@ NumText :: {}.{
 	## every width's overflow boundary (U128 has 39 digits).
 	digit_run : U64 -> List(U8)
 	digit_run = |n| {
-		len = if n % 8 == 0 1 + (n // 8) % 48 else 1 + (n // 8) % 4
+		len = if (n % 8 == 0) 1 + (n // 8) % 48 else 1 + (n // 8) % 4
 		var $out = List.with_capacity(len)
 		var $i = 0
 		while $i < len {
@@ -124,9 +124,9 @@ NumText :: {}.{
 	## A prefix of `infinity` or `nan` in random letter case.
 	special_word : U64 -> List(U8)
 	special_word = |n| {
-		word = if n % 2 == 0 "infinity".to_utf8() else "nan".to_utf8()
+		word = if (n % 2 == 0) "infinity".to_utf8() else "nan".to_utf8()
 		len = 1 + (n // 2) % word.len()
-		word.take_first(len).map_with_index(|c, i| if mix(n, i) % 2 == 0 c else c - 0x20)
+		word.take_first(len).map_with_index(|c, i| if (mix(n, i) % 2 == 0) c else c - 0x20)
 	}
 
 	terminator : U64 -> List(U8)
@@ -225,7 +225,7 @@ NumText :: {}.{
 	is_radix_digit = |b, radix| digit_value(b) < radix
 
 	sign_len : List(U8) -> U64
-	sign_len = |bytes| if at(bytes, 0) == '-' or at(bytes, 0) == '+' 1 else 0
+	sign_len = |bytes| if (at(bytes, 0) == '-' or at(bytes, 0) == '+') 1 else 0
 
 	radix_of : U8 -> U64
 	radix_of = |b| match b {
@@ -287,7 +287,7 @@ NumText :: {}.{
 			return absent
 		}
 		sign = at(bytes, start + 1)
-		digits_start = if sign == '-' or sign == '+' start + 2 else start + 1
+		digits_start = if (sign == '-' or sign == '+') start + 2 else start + 1
 		end = digit_run_end(bytes, digits_start, 10)
 		if end == digits_start {
 			return absent
@@ -311,7 +311,7 @@ NumText :: {}.{
 		s = sign_len(bytes)
 		negative = at(bytes, 0) == '-'
 		radix = radix_of(at(bytes, s + 1))
-		radix_end = if at(bytes, s) == '0' and radix != 0 digit_run_end(bytes, s + 2, radix) else s + 2
+		radix_end = if (at(bytes, s) == '0' and radix != 0) digit_run_end(bytes, s + 2, radix) else s + 2
 		if radix != 0 and at(bytes, s) == '0' and radix_end > s + 2 {
 			value = match accumulate(bytes, s + 2, radix_end, radix.to_u128()) {
 				Ok(m) => Magnitude(negative, m)
@@ -369,8 +369,8 @@ NumText :: {}.{
 			match token.value {
 				NoInteger => OutOfRange
 				Magnitude(_, 0) => Value("0")
-				Magnitude(Bool.True, m) => if m <= negative_max Value("-".concat(m.to_str())) else OutOfRange
-				Magnitude(Bool.False, m) => if m <= positive_max Value(m.to_str()) else OutOfRange
+				Magnitude(Bool.True, m) => if (m <= negative_max) Value("-".concat(m.to_str())) else OutOfRange
+				Magnitude(Bool.False, m) => if (m <= positive_max) Value(m.to_str()) else OutOfRange
 			}
 		}
 
@@ -410,11 +410,11 @@ NumText :: {}.{
 				break
 			}
 		}
-		{ end: if $digits == 0 start else $i, int_digits: $int_digits, frac_zeros: $frac_zeros, nonzero: $nonzero }
+		{ end: if ($digits == 0) start else $i, int_digits: $int_digits, frac_zeros: $frac_zeros, nonzero: $nonzero }
 	}
 
 	signed_exponent : { end : U64, negative : Bool, magnitude : U64 } -> I64
-	signed_exponent = |exp| if exp.negative -(exp.magnitude.to_i64_wrap()) else exp.magnitude.to_i64_wrap()
+	signed_exponent = |exp| if (exp.negative) -(exp.magnitude.to_i64_wrap()) else exp.magnitude.to_i64_wrap()
 
 	## Longest float token: sign, then a hex mantissa with `p` exponent, a
 	## decimal mantissa with `e` exponent, or `infinity` / `inf` / `nan`.
@@ -425,17 +425,17 @@ NumText :: {}.{
 			m = mantissa(bytes, s + 2, 16)
 			if m.end > s + 2 {
 				exp = exponent(bytes, m.end, 'p')
-				order = if m.nonzero 4 * m.int_digits + signed_exponent(exp) else zero_order
+				order = if (m.nonzero) 4 * m.int_digits + signed_exponent(exp) else zero_order
 				return { len: exp.end, special: Bool.False, hex: Bool.True, order }
 			}
 		}
 		m = mantissa(bytes, s, 10)
 		if m.end > s {
 			exp = exponent(bytes, m.end, 'e')
-			order = if m.nonzero m.int_digits - m.frac_zeros + signed_exponent(exp) else zero_order
+			order = if (m.nonzero) m.int_digits - m.frac_zeros + signed_exponent(exp) else zero_order
 			return { len: exp.end, special: Bool.False, hex: Bool.False, order }
 		}
-		rest = bytes.drop_first(s).map(|b| if b >= 'A' and b <= 'Z' b + 0x20 else b)
+		rest = bytes.drop_first(s).map(|b| if (b >= 'A' and b <= 'Z') b + 0x20 else b)
 		len = if rest.starts_with("infinity".to_utf8()) {
 			8
 		} else if rest.starts_with("inf".to_utf8()) {
@@ -445,7 +445,7 @@ NumText :: {}.{
 		} else {
 			0
 		}
-		{ len: if len == 0 0 else s + len, special: Bool.True, hex: Bool.False, order: 0 }
+		{ len: if (len == 0) 0 else s + len, special: Bool.True, hex: Bool.False, order: 0 }
 	}
 
 	## Longest Dec token: sign, decimal mantissa, optional `e` exponent. The
@@ -483,7 +483,7 @@ NumText :: {}.{
 			}
 			digits.drop_last(drop)
 		}
-		zeros = if scale > 0 scale.to_u64_wrap() else 0
+		zeros = if (scale > 0) scale.to_u64_wrap() else 0
 		if zeros > 38 {
 			return NotExact
 		}
@@ -502,7 +502,7 @@ NumText :: {}.{
 		one = 1_000_000_000_000_000_000.U128
 		whole = (magnitude // one).to_str()
 		frac_digits = (magnitude % one + one).to_str().to_utf8().drop_first(1)
-		sign = if negative and magnitude != 0 "-" else ""
+		sign = if (negative and magnitude != 0) "-" else ""
 		"${sign}${whole}.${Str.from_utf8_lossy(frac_digits)}"
 	}
 

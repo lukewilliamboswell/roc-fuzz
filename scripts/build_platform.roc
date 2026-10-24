@@ -1,11 +1,10 @@
 #!/usr/bin/env roc-stable
 app [main!] {
-	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.24.0/AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH.tar.zst",
-	ascii: "https://github.com/Hasnep/roc-ascii/releases/download/v0.5.0/5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H.tar.zst",
 	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst",
 	arg_path: "https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst",
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.26.0/GddgvsGjiNXrHFW6au5i5dUDbTs8FinQdrgE2Gqmw53t.tar.zst",
+	roc: "nightly-2026-10-23-18478ff",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
-	roc: "nightly-2026-09-29-7f11a82",
 }
 
 import cli.Cmd
@@ -36,7 +35,7 @@ main! = |raw_args| {
 	dependencies = NativeDeps.current
 	library_source = options.libraries
 	mode = build_mode!(options.host_only, options.libraries_only, library_source)?
-	specs = if options.target_specs.is_empty() [Project.host_target!()?.spec()] else options.target_specs
+	specs = if (options.target_specs.is_empty()) [Project.host_target!()?.spec()] else options.target_specs
 	# Zig sees its search path and a home for its cache, and nothing else. On
 	# macOS a development shell sets SDKROOT, and the compiler would record that
 	# SDK's version in every object it writes.
@@ -218,7 +217,7 @@ fetch_pinned_libfuzzer! = |root, dependency, work| {
 }
 
 validate_libfuzzer_source! = |source|
-	if Path.is_file!(Path.join(source, "FuzzerMain.cpp"))? Ok(source) else Err(IncompleteLibfuzzerSource(source))
+	if (Path.is_file!(Path.join(source, "FuzzerMain.cpp"))?) Ok(source) else Err(IncompleteLibfuzzerSource(source))
 
 build_libraries! = |root, zig, ar, source, work, spec| {
 	directory = Project.Target.dir(spec.target, root)
@@ -259,7 +258,7 @@ build_libfuzzer! = |root, zig, ar, source, output, work, spec| {
 	if Path.exists!(output)? {
 		Path.delete!(output)?
 	}
-	ar.args([archive_flags, Path.to_os_str(output)].concat(all_objects.map(Path.to_os_str))).exec_cmd!()
+	ar.args([archive_flags, Path.to_os_str(output)].concat(all_objects.map(Path.to_os_str))).call!()
 }
 
 ## Every library is byte-reproducible: the same sources, Zig release and flags
@@ -291,6 +290,7 @@ cxx_target_args = |root, spec|
 ## Rewrite an archive so that each member is named by its file name alone, in
 ## the original order. Members that share a file name keep it with a counter,
 ## as `clone.2.o`; musl's `libc.a` has two `clone.o`.
+flatten_archive! : Cmd.Command, Path, Path, Str => Try({}, _)
 flatten_archive! = |ar, archive, work, label| {
 	listed = Str.from_utf8_lossy(Script.run_capture!(ar, ["t", Path.to_os_str(archive)], work, [])?)
 	members = Str.split_on(listed, "\n").keep_if(|member| !member.is_empty())
@@ -307,13 +307,13 @@ flatten_archive! = |ar, archive, work, label| {
 		# `P` matches the full member name, which is what tells duplicates apart.
 		_ = Script.run_capture!(ar, ["xP", Path.to_os_str(archive), OsStr.from_str(member)], extracted, [])?
 		earlier = $seen.keep_if(|name| name == base).len()
-		name = if earlier == 0 base else Str.replace_each(base, ".o", ".${(earlier + 1).to_str()}.o")
+		name = if (earlier == 0) base else Str.replace_each(base, ".o", ".${(earlier + 1).to_str()}.o")
 		$seen = $seen.append(base)
 		Path.rename!(Path.join(extracted, base), Path.join(renamed, name))?
 		$flat = $flat.append(Path.join(renamed, name))
 	}
 	Path.delete!(archive)?
-	ar.args([archive_flags, Path.to_os_str(archive)].concat($flat.map(Path.to_os_str))).exec_cmd!()
+	ar.args([archive_flags, Path.to_os_str(archive)].concat($flat.map(Path.to_os_str))).call!()
 }
 
 copy_zig_runtime! = |root, zig, ar, directory, work, spec| {
@@ -321,7 +321,7 @@ copy_zig_runtime! = |root, zig, ar, directory, work, spec| {
 	Path.write_utf8!(probe, "int main() { return 0; }\n")?
 	executable = Path.join(work, "${Project.Target.name(spec.target)}-runtime_probe")
 	args = ["c++", "-target", OsStr.from_str(spec.zig_target)].concat(cxx_target_args(root, spec)).concat(["-O2", "-s", "-v", Path.to_os_str(probe)])
-	final_args = if spec.target == X64Musl args.append("-static") else args
+	final_args = if (spec.target == X64Musl) args.append("-static") else args
 	output = capture_combined!(zig.cmd(final_args.concat(["-o", Path.to_os_str(executable)])))?
 	wanted = spec.input_names.keep_if(|name| name != "libhost.a" and name != "libfuzzer.a")
 	var $found = []
@@ -344,7 +344,7 @@ copy_zig_runtime! = |root, zig, ar, directory, work, spec| {
 		}
 	}
 	missing = wanted.keep_if(|name| !$found.contains(name))
-	if missing.is_empty() Ok({}) else Err(MissingZigRuntimeArtifacts(missing))
+	if (missing.is_empty()) Ok({}) else Err(MissingZigRuntimeArtifacts(missing))
 }
 
 capture_combined! = |command| {
@@ -364,7 +364,7 @@ build_host! = |root, zig, ar, work, spec| {
 	if spec.target == Arm64Mac {
 		stack = Path.join(work, "macos_sancov.o")
 		zig.run!(["cc", "-target", OsStr.from_str(spec.zig_target)].concat(cxx_target_args(root, spec)).concat(["-O2", "-g0", "-fPIC", "-c", Path.to_os_str(Path.join(Path.join(root, "src"), "macos_sancov.c")), "-o", Path.to_os_str(stack)]))?
-		ar.args([archive_flags, Path.to_os_str(host), Path.to_os_str(stack)]).exec_cmd!()?
+		ar.args([archive_flags, Path.to_os_str(host), Path.to_os_str(stack)]).call!()?
 	}
 	flatten_archive!(ar, host, work, "${Project.Target.name(spec.target)}-libhost.a")
 }

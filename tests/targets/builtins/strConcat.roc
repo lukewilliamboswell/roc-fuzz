@@ -14,8 +14,8 @@ main! = |data| {
 	{ value: str2, state: choices } = second.arbitrary_str()
 	{ value: retain1, state: last_choice } = choices.ratio(1, 2)
 	{ value: retain2, .. } = last_choice.ratio(1, 2)
-	tmp1 = if retain1 str1 else ""
-	tmp2 = if retain2 str2 else ""
+	tmp1 = if (retain1) str1 else ""
+	tmp2 = if (retain2) str2 else ""
 
 	out = Fuzz.expect_allocs_at_most!(
 		1,

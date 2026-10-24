@@ -1,0 +1,6 @@
+{
+  "source": "overview.adoc",
+  "source_sha256": "ec4cb8093c3e17647d49586bcc1f5a877083d1101f7ccc2489469e0b9567d9ce",
+  "preparation": "mermaid-cli 12.0.0 from nixpkgs (nix shell nixpkgs#mermaid-cli); the block's text, with a final newline, written to search-workflow.mmd; mmdc -p puppeteer.json -i search-workflow.mmd -o search-workflow.png -b transparent -s 2, where puppeteer.json is {\"args\":[\"--no-sandbox\"]}",
+  "png_sha256": "23bd83def4115093fcab9b71c8084a3f458362adf4b4edb15bcf97b7537587ce"
+}

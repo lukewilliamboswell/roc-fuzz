@@ -9,23 +9,26 @@
 # release named below; it runs the scripts under scripts/. The platform and its
 # targets are checked, built and run with whatever `roc` is on PATH, which is
 # meant to be the latest nightly, so nothing here provides a bare `roc`.
-app [config] { pf: platform "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.4.1/3Cev8eY9VdEbPazJcBUnsjNnUgdauMod46Q25uKodLUe.tar.zst" }
+app [config] { pf: platform "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.8.0/FbJymjYdCxx9vqMcau7r4tQfeAbnVGqqJoYrLGqPCqKu.tar.zst" }
+
+import pf.Recipes
 
 config = [
 	Name("roc-fuzz"),
-	Overlay("roc", "github:roc-lang/roc-overlay"),
-	Overlay("zig", "github:mitchellh/zig-overlay"),
+	Systems(["x86_64-linux", "aarch64-linux", "aarch64-darwin"]),
+	Packages("nix", From(NixPackages("github:NixOS/nixpkgs/nixos-unstable"))),
+	Input("roc", "github:roc-lang/roc-overlay"),
+	Input("zig", "github:mitchellh/zig-overlay"),
 	Environment(
 		"dev",
 		[
 			Overlays(["roc", "zig"]),
-			Command("roc-stable", "rocpkgs.nightly-2026-09-29-7f11a82"),
+			Command("roc-stable", "nix#rocpkgs.nightly-2026-10-23-18478ff"),
 			# Every bundle the scripts depend on, including dependencies of
 			# dependencies: `roc-stable deps scripts/check_all.roc` lists them.
 			RocPackages([
-				"https://github.com/roc-lang/basic-cli/releases/download/0.24.0/AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH.tar.zst",
+				"https://github.com/roc-lang/basic-cli/releases/download/0.26.0/GddgvsGjiNXrHFW6au5i5dUDbTs8FinQdrgE2Gqmw53t.tar.zst",
 				"https://github.com/roc-lang/http/releases/download/1.0.0/6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS.tar.zst",
-				"https://github.com/Hasnep/roc-ascii/releases/download/v0.5.0/5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H.tar.zst",
 				"https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst",
 				"https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst",
 				"https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
@@ -33,7 +36,10 @@ config = [
 			# Programs the scripts and workflows start. Zig is the exact
 			# release that builds the host and its linker inputs, taken from
 			# zig-overlay; scripts/native-deps.json names the same version.
-			Tools(["coreutils", "gh", "git", "jq", "unzip", "zip", "zigpkgs.\"0.16.0\""]),
+			Tools(["nix#coreutils", "nix#gh", "nix#git", "nix#jq", "nix#unzip", "nix#zip", "nix#zigpkgs.\"0.16.0\""]),
+			# The shared documentation renderer, as actions/build-docs runs it.
+			Programs([Fetch("roc-docs", Recipes.file("https://github.com/lukewilliamboswell/roc-automation/releases/download/tools-0.4.0/roc-docs-{system}"))]),
+			Expect(["sh"]),
 		],
 	),
 	Shell("default", [Use("dev")]),
@@ -57,11 +63,13 @@ config = [
 	Task("test-bundle", [Use("dev"), Run(["scripts/test_bundle.roc", "--"])]),
 	Task("release-examples", [Use("dev"), Run(["scripts/release_examples.roc", "--"])]),
 	Task("release-notes", [Use("dev"), Run(["scripts/render_release_notes.roc", "--"])]),
-	Task("sbom", [Use("dev"), Run(["scripts/build_release_sbom.roc", "--"])]),
 	Task("stable-version", [Use("dev"), Run(["roc-stable", "version"])]),
 	# The manual and the API reference.
 	Task("docs", [Use("dev"), Run(["scripts/build_docs.roc", "--"])]),
 	Task("check-docs", [Use("dev"), Run(["scripts/check_docs.roc", "--"])]),
+	# The renderer's persistent path, for actions/blueprint-tool to hand to
+	# actions/build-docs.
+	Task("docs-path", [Use("dev"), Run(["sh", "-c", "realpath \"$(command -v roc-docs)\""])]),
 	# The Pages site: the latest release's documentation, with the working
 	# tree's under unreleased/. Run `docs` first.
 	Task("site", [Use("dev"), Run(["scripts/build_site.roc", "--"])]),

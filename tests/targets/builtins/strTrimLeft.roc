@@ -11,9 +11,9 @@ main! : List(U8) => U8
 main! = |data| {
 	{ value: string, state } = Arbitrary.new(data).arbitrary_str()
 	{ value: retain, .. } = state.ratio(1, 2)
-	tmp = if retain string else ""
+	tmp = if (retain) string else ""
 	trimmed = Fuzz.expect_allocs_at_most!(0, |{}| string.trim_start())
-	bonus = if trimmed.is_empty() 1 else 0
+	bonus = if (trimmed.is_empty()) 1 else 0
 	(tmp.count_utf8_bytes() + bonus).to_u8_wrap()
 }
 
