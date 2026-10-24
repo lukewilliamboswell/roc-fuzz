@@ -154,7 +154,8 @@ jobs:
   # is a setup failure and leaves the issue alone.
   #
   # roc-automation's shared nightly-compatibility workflow would replace this
-  # whole file, but it cannot yet build an example with `roc build --fuzz`.
+  # whole file, but it cannot yet build an example with `roc build --fuzz`:
+  # https://github.com/lukewilliamboswell/roc-automation/issues/80
   report:
     name: Track the result in an issue
     needs: [select, test]
