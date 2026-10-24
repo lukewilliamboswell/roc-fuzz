@@ -489,9 +489,8 @@ jobs:
           retention-days: 7
 
   # The only job that can write. It checks out nothing and runs no repository
-  # script: it downloads the tested artifacts of this run, stages them in a
-  # draft release at the tested commit, downloads every asset back and compares
-  # it with the tested file, and only then publishes.
+  # script: it downloads the tested artifacts of this run and hands them to
+  # actions/publish-release.
   publish:
     name: Publish the release
     needs: [validate, check, native-sanitizers, build, docs, test, attest]
@@ -532,35 +531,22 @@ jobs:
           name: release-notes
           path: notes
 
-      - name: Stage a draft, verify every asset, then publish
+      # The shared action stages a draft at the tested commit, downloads every
+      # asset back and compares it with the tested file, and only then
+      # publishes. It refuses a tag that already exists.
+      - id: publish
+        name: Stage a draft, verify every asset, then publish
+        uses: lukewilliamboswell/roc-automation/actions/publish-release@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
+        with:
+          version: ${{ needs.validate.outputs.release_version }}
+          prerelease: ${{ needs.validate.outputs.is_prerelease }}
+          notes-file: notes/release-notes.md
+          assets: assets/*
+
+      - name: Record the published digests
         env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_VERSION: ${{ needs.validate.outputs.release_version }}
-          IS_PRERELEASE: ${{ needs.validate.outputs.is_prerelease }}
-        run: |
-          set -euo pipefail
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_VERSION" >/dev/null 2>&1; then
-            echo "The tag $RELEASE_VERSION already exists; changed bytes are always a new version." >&2
-            exit 1
-          fi
-          # A release candidate is a prerelease and is never the latest release.
-          kind=(--prerelease=false --latest)
-          if [ "$IS_PRERELEASE" = true ]; then
-            kind=(--prerelease --latest=false)
-          fi
-          gh release create "$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --draft \
-            --target "$GITHUB_SHA" --title "$RELEASE_VERSION" \
-            --notes-file notes/release-notes.md
-          gh release upload "$RELEASE_VERSION" assets/* --repo "$GITHUB_REPOSITORY"
-          gh release download "$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --dir published
-          (cd assets && sha256sum -- * | sort) > tested.sha256
-          (cd published && sha256sum -- * | sort) > published.sha256
-          if ! diff tested.sha256 published.sha256; then
-            echo "The draft's assets differ from the tested artifacts. The draft is left unpublished." >&2
-            exit 1
-          fi
-          gh release edit "$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --draft=false "${kind[@]}"
-          cat tested.sha256 >> "$GITHUB_STEP_SUMMARY"
+          DIGESTS: ${{ steps.publish.outputs.digests }}
+        run: cat "$DIGESTS" >> "$GITHUB_STEP_SUMMARY"
 
   # A new release changes what the site leads with. The called workflow builds
   # the site in a read-only job and deploys that artifact from a job that holds

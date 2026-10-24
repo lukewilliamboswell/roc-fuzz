@@ -543,10 +543,11 @@ version. The workflow:
   documentation archive, the manual and the rendered notes;
 . on each target, serves the bundle on a loopback address and runs the archived
   examples against it, with an empty package cache;
-. attests the tested bundle and examples archive; and
-. publishes from a job that checks out nothing and runs no repository script. It
-  stages a draft release at the tested commit, uploads every asset, downloads
-  each one back and compares it with the tested file, and only then publishes.
+. attests the tested bundle, its SBOM documents and the examples archive; and
+. publishes from a job that checks out nothing and runs no repository script.
+  roc-automation's `actions/publish-release` stages a draft release at the
+  tested commit, uploads every asset, downloads each one back and compares it
+  with the tested file, and only then publishes.
 
 After a final release the workflow rebuilds and deploys the documentation site,
 which leads with the latest release.
