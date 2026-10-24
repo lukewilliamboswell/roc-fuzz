@@ -362,6 +362,15 @@
       "skip_fuzz": false
     },
     {
+      "name": "allocationReport",
+      "path": "tests/targets/fixtures/allocationReport.roc",
+      "seed_hex": "616263",
+      "libfuzzer_seed": 1078,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
       "name": "failureArtifact",
       "path": "tests/targets/fixtures/failureArtifact.roc",
       "seed_hex": "0001020304050607",
