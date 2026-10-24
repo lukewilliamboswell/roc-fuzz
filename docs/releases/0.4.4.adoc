@@ -1,47 +1,100 @@
 = roc-fuzz 0.4.4
 
-This patch makes the published platform work with current Roc nightlies again.
-Release 0.4.3 fails the daily compatibility check on current nightlies, and a
-release cannot change, so 0.4.4 replaces it. The platform API is
-unchanged from 0.4.3; `roc bump` reports no API changes.
+This release makes the published platform work with current Roc nightlies
+again, and lets a package hold allocation ratchets on roc-fuzz without a test
+platform of its own. Release 0.4.3 fails the daily compatibility check on
+current nightlies, and a release cannot change, so 0.4.4 replaces it. Every
+change to the API is an addition; existing targets build and run unchanged.
 
-== What changed
+== Allocation ratchets
+
+`Fuzz.measure_alloc_counts!` counts a region's allocations, reallocations and
+deallocations separately, with the bytes it requested, where
+`Fuzz.measure_allocs!` counts allocations and reallocations together.
+`Fuzz.realloc_count!`, `Fuzz.dealloc_count!` and `Fuzz.requested_bytes!`
+expose the counters underneath.
+
+`Fuzz.report_allocs!` measures a region and reports it under a label. The new
+`TARGET measure [INPUT]` command runs the target once, outside libFuzzer, and
+prints one versioned JSON line per report:
+
+[source,json]
+----
+{"format":"roc-fuzz-allocs/1","label":"grow a unique list","allocs":1,"reallocs":2,"deallocs":1,"requested_bytes":31}
+----
+
+A harness compares each line with the ceilings in a reviewed data file, with
+no deliberate crash and no input files. A crash, failed `expect` or leak under
+`measure` exits non-zero, and every other command discards reports, so the
+same target can still be fuzzed. A plain `roc build` gives the same counts as
+`roc build --fuzz`. The manual's _Hold allocation counts with a ratchet_
+section covers the line format, what each count means, and what makes counts
+change.
+
+== Out of memory is a saved failure
+
+A Roc allocation the host cannot serve now ends the run the way a crash does.
+The runner prints `[roc crashed] out of memory` and saves the input that asked
+for the allocation, so it can be replayed and minimized like any other failure.
+
+== Other changes
 
 * The host's bindings are regenerated from the current compiler's platform ABI.
 * The examples archive no longer pins a compiler. Each archived example differs
   from the repository's only in its platform URL, so it builds with whichever
   compiler you run, without a version-mismatch warning. The compiler the
   release was built with is recorded under *Compilers* below and in the
-  archive's `release.json`.
-* The host and the native linker inputs are byte-reproducible: the same sources,
-  Zig release and flags give identical libraries on any machine. Nothing is
-  compiled with debug information, and the Linux libraries are much smaller.
+  archive's `release.json`. The archive holds the examples a new user reads;
+  the regression targets that exercise Roc's builtins stay in the repository
+  under `tests/targets/`.
+* The host and the native linker inputs are byte-reproducible: the same
+  sources, Zig release and flags give identical libraries on any machine. The
+  macOS libraries are built against the headers Zig bundles, so the build reads
+  no installed Apple SDK. Nothing is compiled with debug information, so the
+  bundle is much smaller.
 * The bundle comes with SPDX and CycloneDX documents and an evidence manifest
   that binds them to the bundle's exact bytes. They are linked below.
-* The manual and API reference are built with the shared Roc documentation
-  renderer.
+* The online manual at https://lukewilliamboswell.github.io/roc-fuzz/ leads
+  with the latest release; the default branch's copy is under `unreleased/`.
 
 == Use this release
+
+roc-fuzz 0.4.4 supports Linux x86-64 with musl and Apple Silicon macOS 11 or
+newer. Both hosts test the packaged bundle and the archived examples before
+publication. Copy this application header into a fuzz target:
 
 [source,roc]
 ----
 app [target] { fuzz: platform "{platform-url}" }
 ----
 
+The header names no compiler. Use a current Roc nightly.
+
 Download `roc-fuzz-examples-0.4.4.zip` from the release assets for the complete
 example suite, its supporting modules, and the cases that describe them, bound
-to this exact bundle.
-
-Linux x86-64 with musl and Apple Silicon macOS are supported. Both hosts test
-the packaged bundle and the archived examples before publication.
+to this exact bundle. Read or download the versioned PDF manual at
+{manual-url}.
 
 == Upgrade and verification
 
-Change your application's platform URL to the one above. No code changes are
-needed from 0.4.3. If your header has a `roc` field from an earlier release's
-examples, you can remove it.
+Replace the platform URL in each target's header and remove the `roc` field if
+the header has one. No other change to a target is needed. A package that reads
+allocation counts from a deliberate crash can move to `report_allocs!` and
+`measure`.
 
-The release includes the versioned manual at {manual-url}, a zipped
-documentation site, the SBOM documents, and provenance attestations for the
-bundle and the examples archive. Report regressions through the repository's
-issue tracker with the compiler version, target, and reproducing input.
+Saved corpus and crash files encode generator input rather than a stable public
+format. Keep the matching executable when exact historical reproduction
+matters.
+
+The bundle, its SBOM documents and its build-provenance attestations are
+published together. Verify a downloaded bundle with:
+
+[source,console]
+----
+gh attestation verify <bundle>.tar.zst --repo lukewilliamboswell/roc-fuzz
+----
+
+For bugs or feedback, open an issue at
+https://github.com/lukewilliamboswell/roc-fuzz/issues with the compiler
+version, target, and reproducing input. The full history since 0.4.3 is at
+https://github.com/lukewilliamboswell/roc-fuzz/compare/0.4.3...0.4.4.
