@@ -25,14 +25,23 @@ and records it in the repository attestations API. No long-lived signing
 key is stored in the repository.
 
 Each release also publishes `<bundle>.intoto.jsonl` for offline
-attestation verification and `<bundle>.spdx.json` as an SPDX 2.3
-software bill of materials. The SBOM records the bundle digest and the
-libFuzzer, Zig runtime, musl, and LLVM runtime components contained in
-the supported native inputs. When using released libraries, the bundle
-includes per-target `NATIVE_LIBRARIES.json` records and its SBOM
-identifies the library release archive URLs and digests. Source builds
-clear these records to avoid claiming provenance from previously
-restored archives.
+attestation verification, and three files beside the bundle that describe
+what it holds:
+
+* `<bundle>.spdx.json`, an SPDX 3.0.1 software bill of materials;
+* `<bundle>.cdx.json`, the same graph as CycloneDX 1.7;
+* `<bundle>.sbom-manifest.json`, the evidence manifest that names the bundle
+  and each SBOM by size and SHA-256.
+
+roc-blueprint's SBOM tool writes them through roc-automation's
+`actions/sbom-sidecars`, from the reviewed `sbom/composition.json`. The tool
+checks that file against `Blueprint.roc` and `Blueprint.lock`: every input of
+the environment is either a component or excluded with a reason. It lists
+every member of the archive by digest and binds the documents to the bundle's
+final bytes. The components are the platform itself and the libFuzzer, Zig
+runtime, musl and LLVM runtime code in the native inputs; Zig is a build
+dependency. What the documents do not establish is stated as incomplete
+coverage, not left out.
 
 The build pins Zig 0.16.0 and the SHA-256 of the `libfuzzer-sys` 0.4.5
 source archive. Both targets are compiled against the headers Zig bundles; the
@@ -67,6 +76,5 @@ gh attestation verify roc-fuzz-<version>.tar.zst \
   --repo lukewilliamboswell/roc-fuzz
 ----
 
-The adjacent `.spdx.json` file is human- and machine-readable release
-inventory. Its root package checksum must equal the SHA-256 of the
-downloaded bundle.
+The SBOM documents are attested with the bundle. Each names the bundle's
+SHA-256, which must equal the SHA-256 of the downloaded file.

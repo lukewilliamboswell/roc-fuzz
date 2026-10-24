@@ -87,6 +87,12 @@ Update a script dependency:: Change the release URL in each script header and
 under `RocPackages` in `Blueprint.roc`, adding any new dependency of that
 dependency (`roc-stable deps scripts/check_all.roc` lists them), then run
 `blueprint update`.
+Keep the SBOM composition current:: `sbom/composition.json` gives every input
+`Blueprint.roc` declares (each source, tool, fetched program, script package
+and task) a disposition. A new task or tool needs an entry there too, or the
+release dry run's SBOM step refuses the composition. A change to what the
+native inputs contain, such as a new library or a new Zig release, changes its
+components.
 Regenerate the host bindings:: See <<host-bindings>>.
 
 == Repository scripting convention
@@ -489,8 +495,11 @@ One immutable GitHub release per version holds:
 | `roc-fuzz-VERSION.pdf`
 | The manual.
 
-| `<bundle>.spdx.json`
-| The SPDX SBOM.
+| `<bundle>.spdx.json`, `<bundle>.cdx.json`
+| The bundle's SBOM, as SPDX 3.0.1 and CycloneDX 1.7, written from `sbom/composition.json`.
+
+| `<bundle>.sbom-manifest.json`
+| The evidence manifest binding the bundle and its SBOM documents by digest.
 
 | `*.intoto.jsonl`
 | The exported build-provenance attestations for the bundle and the examples archive.

@@ -63,7 +63,6 @@ config = [
 	Task("test-bundle", [Use("dev"), Run(["scripts/test_bundle.roc", "--"])]),
 	Task("release-examples", [Use("dev"), Run(["scripts/release_examples.roc", "--"])]),
 	Task("release-notes", [Use("dev"), Run(["scripts/render_release_notes.roc", "--"])]),
-	Task("sbom", [Use("dev"), Run(["scripts/build_release_sbom.roc", "--"])]),
 	Task("stable-version", [Use("dev"), Run(["roc-stable", "version"])]),
 	# The manual and the API reference.
 	Task("docs", [Use("dev"), Run(["scripts/build_docs.roc", "--"])]),

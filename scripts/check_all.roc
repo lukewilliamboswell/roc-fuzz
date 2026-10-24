@@ -25,7 +25,7 @@ check_tooling! = |stable| {
 	(Script.roc_stable!()?).run!(["scripts/tooling_integration_tests.roc"])?
 	script_files = Files.roc_files!("scripts")?
 	stable.run!(["fmt", "--check"].concat(script_files.map(Path.to_os_str)))?
-	for test_file in ["scripts/tooling_tests.roc", "scripts/check_supply_chain.roc", "scripts/build_release_sbom.roc", "scripts/render_release_notes.roc"] {
+	for test_file in ["scripts/tooling_tests.roc", "scripts/check_supply_chain.roc", "scripts/render_release_notes.roc"] {
 		stable.run!(["test", test_file])?
 	}
 	app_files = Files.direct_files!("scripts")?.keep_if(|path| Path.ext(path).map_ok(Path.display) == Ok("roc"))
