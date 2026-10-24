@@ -1,6 +1,7 @@
 (
+	(fetched ())
 	(format (
-		(major 1)
+		(major 2)
 		(minor 0)))
 	(hints ((
 		(provider "nix")
@@ -9,12 +10,12 @@
 			(value (Attrs ((
 				(name "inputs")
 				(value (Attrs ((
-					(name "default")
+					(name "nix")
 					(value (Attrs ((
 						(name "ref")
 						(value (Str "github:NixOS/nixpkgs/nixos-unstable"))) (
 						(name "kind")
-						(value (Str "auto"))) (
+						(value (Str "packages"))) (
 						(name "flake")
 						(value (Bool true))))))) (
 					(name "roc")
@@ -32,55 +33,7 @@
 						(name "kind")
 						(value (Str "overlay"))) (
 						(name "flake")
-						(value (Bool true))))))) (
-					(name "roc-AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH")
-					(value (Attrs ((
-						(name "ref")
-						(value (Str "tarball+https://github.com/roc-lang/basic-cli/releases/download/0.24.0/AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH.tar.zst"))) (
-						(name "kind")
-						(value (Str "source"))) (
-						(name "flake")
-						(value (Bool false))))))) (
-					(name "roc-6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS")
-					(value (Attrs ((
-						(name "ref")
-						(value (Str "tarball+https://github.com/roc-lang/http/releases/download/1.0.0/6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS.tar.zst"))) (
-						(name "kind")
-						(value (Str "source"))) (
-						(name "flake")
-						(value (Bool false))))))) (
-					(name "roc-5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H")
-					(value (Attrs ((
-						(name "ref")
-						(value (Str "tarball+https://github.com/Hasnep/roc-ascii/releases/download/v0.5.0/5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H.tar.zst"))) (
-						(name "kind")
-						(value (Str "source"))) (
-						(name "flake")
-						(value (Bool false))))))) (
-					(name "roc-JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL")
-					(value (Attrs ((
-						(name "ref")
-						(value (Str "tarball+https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst"))) (
-						(name "kind")
-						(value (Str "source"))) (
-						(name "flake")
-						(value (Bool false))))))) (
-					(name "roc-7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE")
-					(value (Attrs ((
-						(name "ref")
-						(value (Str "tarball+https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst"))) (
-						(name "kind")
-						(value (Str "source"))) (
-						(name "flake")
-						(value (Bool false))))))) (
-					(name "roc-7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77")
-					(value (Attrs ((
-						(name "ref")
-						(value (Str "tarball+https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst"))) (
-						(name "kind")
-						(value (Str "source"))) (
-						(name "flake")
-						(value (Bool false))))))))))) (
+						(value (Bool true))))))))))) (
 				(name "overlays")
 				(value (Attrs ((
 					(name "dev")
@@ -93,32 +46,6 @@
 				(value (Int 7))) (
 				(name "nodes")
 				(value (Attrs ((
-					(name "default")
-					(value (Attrs ((
-						(name "locked")
-						(value (Attrs ((
-							(name "lastModified")
-							(value (Int 1791594108))) (
-							(name "narHash")
-							(value (Str "sha256-XK4KceonkwD8LuMAt/vNrz982mXJM5jeHAxMwsUXXAQ="))) (
-							(name "owner")
-							(value (Str "NixOS"))) (
-							(name "repo")
-							(value (Str "nixpkgs"))) (
-							(name "rev")
-							(value (Str "6510408d147d8c5e6d76043e899e9251756f6a75"))) (
-							(name "type")
-							(value (Str "github"))))))) (
-						(name "original")
-						(value (Attrs ((
-							(name "owner")
-							(value (Str "NixOS"))) (
-							(name "ref")
-							(value (Str "nixos-unstable"))) (
-							(name "repo")
-							(value (Str "nixpkgs"))) (
-							(name "type")
-							(value (Str "github"))))))))))) (
 					(name "flake-compat")
 					(value (Attrs ((
 						(name "flake")
@@ -143,6 +70,32 @@
 							(value (Str "edolstra"))) (
 							(name "repo")
 							(value (Str "flake-compat"))) (
+							(name "type")
+							(value (Str "github"))))))))))) (
+					(name "nix")
+					(value (Attrs ((
+						(name "locked")
+						(value (Attrs ((
+							(name "lastModified")
+							(value (Int 1792502884))) (
+							(name "narHash")
+							(value (Str "sha256-IoNisKcGbUjdd45qCqywGMCYmZ5EnkxezvLII0FWwNA="))) (
+							(name "owner")
+							(value (Str "NixOS"))) (
+							(name "repo")
+							(value (Str "nixpkgs"))) (
+							(name "rev")
+							(value (Str "02c087f3fe673c9e317f206a627cb6b910336dbe"))) (
+							(name "type")
+							(value (Str "github"))))))) (
+						(name "original")
+						(value (Attrs ((
+							(name "owner")
+							(value (Str "NixOS"))) (
+							(name "ref")
+							(value (Str "nixos-unstable"))) (
+							(name "repo")
+							(value (Str "nixpkgs"))) (
 							(name "type")
 							(value (Str "github"))))))))))) (
 					(name "nixpkgs")
@@ -234,15 +187,15 @@
 						(name "locked")
 						(value (Attrs ((
 							(name "lastModified")
-							(value (Int 1791556879))) (
+							(value (Int 1792802216))) (
 							(name "narHash")
-							(value (Str "sha256-D74X1VEVoGe6iYKqGRtHdOYhu+YQQQ5eDJ22bA+Ej4k="))) (
+							(value (Str "sha256-nTt03FD5Aks79B0vcFoiHkLlD+ylTUzKLoIdxQ/3Kmo="))) (
 							(name "owner")
 							(value (Str "roc-lang"))) (
 							(name "repo")
 							(value (Str "roc-overlay"))) (
 							(name "rev")
-							(value (Str "57595f4dff90d2923f3cbbb79f17595b24cad496"))) (
+							(value (Str "d0ad2328b1d81e2f6dcfcdf1fc800d9e74838a4d"))) (
 							(name "type")
 							(value (Str "github"))))))) (
 						(name "original")
@@ -253,136 +206,16 @@
 							(value (Str "roc-overlay"))) (
 							(name "type")
 							(value (Str "github"))))))))))) (
-					(name "roc-5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H")
-					(value (Attrs ((
-						(name "flake")
-						(value (Bool false))) (
-						(name "locked")
-						(value (Attrs ((
-							(name "narHash")
-							(value (Str "sha256-ZhAVyf40HPs0rtcrbxvF5eTHloWwzOCHLBJJ/cxgMJk="))) (
-							(name "type")
-							(value (Str "tarball"))) (
-							(name "url")
-							(value (Str "https://github.com/Hasnep/roc-ascii/releases/download/v0.5.0/5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H.tar.zst"))))))) (
-						(name "original")
-						(value (Attrs ((
-							(name "type")
-							(value (Str "tarball"))) (
-							(name "url")
-							(value (Str "https://github.com/Hasnep/roc-ascii/releases/download/v0.5.0/5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H.tar.zst"))))))))))) (
-					(name "roc-6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS")
-					(value (Attrs ((
-						(name "flake")
-						(value (Bool false))) (
-						(name "locked")
-						(value (Attrs ((
-							(name "narHash")
-							(value (Str "sha256-JZ1ERznubCzWCbZsxPdnibkKTaP87W9zIlzeRedh83M="))) (
-							(name "type")
-							(value (Str "tarball"))) (
-							(name "url")
-							(value (Str "https://github.com/roc-lang/http/releases/download/1.0.0/6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS.tar.zst"))))))) (
-						(name "original")
-						(value (Attrs ((
-							(name "type")
-							(value (Str "tarball"))) (
-							(name "url")
-							(value (Str "https://github.com/roc-lang/http/releases/download/1.0.0/6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS.tar.zst"))))))))))) (
-					(name "roc-7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE")
-					(value (Attrs ((
-						(name "flake")
-						(value (Bool false))) (
-						(name "locked")
-						(value (Attrs ((
-							(name "narHash")
-							(value (Str "sha256-bt1dE7jIcS3Ctnh+FhgxDXi4vVz2lnmHY8xHoIuiKFg="))) (
-							(name "type")
-							(value (Str "tarball"))) (
-							(name "url")
-							(value (Str "https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst"))))))) (
-						(name "original")
-						(value (Attrs ((
-							(name "type")
-							(value (Str "tarball"))) (
-							(name "url")
-							(value (Str "https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst"))))))))))) (
-					(name "roc-7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77")
-					(value (Attrs ((
-						(name "flake")
-						(value (Bool false))) (
-						(name "locked")
-						(value (Attrs ((
-							(name "narHash")
-							(value (Str "sha256-0p1wPxz3ab3yRlSw5d7YGpciiw+b9W2+CFcQNBPgeEE="))) (
-							(name "type")
-							(value (Str "tarball"))) (
-							(name "url")
-							(value (Str "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst"))))))) (
-						(name "original")
-						(value (Attrs ((
-							(name "type")
-							(value (Str "tarball"))) (
-							(name "url")
-							(value (Str "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst"))))))))))) (
-					(name "roc-AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH")
-					(value (Attrs ((
-						(name "flake")
-						(value (Bool false))) (
-						(name "locked")
-						(value (Attrs ((
-							(name "narHash")
-							(value (Str "sha256-1nUCET+ivhqMeByYOq+q999iZibZPczFUIwRpQqe5IY="))) (
-							(name "type")
-							(value (Str "tarball"))) (
-							(name "url")
-							(value (Str "https://github.com/roc-lang/basic-cli/releases/download/0.24.0/AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH.tar.zst"))))))) (
-						(name "original")
-						(value (Attrs ((
-							(name "type")
-							(value (Str "tarball"))) (
-							(name "url")
-							(value (Str "https://github.com/roc-lang/basic-cli/releases/download/0.24.0/AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH.tar.zst"))))))))))) (
-					(name "roc-JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL")
-					(value (Attrs ((
-						(name "flake")
-						(value (Bool false))) (
-						(name "locked")
-						(value (Attrs ((
-							(name "narHash")
-							(value (Str "sha256-tuGrp6/LsqIOFGAafwcNbw9sdUdGtIQsvK7C9CIsi0o="))) (
-							(name "type")
-							(value (Str "tarball"))) (
-							(name "url")
-							(value (Str "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst"))))))) (
-						(name "original")
-						(value (Attrs ((
-							(name "type")
-							(value (Str "tarball"))) (
-							(name "url")
-							(value (Str "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst"))))))))))) (
 					(name "root")
 					(value (Attrs ((
 						(name "inputs")
 						(value (Attrs ((
-							(name "default")
-							(value (Str "default"))) (
+							(name "nix")
+							(value (Str "nix"))) (
 							(name "nixpkgs")
-							(value (List ((Str "default"))))) (
+							(value (List ((Str "nix"))))) (
 							(name "roc")
 							(value (Str "roc"))) (
-							(name "roc-5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H")
-							(value (Str "roc-5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H"))) (
-							(name "roc-6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS")
-							(value (Str "roc-6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS"))) (
-							(name "roc-7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE")
-							(value (Str "roc-7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE"))) (
-							(name "roc-7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77")
-							(value (Str "roc-7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77"))) (
-							(name "roc-AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH")
-							(value (Str "roc-AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH"))) (
-							(name "roc-JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL")
-							(value (Str "roc-JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL"))) (
 							(name "zig")
 							(value (Str "zig"))))))))))) (
 					(name "systems")
@@ -424,15 +257,15 @@
 						(name "locked")
 						(value (Attrs ((
 							(name "lastModified")
-							(value (Int 1791635236))) (
+							(value (Int 1792758376))) (
 							(name "narHash")
-							(value (Str "sha256-AnEn78XeUUzBKISAhdyD462id4QP7gkn3kbIi9ZB9Pw="))) (
+							(value (Str "sha256-WhPPEYn8nHSjjjZoATv4v0lTIcsgoBHfJNflCMzB/og="))) (
 							(name "owner")
 							(value (Str "mitchellh"))) (
 							(name "repo")
 							(value (Str "zig-overlay"))) (
 							(name "rev")
-							(value (Str "f0acd78ef01f2d5e3471cc01b08022ab4e665898"))) (
+							(value (Str "8a73811153506e6657e8bba1d5727fa12d04a760"))) (
 							(name "type")
 							(value (Str "github"))))))) (
 						(name "original")
@@ -444,75 +277,37 @@
 							(name "type")
 							(value (Str "github")))))))))))))))))))))))))
 	(intent (
-		(build_sources ((
-			(name "roc-5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H")
-			(ref "tarball+https://github.com/Hasnep/roc-ascii/releases/download/v0.5.0/5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H.tar.zst")) (
-			(name "roc-6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS")
-			(ref "tarball+https://github.com/roc-lang/http/releases/download/1.0.0/6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS.tar.zst")) (
-			(name "roc-7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE")
-			(ref "tarball+https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst")) (
-			(name "roc-7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77")
-			(ref "tarball+https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst")) (
-			(name "roc-AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH")
-			(ref "tarball+https://github.com/roc-lang/basic-cli/releases/download/0.24.0/AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH.tar.zst")) (
-			(name "roc-JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL")
-			(ref "tarball+https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst"))))
+		(build_sources ())
 		(inputs ((
-			(kind Overlay)
 			(name "roc")
 			(url "github:roc-lang/roc-overlay")) (
-			(kind Overlay)
 			(name "zig")
 			(url "github:mitchellh/zig-overlay"))))
 		(overlays ((
 			(environment "dev")
 			(overlays ("roc" "zig")))))
+		(resolvers ((
+			(inputs ("roc" "zig"))
+			(provider "nix"))))
 		(sources ((
-			(name "default")
-			(provider Auto))))))
+			(name "nix")
+			(provider (
+				(name "nix")
+				(ref "github:NixOS/nixpkgs/nixos-unstable")
+				(version 1))))))))
 	(sources ((
-		(digest "sha256:5cae0a71ea279300fc2ee300b7fbcdaf3f7cda65c93398de1c0c4cc2c5175c04")
-		(name "default")
+		(digest "sha256:228362b0a7066d48dd778e6a0aacb018c098999e449e4c5ecef2c8234156c0d0")
+		(name "nix")
 		(provider "nix")
 		(ref "github:NixOS/nixpkgs/nixos-unstable")
-		(rev "6510408d147d8c5e6d76043e899e9251756f6a75")) (
-		(digest "sha256:0fbe17d55115a067ba8982aa191b4774e621bbe610410e5e0c9db66c0f848f89")
+		(rev "02c087f3fe673c9e317f206a627cb6b910336dbe")) (
+		(digest "sha256:9d3b74dc50f9024b3bf41d2f705a221e42e50feca54d4cca2e821dc50ff72a6a")
 		(name "roc")
 		(provider "nix")
 		(ref "github:roc-lang/roc-overlay")
-		(rev "57595f4dff90d2923f3cbbb79f17595b24cad496")) (
-		(digest "sha256:027127efc5de514cc128848085dc83e3ada277840fee0927de46c88bd641f4fc")
+		(rev "d0ad2328b1d81e2f6dcfcdf1fc800d9e74838a4d")) (
+		(digest "sha256:5a13cf1189fc9c74a38e3668013bf8bf495321cb20a011df24d7e508ccc1fe88")
 		(name "zig")
 		(provider "nix")
 		(ref "github:mitchellh/zig-overlay")
-		(rev "f0acd78ef01f2d5e3471cc01b08022ab4e665898")) (
-		(digest "sha256:d67502113fa2be1a8c781c983aafaaf7df626626d93dccc5508c11a50a9ee486")
-		(name "roc-AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH")
-		(provider "nix")
-		(ref "tarball+https://github.com/roc-lang/basic-cli/releases/download/0.24.0/AEjfyaMFFbh8FJrkkHJy68riVNPr3Qp6c6PawWQjBwMH.tar.zst")
-		(rev "")) (
-		(digest "sha256:259d444739ee6c2cd609b66cc4f76789b90a4da3fced6f73225cde45e761f373")
-		(name "roc-6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS")
-		(provider "nix")
-		(ref "tarball+https://github.com/roc-lang/http/releases/download/1.0.0/6ZUwqYhCS8PU9Mo6MF7oV82ET2o7KYb57CLKDq4cq4sS.tar.zst")
-		(rev "")) (
-		(digest "sha256:661015c9fe341cfb34aed72b6f1bc5e5e4c79685b0cce0872c1249fdcc603099")
-		(name "roc-5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H")
-		(provider "nix")
-		(ref "tarball+https://github.com/Hasnep/roc-ascii/releases/download/v0.5.0/5WxqRf15XVko4HxVq5dW8r84s95CxrtvzrjZYwbg9Z3H.tar.zst")
-		(rev "")) (
-		(digest "sha256:b6e1aba7afcbb2a20e14601a7f070d6f0f6c754746b4842cbcaec2f4222c8b4a")
-		(name "roc-JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL")
-		(provider "nix")
-		(ref "tarball+https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst")
-		(rev "")) (
-		(digest "sha256:6edd5d13b8c8712dc2b6787e1618310d78b8bd5cf696798763cc47a08ba22858")
-		(name "roc-7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE")
-		(provider "nix")
-		(ref "tarball+https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst")
-		(rev "")) (
-		(digest "sha256:d29d703f1cf769bdf24654b0e5ded81a97228b0f9bf56dbe0857103413e07841")
-		(name "roc-7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77")
-		(provider "nix")
-		(ref "tarball+https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst")
-		(rev "")))))
+		(rev "8a73811153506e6657e8bba1d5727fa12d04a760")))))

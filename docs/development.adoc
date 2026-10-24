@@ -78,9 +78,11 @@ Change the tooling compiler:: Change the tag in `Command("roc-stable", ...)` in
 `Blueprint.roc` and the `roc` field of every script to the same tag. The check
 script fails until they match. Run `blueprint update roc` if the locked overlay
 predates that nightly.
-Upgrade Blueprint:: Change the platform URL in the `Blueprint.roc` header and,
-in every workflow, the `version` and SHA-256 values passed to
-`actions/setup-blueprint`, taken from that release's `blueprint.sha256`.
+Upgrade Blueprint:: Change the platform URL in the `Blueprint.roc` header, run
+`blueprint check` and then a full `blueprint update`, and review the new lock.
+No workflow names the version: `actions/setup-blueprint` reads it from
+`Blueprint.roc` and verifies the binary against the checksums roc-automation
+records, so a release it does not record yet needs that action repinned first.
 Update a script dependency:: Change the release URL in each script header and
 under `RocPackages` in `Blueprint.roc`, adding any new dependency of that
 dependency (`roc-stable deps scripts/check_all.roc` lists them), then run

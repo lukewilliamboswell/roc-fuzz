@@ -9,17 +9,18 @@
 # release named below; it runs the scripts under scripts/. The platform and its
 # targets are checked, built and run with whatever `roc` is on PATH, which is
 # meant to be the latest nightly, so nothing here provides a bare `roc`.
-app [config] { pf: platform "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.4.1/3Cev8eY9VdEbPazJcBUnsjNnUgdauMod46Q25uKodLUe.tar.zst" }
+app [config] { pf: platform "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.8.0/FbJymjYdCxx9vqMcau7r4tQfeAbnVGqqJoYrLGqPCqKu.tar.zst" }
 
 config = [
 	Name("roc-fuzz"),
-	Overlay("roc", "github:roc-lang/roc-overlay"),
-	Overlay("zig", "github:mitchellh/zig-overlay"),
+	Packages("nix", From(NixPackages("github:NixOS/nixpkgs/nixos-unstable"))),
+	Input("roc", "github:roc-lang/roc-overlay"),
+	Input("zig", "github:mitchellh/zig-overlay"),
 	Environment(
 		"dev",
 		[
 			Overlays(["roc", "zig"]),
-			Command("roc-stable", "rocpkgs.nightly-2026-09-29-7f11a82"),
+			Command("roc-stable", "nix#rocpkgs.nightly-2026-09-29-7f11a82"),
 			# Every bundle the scripts depend on, including dependencies of
 			# dependencies: `roc-stable deps scripts/check_all.roc` lists them.
 			RocPackages([
@@ -33,7 +34,7 @@ config = [
 			# Programs the scripts and workflows start. Zig is the exact
 			# release that builds the host and its linker inputs, taken from
 			# zig-overlay; scripts/native-deps.json names the same version.
-			Tools(["coreutils", "gh", "git", "jq", "unzip", "zip", "zigpkgs.\"0.16.0\""]),
+			Tools(["nix#coreutils", "nix#gh", "nix#git", "nix#jq", "nix#unzip", "nix#zip", "nix#zigpkgs.\"0.16.0\""]),
 		],
 	),
 	Shell("default", [Use("dev")]),
