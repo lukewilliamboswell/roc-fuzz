@@ -75,9 +75,9 @@ main! = |raw_args| {
 			match cli_options.platform_url {
 				Ok(url) => {
 					local = prepare_platform_tests!(work, selected, url.to_str(), suite_root)?
-					run_operation!(cli_options.operation, cli_options.max_total_time, cli_options.verbose, roc, local, work)
+					run_operation!(cli_options.operation, cli_options.max_total_time, cli_options.verbose, cli_options.campaign_dir, roc, local, work)
 				}
-				Err(NoValue) => run_operation!(cli_options.operation, cli_options.max_total_time, cli_options.verbose, roc, selected.map(|item| rebase(item, Path.join(suite_root, Path.display(item.path)))), work)
+				Err(NoValue) => run_operation!(cli_options.operation, cli_options.max_total_time, cli_options.verbose, cli_options.campaign_dir, roc, selected.map(|item| rebase(item, Path.join(suite_root, Path.display(item.path)))), work)
 			}
 		},
 	)
@@ -92,6 +92,7 @@ cli_parser = Cli.assert_valid(
 			platform_url: Opt.maybe({ short: "", long: "platform-url", help: "Rewrite copied examples to use this platform bundle URL.", type: "url", parser: parse_url }),
 			selected: Opt.str_list({ short: "", long: "target", help: "Target name to run; repeat for multiple targets." }),
 			verbose: Opt.flag({ short: "v", long: "verbose", help: "Print commands and runner statistics." }),
+			campaign_dir: Opt.maybe({ short: "", long: "campaign-dir", help: "Keep each fuzz target's corpus in DIR/corpus/NAME and its failures in DIR/failures/NAME across runs, and fuzz every target before reporting the ones that failed.", type: "path", parser: CliValues.path }),
 		}.Cli,
 		{
 			name: "test-targets",
@@ -173,19 +174,19 @@ prepare_platform_tests! = |temporary, selected, url, suite_root| {
 	Ok(selected.map(|item| rebase(item, Path.join(temporary, Path.display(item.path)))))
 }
 
-run_operation! = |operation, max_total_time, verbose, roc, selected, work|
+run_operation! = |operation, max_total_time, verbose, campaign, roc, selected, work|
 	match operation {
 		Check => check_targets!(roc, selected)
 		Test => test_targets!(roc, selected)
 		Build => build_targets!(roc, selected, work).map_ok(|_| {})
 		Seed => replay_seeds!(build_targets!(roc, selected, work)?, work)
-		Fuzz => fuzz_targets!(build_targets!(roc, selected, work)?, max_total_time, verbose, work)
+		Fuzz => fuzz_targets!(build_targets!(roc, selected, work)?, max_total_time, verbose, campaign, work)
 		All => {
 			check_targets!(roc, selected)?
 			test_targets!(roc, selected)?
 			executables = build_targets!(roc, selected, work)?
 			replay_seeds!(executables, work)?
-			fuzz_targets!(executables, max_total_time, verbose, work)
+			fuzz_targets!(executables, max_total_time, verbose, campaign, work)
 		}
 	}
 
@@ -238,16 +239,36 @@ replay_seeds! = |executables, work| {
 	Ok({})
 }
 
-fuzz_targets! = |executables, seconds, verbose, work| {
+## Fuzz each target for `seconds`. In a campaign the corpus outlives the run,
+## each failure's input is kept, and one target's failure does not stop the rest.
+fuzz_targets! = |executables, seconds, verbose, campaign, work| {
+	root = match campaign {
+		Ok(directory) => Path.absolute!(directory)?
+		Err(NoValue) => work
+	}
+	var $failed = []
 	for (item, executable) in executables {
 		if !item.skip_fuzz {
-			_ = seed_path!(item, work)?
-			base_args = ["run", Path.to_os_str(Path.join(Path.join(work, "corpus"), item.name)), OsStr.from_str("--time=${seconds.to_str()}")]
+			_ = seed_path!(item, root)?
+			base_args = ["run", Path.to_os_str(Path.join(Path.join(root, "corpus"), item.name)), OsStr.from_str("--time=${seconds.to_str()}")]
 			args = if (verbose) base_args.append("--print-final-stats") else base_args
-			run_expectation!(item, executable, args)?
+			match campaign {
+				Ok(_) => {
+					failures = Path.join(Path.join(root, "failures"), item.name)
+					Path.create_all!(failures)?
+					match run_expectation!(item, executable, args.append(OsStr.from_str("--artifact-dir=${Path.display(failures)}"))) {
+						Ok({}) => {}
+						Err(err) => {
+							Script.warn!("${item.name} failed: ${Str.inspect(err)}")?
+							$failed = $failed.append(item.name)
+						}
+					}
+				}
+				Err(NoValue) => run_expectation!(item, executable, args)?
+			}
 		}
 	}
-	Ok({})
+	if ($failed.is_empty()) Ok({}) else Err(CampaignTargetsFailed($failed))
 }
 
 run_expectation! = |item, executable, args| {

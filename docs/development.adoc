@@ -372,7 +372,7 @@ A file under `trophy-case/repros/` that can run is a case in
 compiler once panicked on; `blueprint run check` requires `roc check` to report
 it.
 
-Three workflows each answer one question:
+Four workflows each answer one question:
 
 `ci.yml`:: Does this change work with today's compiler? One job runs
 `blueprint run check` and audits the API reference. One job regenerates the
@@ -387,6 +387,15 @@ the SBOM, the documentation archive and the release notes, and tests the
 archive against the bundle on both targets. `Release required` aggregates it.
 `nightly.yml`:: Does the latest release still work with today's compiler? It
 runs daily; see <<release-bundle>>.
+`fuzz.yml`:: Has today's compiler broken a builtin? Once a day, and only on
+`trunk`, it fuzzes every builtin target in `tests/targets.json` on the latest
+nightly for a few seconds each, about ten minutes in all. It runs
+`blueprint run test-targets -- --operation fuzz --campaign-dir DIR`. The corpus
+under `DIR/corpus/` carries over between runs through the Actions cache. Each
+target's failing inputs are kept under `DIR/failures/` and uploaded as the
+`fuzz-failures` artifact. Every target runs before the job fails. Reproduce a
+failure with the target's `replay` command and the kept input, then report it
+upstream if it is the compiler's.
 
 A new nightly can fail an untouched pull request. Compare with the latest
 `Nightly compatibility` run and with `trunk` before treating a failure as a
@@ -406,7 +415,8 @@ execute directly with the fixed tooling compiler; compilation errors, warnings,
 and application failures retain their normal Roc exit status.
 
 Use `--suite-root PATH` to run an unpacked examples archive containing `examples/` and
-`tests/targets.json`. Each invocation has fresh temporary executables and corpora.
+`tests/targets.json`. Each invocation has fresh temporary executables and, unless
+`--campaign-dir` names a directory to keep them in, fresh corpora.
 Fuzz smoke tests pass corpus directories to libFuzzer; passing an individual seed
 file would only replay it. Repository formatting is checked separately, not against
 an older release's frozen source.
