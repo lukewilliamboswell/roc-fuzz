@@ -179,13 +179,18 @@ run_operation! = |operation, max_total_time, verbose, campaign, roc, selected, w
 		Check => check_targets!(roc, selected)
 		Test => test_targets!(roc, selected)
 		Build => build_targets!(roc, selected, work).map_ok(|_| {})
-		Seed => replay_seeds!(build_targets!(roc, selected, work)?, work)
+		Seed => {
+			executables = build_targets!(roc, selected, work)?
+			replay_seeds!(executables, work)?
+			measure_seeds!(roc, executables, work)
+		}
 		Fuzz => fuzz_targets!(build_targets!(roc, selected, work)?, max_total_time, verbose, campaign, work)
 		All => {
 			check_targets!(roc, selected)?
 			test_targets!(roc, selected)?
 			executables = build_targets!(roc, selected, work)?
 			replay_seeds!(executables, work)?
+			measure_seeds!(roc, executables, work)?
 			fuzz_targets!(executables, max_total_time, verbose, campaign, work)
 		}
 	}
@@ -234,6 +239,50 @@ replay_seeds! = |executables, work| {
 			seed = seed_path!(item, work)?
 			Script.command(Path.to_os_str(executable)).run!(["show", Path.to_os_str(seed)])?
 			run_expectation!(item, executable, ["replay", Path.to_os_str(seed)])?
+		}
+	}
+	Ok({})
+}
+
+## The start of every line `measure` prints. A reader checks the version
+## before it trusts the fields.
+report_prefix = "{\"format\":\"roc-fuzz-allocs/1\","
+
+## Run each seed under `measure`, in an empty directory. It must exit 0 and
+## print nothing but report lines, or fail for a case that is expected to
+## fail, and it must not create `.roc-fuzz/` there as libFuzzer's commands do. A target that reports must
+## report the same counts from a build without `--fuzz`, and `replay` must not
+## print its reports.
+measure_seeds! = |roc, executables, work| {
+	for (item, executable) in executables {
+		if !item.skip_seed {
+			seed = seed_path!(item, work)?
+			directory = Path.join(Path.join(work, "measure"), item.name)
+			Path.create_all!(directory)?
+			Script.info!("MEASURE", item.name)?
+			measured = Script.command(Path.to_os_str(executable)).capture!(["measure", Path.to_os_str(seed)], directory, [])
+			Script.require!(!Path.exists!(Path.join(directory, ".roc-fuzz"))?, "measure created .roc-fuzz/ for ${item.name}")?
+			match (item.expected_failure, measured) {
+				(True, Err(CommandExited(code))) if code != 0 => {}
+				(True, other) => return Err(ExpectedMeasureFailure(item.name, Str.inspect(other)))
+				(False, Err(err)) => return Err(err)
+				(False, Ok(stdout)) => {
+					reports = Str.from_utf8_lossy(stdout).split_on("\n").keep_if(|line| !line.is_empty())
+					for line in reports {
+						Script.require!(Script.starts_with(line, report_prefix), "measure printed something other than a report for ${item.name}: ${line}")?
+					}
+					if !reports.is_empty() {
+						Script.info!("REPORTS", "${item.name}: ${reports.len().to_str()}")?
+						replayed = Script.command(Path.to_os_str(executable)).capture!(["replay", Path.to_os_str(seed)], directory, [])?
+						Script.require!(!Str.from_utf8_lossy(replayed).contains(report_prefix), "replay printed reports for ${item.name}")?
+						plain = Path.join(Path.join(work, "plain"), item.name)
+						Path.create_all!(Path.join(work, "plain"))?
+						run_allow_pin_warning!(roc, ["build", Path.to_os_str(item.path), OsStr.from_str("--output=${Path.display(plain)}")])?
+						from_plain = Script.command(Path.to_os_str(plain)).capture!(["measure", Path.to_os_str(seed)], directory, [])?
+						Script.require!(from_plain == stdout, "${item.name} reports different counts when built without --fuzz")?
+					}
+				}
+			}
 		}
 	}
 	Ok({})

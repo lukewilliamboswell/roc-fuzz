@@ -14,7 +14,11 @@ platform "roc-fuzz"
 	}
 	hosted {
 		"roc_fuzz_alloc_count": Fuzz.alloc_count!,
+		"roc_fuzz_dealloc_count": Fuzz.dealloc_count!,
 		"roc_fuzz_live_alloc_count": Fuzz.live_alloc_count!,
+		"roc_fuzz_realloc_count": Fuzz.realloc_count!,
+		"roc_fuzz_report_alloc_counts": Fuzz.report_alloc_counts!,
+		"roc_fuzz_requested_bytes": Fuzz.requested_bytes!,
 	}
 	targets: {
 		inputs_dir: "targets/",

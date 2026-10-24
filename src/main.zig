@@ -32,6 +32,8 @@ var current_input_len: usize = 0;
 var friendly_run_active = false;
 var leak_detection_enabled = true;
 var artifact_directory: []const u8 = ".roc-fuzz";
+/// Set by `TARGET measure`, the only mode that prints allocation reports.
+var measure_active = false;
 
 /// The Roc ABI requires an allocation to succeed or not return. A request the
 /// allocator cannot serve ends the run the way a crash does, so the input that
@@ -101,8 +103,17 @@ fn allocImpl(length: usize, alignment: usize) ?*anyopaque {
 /// number of allocations still outstanding: a realloc replaces one block with
 /// another and so leaves the balance unchanged, which is why the reallocation
 /// path frees through the uncounted `deallocImpl` rather than `roc_dealloc`.
+///
+/// `g_realloc_count` and `g_dealloc_count` count `roc_realloc` and
+/// `roc_dealloc` calls alone, so `g_alloc_count - g_realloc_count` is the
+/// number of `roc_alloc` calls. `g_requested_bytes` adds each allocation's
+/// length and each reallocation's full new length, saturating rather than
+/// wrapping. Only served requests are counted: one that fails ends the run.
 var g_alloc_count: u64 = 0;
 var g_live_alloc_count: u64 = 0;
+var g_realloc_count: u64 = 0;
+var g_dealloc_count: u64 = 0;
+var g_requested_bytes: u64 = 0;
 
 fn deallocImpl(ptr: *anyopaque, alignment: usize) void {
     const header_len = @max(alignment, @alignOf(usize));
@@ -114,12 +125,14 @@ pub export fn roc_alloc(length: usize, alignment: usize) callconv(.c) ?*anyopaqu
     if (ptr != null) {
         g_alloc_count += 1;
         g_live_alloc_count += 1;
+        g_requested_bytes +|= length;
     }
     return ptr;
 }
 
 pub export fn roc_dealloc(ptr: *anyopaque, alignment: usize) callconv(.c) void {
     if (g_live_alloc_count > 0) g_live_alloc_count -= 1;
+    g_dealloc_count += 1;
     deallocImpl(ptr, alignment);
 }
 
@@ -129,6 +142,8 @@ pub export fn roc_realloc(ptr: *anyopaque, new_length: usize, alignment: usize) 
     const old_length = old_size_ptr.* - header_len;
     const new_ptr = allocImpl(new_length, alignment) orelse return null;
     g_alloc_count += 1;
+    g_realloc_count += 1;
+    g_requested_bytes +|= new_length;
     const copy_len = @min(old_length, new_length);
     @memcpy(@as([*]u8, @ptrCast(new_ptr))[0..copy_len], @as([*]const u8, @ptrCast(ptr))[0..copy_len]);
     deallocImpl(ptr, alignment);
@@ -146,9 +161,77 @@ fn hostedLiveAllocCount() callconv(.c) u64 {
     return g_live_alloc_count;
 }
 
+/// Fuzz.realloc_count! (hosted): () => U64.
+fn hostedReallocCount() callconv(.c) u64 {
+    return g_realloc_count;
+}
+
+/// Fuzz.dealloc_count! (hosted): () => U64.
+fn hostedDeallocCount() callconv(.c) u64 {
+    return g_dealloc_count;
+}
+
+/// Fuzz.requested_bytes! (hosted): () => U64.
+fn hostedRequestedBytes() callconv(.c) u64 {
+    return g_requested_bytes;
+}
+
+/// The version a reader checks before it trusts a report line's fields.
+const alloc_report_format = "roc-fuzz-allocs/1";
+
+/// Fuzz.report_alloc_counts! (hosted): Str, AllocCounts => {}. Under
+/// `measure` it prints one JSON line; otherwise it only releases the label.
+/// Formatting uses a stack buffer, never the Roc allocator, and the label is
+/// released after the line is written.
+fn hostedReportAllocCounts(label: abi.RocStr, counts: abi.FuzzReport_alloc_countsArg1) callconv(.c) void {
+    defer label.decref(&roc_host);
+    if (!measure_active) return;
+    var buffer: [256]u8 = undefined;
+    var used: usize = 0;
+    const head = "{\"format\":\"" ++ alloc_report_format ++ "\",\"label\":\"";
+    bufferedWrite(&buffer, &used, head);
+    for (label.asSlice()) |byte| {
+        switch (byte) {
+            '"' => bufferedWrite(&buffer, &used, "\\\""),
+            '\\' => bufferedWrite(&buffer, &used, "\\\\"),
+            0...0x1f, 0x7f => {
+                const hex = "0123456789abcdef";
+                const escaped = [_]u8{ '\\', 'u', '0', '0', hex[byte >> 4], hex[byte & 0xf] };
+                bufferedWrite(&buffer, &used, &escaped);
+            },
+            else => bufferedWrite(&buffer, &used, &.{byte}),
+        }
+    }
+    var fields: [160]u8 = undefined;
+    const rest = std.fmt.bufPrint(
+        &fields,
+        "\",\"allocs\":{d},\"reallocs\":{d},\"deallocs\":{d},\"requested_bytes\":{d}}}\n",
+        .{ counts.allocs, counts.reallocs, counts.deallocs, counts.requested_bytes },
+    ) catch unreachable;
+    bufferedWrite(&buffer, &used, rest);
+    writeOut(buffer[0..used]);
+}
+
+/// Append `bytes` to a line being built in `buffer`, writing the buffer out
+/// whenever it fills, so a label of any length needs no allocation.
+fn bufferedWrite(buffer: []u8, used: *usize, bytes: []const u8) void {
+    for (bytes) |byte| {
+        if (used.* == buffer.len) {
+            writeOut(buffer[0..used.*]);
+            used.* = 0;
+        }
+        buffer[used.*] = byte;
+        used.* += 1;
+    }
+}
+
 comptime {
     @export(&hostedAllocCount, .{ .name = "roc_fuzz_alloc_count", .visibility = .hidden });
     @export(&hostedLiveAllocCount, .{ .name = "roc_fuzz_live_alloc_count", .visibility = .hidden });
+    @export(&hostedReallocCount, .{ .name = "roc_fuzz_realloc_count", .visibility = .hidden });
+    @export(&hostedDeallocCount, .{ .name = "roc_fuzz_dealloc_count", .visibility = .hidden });
+    @export(&hostedRequestedBytes, .{ .name = "roc_fuzz_requested_bytes", .visibility = .hidden });
+    @export(&hostedReportAllocCounts, .{ .name = "roc_fuzz_report_alloc_counts", .visibility = .hidden });
 }
 
 pub export fn roc_dbg(bytes: [*]const u8, len: usize) callconv(.c) void {
@@ -212,6 +295,9 @@ fn printFailureSuggestions() void {
 }
 
 fn finishRocFailure() noreturn {
+    // `measure` runs outside libFuzzer's driver, so a failure there is a plain
+    // non-zero exit for the harness to read.
+    if (measure_active) std.c._exit(1);
     if (friendly_run_active) {
         if (sanitizer_death_callback) |callback| {
             // libFuzzer owns artifact formatting and persistence. Its death
@@ -255,6 +341,24 @@ fn showCommand(path: [*:0]const u8) noreturn {
     std.c._exit(0);
 }
 
+/// Run the target once on INPUT, or on an empty input, outside libFuzzer's
+/// driver, so `Fuzz.report_allocs!` can print its lines. It creates no files.
+/// A crash, a failed `expect` or a leak exits 1.
+fn measureCommand(path: ?[*:0]const u8) noreturn {
+    var buffer: [max_input_len]u8 = undefined;
+    const input: []const u8 = if (path) |input_path| readFile(input_path, &buffer) orelse {
+        writeErr("could not read input\n");
+        std.c._exit(2);
+    } else &.{};
+    measure_active = true;
+    current_input_ptr = if (input.len == 0) null else input.ptr;
+    current_input_len = input.len;
+    const live_before = g_live_alloc_count;
+    _ = abi.roc_fuzz_run(makeInput(input));
+    if (g_live_alloc_count > live_before) reportLeak(g_live_alloc_count - live_before);
+    std.c._exit(0);
+}
+
 fn printHelp() void {
     writeOut("roc-fuzz: self-contained typed fuzz runner for ");
     printName();
@@ -265,6 +369,7 @@ fn printHelp() void {
         \\  TARGET ci REPORT_DIR [CORPUS] [OPTION...] supervise a run and write CI evidence
         \\  TARGET show INPUT                    render the generated typed value
         \\  TARGET replay INPUT                  run one saved input
+        \\  TARGET measure [INPUT]               run one input (empty if omitted) and print its allocation reports
         \\  TARGET minimize INPUT OUTPUT         minimize a reproducing failure
         \\  TARGET reduce-corpus INPUT OUTPUT    merge useful inputs into OUTPUT
         \\  TARGET raw [LIBFUZZER_ARG...]         use the native libFuzzer CLI
@@ -367,6 +472,13 @@ fn translateFriendlyArgs(argc: *c_int, argv_ptr: *[*][*:0]u8) void {
             std.c._exit(2);
         }
         showCommand(original[2]);
+    }
+    if (std.mem.eql(u8, command, "measure")) {
+        if (original_count > 3) {
+            writeErr("measure takes at most one input file\n");
+            std.c._exit(2);
+        }
+        measureCommand(if (original_count == 3) original[2] else null);
     }
     if (std.mem.eql(u8, command, "ci")) ciCommand(original_count, original);
 
