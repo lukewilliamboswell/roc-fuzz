@@ -1,0 +1,15 @@
+= roc-fuzz 0.4.5
+
+Published examples now use the shared roc-automation suite format. Each archive
+has one named root, an explicit specification, and seeds for replay and a
+one-second smoke run of every released example. The shared runner builds them
+with `roc build --fuzz`, checks stdout and exit codes, and retains libFuzzer's
+variable stderr as diagnostics. Existing flat examples archives remain readable
+by repository tooling. The platform API is unchanged.
+
+Use this platform dependency in an application header:
+
+[source,roc]
+----
+app [target] { fuzz: platform "{platform-url}" }
+----

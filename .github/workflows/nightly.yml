@@ -60,7 +60,7 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@fa6068e606c6541bb7200aa58dbc6516949a45c3 # fa6068e
         with:
           install-nix: 'true'
 
@@ -106,7 +106,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@fa6068e606c6541bb7200aa58dbc6516949a45c3 # fa6068e
         with:
           install-nix: 'true'
 
@@ -166,7 +166,7 @@ jobs:
       issues: write
     steps:
       - name: Open, update or close the tracking issue
-        uses: lukewilliamboswell/roc-automation/actions/nightly-report@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
+        uses: lukewilliamboswell/roc-automation/actions/nightly-report@fa6068e606c6541bb7200aa58dbc6516949a45c3 # fa6068e
         with:
           outcome: ${{ needs.test.result == 'success' && 'success' || (needs.test.outputs.ran == 'true' && 'failure' || 'setup-failure') }}
           nightly-tag: ${{ needs.select.outputs.nightly-tag }}
