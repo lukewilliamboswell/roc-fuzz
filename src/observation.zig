@@ -143,6 +143,7 @@ pub const Engine = struct {
     live_allocs: u64 = 0,
     live_bytes: u64 = 0,
     metric_valid: bool = true,
+    trace_rules_valid: bool = true,
     trace_rules_passed: bool = true,
     capture_complete: bool = true,
     /// Reducing this affects diagnostics only, never observation inventories
@@ -164,6 +165,7 @@ pub const Engine = struct {
         self.live_allocs = live_allocs;
         self.live_bytes = live_bytes;
         self.metric_valid = true;
+        self.trace_rules_valid = true;
         self.trace_rules_passed = true;
         self.capture_complete = true;
         self.totals = .{};
@@ -180,12 +182,23 @@ pub const Engine = struct {
         return err;
     }
 
+    fn failTrace(self: *Engine, err: Error) Error {
+        self.trace_rules_valid = false;
+        self.trace_rules_passed = false;
+        return err;
+    }
+
     fn add(self: *Engine, a: u64, b: u64) Error!u64 {
         return std.math.add(u64, a, b) catch self.fail(error.Overflow);
     }
 
     fn current(self: *Engine) Error!*Region {
         if (self.depth == 0) return self.fail(error.NoActiveScope);
+        return &self.regions[self.stack[self.depth - 1]];
+    }
+
+    fn traceCurrent(self: *Engine) Error!*Region {
+        if (self.depth == 0) return self.failTrace(error.NoActiveScope);
         return &self.regions[self.stack[self.depth - 1]];
     }
 
@@ -337,19 +350,19 @@ pub const Engine = struct {
     }
 
     pub fn mark(self: *Engine, label: []const u8) Error!void {
-        const region = try self.current();
-        if (label.len > max_name_bytes) return self.fail(error.NameTooLong);
+        const region = try self.traceCurrent();
+        if (label.len > max_name_bytes) return self.failTrace(error.NameTooLong);
         try self.event(label);
         try self.capture(.mark, region.id, label);
     }
 
     fn register(self: *Engine, kind: RuleKind, a: []const u8, b: []const u8, expected: u64) Error!void {
-        const region = try self.current();
-        if (region.event_count != 0) return self.fail(error.LateRule);
-        if (self.rule_count == max_rules) return self.fail(error.RuleCapacity);
-        if (kind == .before and std.mem.eql(u8, a, b)) return self.fail(error.InvalidRule);
-        const name_a = Name.init(a) catch |err| return self.fail(err);
-        const name_b = Name.init(b) catch |err| return self.fail(err);
+        const region = try self.traceCurrent();
+        if (region.event_count != 0) return self.failTrace(error.LateRule);
+        if (self.rule_count == max_rules) return self.failTrace(error.RuleCapacity);
+        if (kind == .before and std.mem.eql(u8, a, b)) return self.failTrace(error.InvalidRule);
+        const name_a = Name.init(a) catch |err| return self.failTrace(err);
+        const name_b = Name.init(b) catch |err| return self.failTrace(err);
         self.rules[self.rule_count] = .{ .scope_id = region.id, .kind = kind, .a = name_a, .b = name_b, .expected = expected };
         self.rule_count += 1;
     }
@@ -421,6 +434,7 @@ pub const Engine = struct {
             .format = trace_format,
             .metric_version = metric_version,
             .metric_valid = self.metric_valid,
+            .trace_rules_valid = self.trace_rules_valid,
             .trace_rules_passed = self.trace_rules_passed,
             .capture_complete = self.capture_complete,
             .complete = self.complete(),
@@ -709,4 +723,61 @@ test "names are owned and depth or label limits fail explicitly" {
     for (0..max_depth) |_| _ = try engine.start("nested");
     try std.testing.expectError(error.DepthCapacity, engine.start("too deep"));
     try std.testing.expect(!engine.metric_valid);
+}
+
+test "invalid trace declarations fail explicitly without invalidating allocation metrics" {
+    var engine: Engine = .{};
+    engine.reset(0, 0);
+    var scope = try engine.start("late rule");
+    try engine.alloc(17);
+    try engine.mark("first");
+    try std.testing.expectError(error.LateRule, engine.count("first", 1));
+    try std.testing.expect(engine.metric_valid);
+    try std.testing.expect(!engine.trace_rules_valid);
+    try std.testing.expect(!engine.trace_rules_passed);
+    const stats = try engine.finish(scope);
+    try std.testing.expectEqual(@as(u64, 1), stats.allocs);
+    try std.testing.expectEqual(@as(u64, 17), stats.requested_bytes);
+    engine.reset(0, 0);
+    scope = try engine.start("invalid rule");
+    try std.testing.expectError(error.InvalidRule, engine.before("same", "same"));
+    try std.testing.expect(engine.metric_valid);
+    try std.testing.expect(!engine.trace_rules_valid);
+    _ = try engine.finish(scope);
+    engine.reset(0, 0);
+    _ = try engine.start("too many rules");
+    for (0..max_rules) |_| try engine.count("event", 0);
+    try std.testing.expectError(error.RuleCapacity, engine.forbidden("extra"));
+    try std.testing.expect(engine.metric_valid);
+    try std.testing.expect(!engine.trace_rules_valid);
+    const diagnostic = try engine.traceJson(std.testing.allocator);
+    defer std.testing.allocator.free(diagnostic);
+    const parsed = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, diagnostic, .{});
+    defer parsed.deinit();
+    try std.testing.expect(parsed.value.object.get("metric_valid").?.bool);
+    try std.testing.expect(!parsed.value.object.get("trace_rules_valid").?.bool);
+}
+
+test "invalid trace event context or names leave allocator validity separate" {
+    var engine: Engine = .{};
+    engine.reset(0, 0);
+    try std.testing.expectError(error.NoActiveScope, engine.mark("outside"));
+    try std.testing.expect(engine.metric_valid);
+    try std.testing.expect(!engine.trace_rules_passed);
+    engine.reset(0, 0);
+    try std.testing.expectError(error.NoActiveScope, engine.count("outside", 0));
+    try std.testing.expect(engine.metric_valid);
+    try std.testing.expect(!engine.trace_rules_valid);
+    engine.reset(0, 0);
+    const scope = try engine.start("names");
+    const oversized = [_]u8{'x'} ** (max_name_bytes + 1);
+    try std.testing.expectError(error.NameTooLong, engine.forbidden(&oversized));
+    try std.testing.expect(engine.metric_valid);
+    try std.testing.expect(!engine.trace_rules_valid);
+    _ = try engine.finish(scope);
+    engine.reset(0, 0);
+    _ = try engine.start("names");
+    try std.testing.expectError(error.NameTooLong, engine.mark(&oversized));
+    try std.testing.expect(engine.metric_valid);
+    try std.testing.expect(!engine.trace_rules_valid);
 }
