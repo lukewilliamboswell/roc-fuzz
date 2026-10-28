@@ -55,7 +55,7 @@ not preserve its storage layout. To retain another witness:
 
 [source,sh]
 ----
-./fuzz retain .roc-fuzz/crash-INPUT --name regression-name --output witnesses
+./fuzz retain finding.bin --name regression-name --output witnesses
 ----
 
 Use the printed `Fuzz.saved` declaration in `examples`, keep the witness's

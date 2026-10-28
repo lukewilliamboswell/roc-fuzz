@@ -56,8 +56,10 @@ range = Fuzz.map2(
 )
 ----
 
-Constructing valid values directly gives the search more useful executions than
-generating a broad value and rejecting most cases.
+Constructing valid values directly gives the search more useful executions.
+Generation controls bias; property preconditions or validated input types define
+validity. Encoded examples and their mutations bypass the generator and must
+pass the same validity checks.
 
 == Build record inputs
 
@@ -65,7 +67,10 @@ Roc's record-builder syntax can combine a generator for each field:
 
 [source,roc]
 ----
-Input := { delimiter : Str, value : Str }
+Input := { delimiter : Str, value : Str }.{
+    parser_for : _
+    encoder_for : _
+}
 
 input_generator : Fuzz.Generator(Input)
 input_generator = {
@@ -79,6 +84,7 @@ Use the resulting generator with `Fuzz.target_with`:
 [source,roc]
 ----
 target = Fuzz.target_with({
+    examples: [],
     name: "split-round-trip",
     generator: input_generator,
     test,
@@ -93,6 +99,9 @@ method and use `Fuzz.target`:
 [source,roc]
 ----
 Input := { delimiter : Str, value : Str }.{
+    parser_for : _
+    encoder_for : _
+
     generator_for = |_| {
         {
             delimiter: Fuzz.str,
@@ -102,6 +111,7 @@ Input := { delimiter : Str, value : Str }.{
 }
 
 target = Fuzz.target({
+    examples: [],
     name: "split-round-trip",
     test,
     show: |input| Str.inspect(input),
@@ -112,6 +122,22 @@ Both forms produce the same kind of typed target. The
 xref:internals.adoc#understand-generator-dispatch[advanced explanation] describes
 how Roc resolves `generator_for`; using the pattern does not require knowing its
 implementation.
+
+== Declare examples and regressions
+
+[source,roc]
+----
+examples: [
+    Fuzz.example({ name: "empty", revision: "1", make: || Input.{ delimiter: ",", value: "" } }),
+    Fuzz.saved({ name: "previous-crash", revision: "1", bytes: regression_bytes }),
+]
+----
+
+A typed example is encoded into real corpus seed bytes; it does not need an
+inverse generator. Saved declarations keep original artifacts. Every example
+runs independently of corpus retention, exactly once in a fresh process during
+checking or acceptance. Increment revisions when an example's meaning changes.
+The baseline also checks the actual input digest, even if the revision is unchanged.
 
 == Handle invalid input deliberately
 

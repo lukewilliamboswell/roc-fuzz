@@ -1,186 +1,132 @@
 = Add fuzzing to CI
 
-A short fuzz run on every pull request can catch easy failures early, while a
-longer scheduled run explores more cases without delaying ordinary development.
-Keep normal unit and regression tests in both paths: fuzzing searches for new
-failures but does not replace known examples.
-
-The `ci` command runs one compiled target with explicit bounds and retains the
-information needed to investigate a failure. The complete workflow later in
-this chapter shows how a downstream project can run several targets and upload
-their results even when one fails.
-
-Every executable built with roc-fuzz contains its own supervised CI
-runner. It can preserve a bounded campaign's configuration, provenance,
-log, corpus manifest, and reproducing failures without installing a
-separate helper:
+Every target executable contains its supervisor, baseline reader and evidence
+writer. A consumer needs Roc and the compiled target. The
+https://github.com/lukewilliamboswell/roc-fuzz/tree/trunk/templates/quality[Blueprint consumer template] supplies pinned
+compiler downloads, ordinary tasks and a workflow with no package provider.
+It lives outside the release example URL rewriting path.
 
 [source,sh]
 ----
-my-target ci .roc-fuzz/evidence/my-target .roc-fuzz/corpus/my-target \
-  --time=60 \
-  --max-input-size=4096 \
-  --timeout=5 \
-  --memory-limit=2048 \
+roc build --fuzz fuzz/main.roc --output=fuzz-target
+./fuzz-target run .roc-fuzz/corpus \
+  --report-dir=.roc-fuzz/evidence \
+  --time=60 --timeout=10 --max-input-size=4096 \
   --source-revision="$SOURCE_REVISION" \
   --roc-version="$ROC_VERSION" \
   --platform-release="$ROC_FUZZ_RELEASE" \
   --platform-sha256="$ROC_FUZZ_SHA256"
 ----
 
-The command launches the same executable as a child. This lets the
-supervising process write evidence even when a Roc `crash`, failed
-`expect`, detected leak, timeout, memory limit, or native signal
-terminates the fuzzing child. A machine or supervisor process kill can
-still prevent report generation.
+`run` checks the complete declared example inventory and exact accepted baseline
+before exploring. A failed example or baseline change skips exploration and
+records the reason in the same report. Each declared example executes once in a
+fresh child process. Exploration reuses one instrumented child for efficiency.
+The parent writes reports even when a child crashes or exceeds its deadline.
+Example preparation also runs in a supervised child: a crashing or nonterminating
+maker cannot terminate the supervisor or accept a partial inventory.
 
-The report directory must be absent or empty and must not overlap the
-corpus. It receives:
+Defaults are 60 seconds of exploration, a 10-second per-input deadline and leak
+checking. `check` runs examples and baseline checks without exploration;
+`explore` runs the search independently. A missing accepted entry reports
+`unbaselined` and allows normal execution. Exploration with zero accepted
+executions is `inconclusive` and exits unsuccessfully.
 
-* `report.json`, following
-link:roc-fuzz-ci-report.schema.json[`roc-fuzz-ci/v1`];
-* `summary.md`, suitable for a CI job summary;
-* `run.log`, containing combined stdout and stderr; and
-* `failures/`, containing the runner's reproducing inputs.
+== Review and accept allocation observations
 
-The JSON manifest gives every corpus and failure file a size and SHA-256
-digest. The target executable and log are also hashed. Provenance fields
-are optional for local work, but supply all four when publishing CI
-evidence. Arbitrary environment variables are deliberately not copied
-into the report.
+[source,sh]
+----
+./fuzz-target check
+./fuzz-target accept --profile=default
+./fuzz-target check
+----
+
+The default file uses the target's declared name, such as
+`my_target_baseline.json`, in the current working directory. Use
+`--baseline=PATH` to override it. Separate entries hold each supported host target
+and named profile. Commit the accepted file after reviewing it; CI runs `check`
+or `run` and never accepts changes automatically.
+
+Matching is exact: example names, revisions, input digests, region inventory,
+metric version and all statistics. A reduction also requires review. Acceptance
+runs each declared example once and updates the relevant entry atomically only
+when the complete inventory passes. Rejections, assertions, crashes, timeouts,
+incomplete observations and write failures cannot accept a partial inventory.
+
+== Read the evidence
+
+An explicit report directory must be absent or empty. Keep it separate from
+inputs and the persistent corpus. Without an override, each invocation chooses
+a fresh directory under `.roc-fuzz/reports/`.
+
+The directory contains:
+
+* `report.json`, following link:roc-fuzz-ci-report.schema.json[`roc-fuzz-quality/1`];
+* `summary.md` and the combined child `run.log`;
+* original example inputs, worker observations and original trace snapshots;
+* exploration failure artifacts and `original-input.bin` for the last attempted
+  input, with capture completeness and its SHA-256 in the report; and
+* bounded original-run logical traces, including unfinished regions on failure.
+
+The report records preparation status, structured finding kinds and each
+worker's exact span within the combined log. Inputs are capped at 1 MiB in the
+friendly commands; the prepared-inventory JSON transport is capped at 32 MiB.
+
+Use the report's outcome, baseline status, metric validity, trace-rule result
+and capture completeness independently. Missing diagnostic events do not make
+allocation statistics invalid; online trace rules continue past capture limits.
+A killed writer can leave an incomplete capture, which is explicitly identified.
+A detailed replay is separate evidence rather than a reconstruction of the
+original run:
+
+[source,sh]
+----
+./fuzz-target replay finding.bin --detailed --report-dir=.roc-fuzz/replay
+./fuzz-target measure finding.bin --report-dir=.roc-fuzz/measurement
+./fuzz-target retain finding.bin --name previous-crash --output=fuzz/regressions
+----
+
+`measure` prints a JSON array of named allocation observations. `retain` keeps
+the original bytes and prints a `Fuzz.saved` source declaration plus the decoded
+representative. Keep the binary witness when storage shape matters.
+
+Exit status `0` means success, `1` means a finding, baseline change or inconclusive
+exploration, and `2` means an infrastructure/configuration failure. Native child
+termination remains separate in the report.
 
 == Keep project policy in the project
 
-The host operates one compiled target. A downstream repository remains
-responsible for:
+Enumerate your targets in ordinary Blueprint tasks or a CI matrix. Choose valid
+input domains in properties or validated types, and use generators for bias.
+Keep resource bounds appropriate for the operation. Acceptance remains a
+separate explicit task. The repository's maintainer toolchain can use Nix while
+consumer tasks use only fetched compilers and self-contained target executables.
 
-* deciding which target source files constitute its complete target
-inventory;
-* pinning and installing Roc and the roc-fuzz platform release;
-* generating domain-specific seeds and dictionaries;
-* selecting per-target input, timeout, and memory bounds; and
-* turning understood findings into deterministic regression tests.
+=== GitHub Actions pattern
 
-This is important for targets such as Unicode conformance fuzzers, whose
-seed corpora are derived from versioned data files. A generic host
-cannot infer that application policy. A checked-in script or CI matrix
-should enumerate targets and invoke each resulting binary's `ci`
-command.
-
-Leak checks remain enabled by default. `--no-detect-leaks` is available
-for a documented exceptional campaign, and the report records that it
-was used. Projects testing allocation-sensitive operations should also
-place `Fuzz.expect_allocs_at_most!` or `Fuzz.expect_allocs_at_least!`
-around the exact operation whose cost is an invariant.
-
-== GitHub Actions pattern
-
-The following complete pattern assumes one target file per
-`fuzz/TARGET.roc` and optional checked-in seeds under
-`fuzz/corpus/TARGET/`. Repositories with generated seeds should replace
-only the seed-preparation step with their own script.
+The template under `templates/quality/` includes a complete pinned-action workflow
+for Linux and Apple Silicon macOS. Its verification task builds, checks and
+explores with `run --report-dir=...`. Upload evidence even on failure:
 
 [source,yaml]
 ----
-name: Fuzz campaigns
-
-on:
-  pull_request:
-  schedule:
-    - cron: "17 11 * * *"
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-jobs:
-  fuzz:
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [parser, decoder]
-    env:
-      ROC_FUZZ_RELEASE: "REPLACE_WITH_THE_RELEASE_USED_BY_FUZZ_SOURCES"
-      ROC_FUZZ_SHA256: "REPLACE_WITH_THE_RELEASE_BUNDLE_SHA256"
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      # The latest Roc nightly, installed as `roc`. A fuzz target carries no
-      # compiler pin: it is checked with the compiler its users will install.
-      - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
-        with:
-          version: nightly-new-compiler
-
-      - name: Restore this target's corpus
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: .roc-fuzz/corpus/${{ matrix.target }}
-          key: fuzz-${{ runner.os }}-${{ matrix.target }}-${{ env.ROC_FUZZ_RELEASE }}
-          restore-keys: fuzz-${{ runner.os }}-${{ matrix.target }}-
-
-      - name: Build and seed the target
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          mkdir -p ".roc-fuzz/bin" ".roc-fuzz/corpus/$TARGET"
-          roc build --fuzz "fuzz/$TARGET.roc" --output=".roc-fuzz/bin/$TARGET"
-          if test -d "fuzz/corpus/$TARGET"; then
-            cp -R "fuzz/corpus/$TARGET/." ".roc-fuzz/corpus/$TARGET/"
-          fi
-
-      - name: Run the supervised campaign
-        env:
-          TARGET: ${{ matrix.target }}
-          CAMPAIGN_SECONDS: ${{ github.event_name == 'schedule' && '900' || '60' }}
-        run: |
-          roc_version="$(roc version | tr '\n' ' ')"
-          ".roc-fuzz/bin/$TARGET" ci \
-            ".roc-fuzz/evidence/$TARGET" \
-            ".roc-fuzz/corpus/$TARGET" \
-            --time="$CAMPAIGN_SECONDS" \
-            --max-input-size=4096 \
-            --timeout=5 \
-            --memory-limit=2048 \
-            --source-revision="${{ github.sha }}" \
-            --roc-version="$roc_version" \
-            --platform-release="$ROC_FUZZ_RELEASE" \
-            --platform-sha256="$ROC_FUZZ_SHA256"
-
-      - name: Publish the Markdown summary
-        if: always()
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          summary=".roc-fuzz/evidence/$TARGET/summary.md"
-          if test -f "$summary"; then cat "$summary" >> "$GITHUB_STEP_SUMMARY"; fi
-
-      - name: Upload evidence and reproducing failures
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: fuzz-evidence-${{ matrix.target }}
-          path: .roc-fuzz/evidence/${{ matrix.target }}
-          if-no-files-found: error
+- name: Verify quality
+  run: blueprint workflow verify
+- name: Preserve evidence
+  if: always()
+  uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+  with:
+    name: quality-${{ runner.os }}
+    path: .roc-fuzz/evidence
+    if-no-files-found: error
 ----
-
-Pull requests therefore get a one-minute bounded campaign per target,
-while the scheduled workflow gives each target fifteen minutes. Keep
-normal unit and regression tests on every change as well; a fuzz corpus
-is not a correctness oracle by itself.
 
 == Coverage limits
 
-These artifacts provide reviewable evidence that dynamic analysis ran with
-explicit bounds and assertions, and that findings were retained. They do not
-measure source coverage.
-
-The runner's `cov` and `ft` values are search-feedback counts from LLVM
-SanitizerCoverage. They have no source denominator and are not statement
-or branch percentages. Do not report them as either kind of percentage.
-
-True Roc source coverage requires the Roc compiler to emit LLVM profile
-instrumentation and coverage mappings, link the matching profile
-runtime, and preserve stable source paths. Until that compiler work ships,
-roc-fuzz can report search progress and retained evidence but cannot provide a
-Roc source-coverage percentage.
+Coverage feedback guides discovery; it is not a proof of correctness or a claim
+that every source branch ran. A retained corpus and a declared regression
+inventory serve different purposes: coverage reduction can remove redundant
+seeds while source-declared examples still run independently on every check.
+Attempted, accepted and rejected execution counts show whether the property
+actually exercised useful inputs. A campaign that rejects every input provides
+no passing evidence.
