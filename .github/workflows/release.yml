@@ -98,7 +98,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@fa6068e606c6541bb7200aa58dbc6516949a45c3 # fa6068e
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
         with:
           install-nix: 'true'
 
@@ -125,7 +125,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@fa6068e606c6541bb7200aa58dbc6516949a45c3 # fa6068e
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
         with:
           install-nix: 'true'
 
@@ -150,7 +150,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@fa6068e606c6541bb7200aa58dbc6516949a45c3 # fa6068e
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
         with:
           install-nix: 'true'
 
@@ -250,7 +250,7 @@ jobs:
       # from a locked supplier file, so there is no supplier SBOM to fetch.
       - id: sbom
         name: Bind the bundle's SBOM sidecars
-        uses: lukewilliamboswell/roc-automation/actions/sbom-sidecars@fa6068e606c6541bb7200aa58dbc6516949a45c3 # fa6068e
+        uses: lukewilliamboswell/roc-automation/actions/sbom-sidecars@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
         with:
           files: ${{ steps.bundle.outputs.file }}
           version: ${{ needs.validate.outputs.release_version }}
@@ -308,7 +308,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@fa6068e606c6541bb7200aa58dbc6516949a45c3 # fa6068e
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
         with:
           install-nix: 'true'
 
@@ -320,14 +320,14 @@ jobs:
 
       - id: renderer
         name: Locate the roc-docs renderer Blueprint.lock pins
-        uses: lukewilliamboswell/roc-automation/actions/blueprint-tool@fa6068e606c6541bb7200aa58dbc6516949a45c3 # fa6068e
+        uses: lukewilliamboswell/roc-automation/actions/blueprint-tool@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
         with:
           task: docs-path
           label: roc-docs tools-0.4.0
 
       - id: docs
         name: Build versioned HTML, PDF, and API documentation
-        uses: lukewilliamboswell/roc-automation/actions/build-docs@fa6068e606c6541bb7200aa58dbc6516949a45c3 # fa6068e
+        uses: lukewilliamboswell/roc-automation/actions/build-docs@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
         with:
           renderer-binary: ${{ steps.renderer.outputs.binary }}
           site-url: https://lukewilliamboswell.github.io/roc-fuzz/
@@ -376,7 +376,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@fa6068e606c6541bb7200aa58dbc6516949a45c3 # fa6068e
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
         with:
           install-nix: 'true'
 
@@ -560,7 +560,7 @@ jobs:
       # publishes. It refuses a tag that already exists.
       - id: publish
         name: Stage a draft, verify every asset, then publish
-        uses: lukewilliamboswell/roc-automation/actions/publish-release@fa6068e606c6541bb7200aa58dbc6516949a45c3 # fa6068e
+        uses: lukewilliamboswell/roc-automation/actions/publish-release@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
         with:
           version: ${{ needs.validate.outputs.release_version }}
           prerelease: ${{ needs.validate.outputs.is_prerelease }}

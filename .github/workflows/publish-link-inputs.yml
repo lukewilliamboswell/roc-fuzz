@@ -24,7 +24,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Publish the exact attested PR candidate and adopt its lock
-        uses: lukewilliamboswell/roc-automation/actions/publish-build-inputs@fa6068e606c6541bb7200aa58dbc6516949a45c3 # fa6068e
+        uses: lukewilliamboswell/roc-automation/actions/publish-build-inputs@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
         env:
           GH_TOKEN: ${{ github.token }}
         with:

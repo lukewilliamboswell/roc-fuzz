@@ -10,7 +10,7 @@ runs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         repository: lukewilliamboswell/roc-automation
-        ref: fa6068e606c6541bb7200aa58dbc6516949a45c3
+        ref: a25b5129340b9b2ad1744d20330b8ee4d38a1849
         path: .test-cache/shared-automation
         persist-credentials: false
     - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
