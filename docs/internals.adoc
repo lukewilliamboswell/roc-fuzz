@@ -173,7 +173,10 @@ Host preparation copies bytes and releases temporary Roc values before running
 an input. Encoding does not invert arbitrary `Fuzz.map` functions.
 
 The frame is `RFZ`, version byte `1`, form byte (`0` entropy, `1` value), then
-payload. Bare historical bytes remain entropy. Unsupported versions, malformed
+payload. Bare historical bytes without the reserved `RFZ` prefix remain entropy.
+Artifacts whose interpretation changes across platform versions need their
+original executable; cross-version corpus migration is outside this API.
+Unsupported versions, malformed
 values and exceeded decoding budgets reject. The parser allows at most 1 MiB,
 4096 value nodes and 128 total containers, validating counts before allocation.
 

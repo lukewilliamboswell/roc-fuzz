@@ -136,9 +136,10 @@ separate evidence.
 
 Input format, observations, worker transport and reports are versioned as v1.
 Input framing identifies encoded values versus generator entropy; invalid framed
-values reject rather than falling through to entropy. Raw entropy retains its
-storage-sensitive interpretation. Typed example serialization is canonical for
-logical values, not storage shape.
+values reject rather than falling through to entropy. Bare inputs without the
+reserved `RFZ` prefix retain their entropy interpretation. Typed examples encode
+logical values rather than storage shape; dictionary traversal order can affect
+encoded bytes even for equality-equivalent dictionaries.
 
 The Roc target bridge exposes name, run, show, example count and indexed example
 metadata/bytes callbacks. The coordinator exclusively edits `platform/main.roc`,
