@@ -13,3 +13,9 @@ Use this platform dependency in an application header:
 ----
 app [target] { fuzz: platform "{platform-url}" }
 ----
+
+The discarded-function-result lifetime repro now expects success on the current
+nightly. It retains its allocation-balance assertion: compiler fix
+https://github.com/roc-lang/roc/pull/12652[roc#12652] releases the unused result
+before the next effect. The same repro exits 77 on the October 23 compiler and
+0 on the October 27 compiler against the same platform bundle.
