@@ -4,6 +4,8 @@ const std = @import("std");
 const abi = @import("roc_platform_abi.zig");
 const observation = @import("observation.zig");
 const quality = @import("quality_runner.zig");
+const bookkeeping = @import("allocation_bookkeeping.zig");
+var return_box: bookkeeping.ReturnBox = .{};
 
 var local_engine: observation.Engine = .{};
 var engine: *observation.Engine = &local_engine;
@@ -87,7 +89,8 @@ fn initHost() void {
     host_initialized = true;
 }
 
-fn allocImpl(length: usize, alignment: usize) ?*anyopaque {
+fn allocImpl(length: usize, alignment: usize, internal: bool) ?*anyopaque {
+    const metadata = bookkeeping.pack(length, internal) catch |err| observationFailure(err);
     const actual_alignment = @max(alignment, @alignOf(usize));
     const header_len = actual_alignment;
     const total = std.math.add(usize, length, header_len) catch return null;
@@ -95,7 +98,7 @@ fn allocImpl(length: usize, alignment: usize) ?*anyopaque {
     if (std.c.posix_memalign(&base, actual_alignment, total) != 0) return null;
     const base_bytes: [*]u8 = @ptrCast(base.?);
     const size_ptr: *usize = @ptrFromInt(@intFromPtr(base_bytes) + header_len - @sizeOf(usize));
-    size_ptr.* = total;
+    size_ptr.* = metadata;
     return @ptrFromInt(@intFromPtr(base_bytes) + header_len);
 }
 
@@ -120,6 +123,9 @@ var g_live_alloc_count: u64 = 0;
 var g_realloc_count: u64 = 0;
 var g_dealloc_count: u64 = 0;
 var g_requested_bytes: u64 = 0;
+// Include private ownership containers in the invocation-wide leak check.
+var physical_live_allocs: u64 = 0;
+var physical_live_bytes: u64 = 0;
 
 fn checkedAdd(value: *u64, amount: u64) void {
     value.* = std.math.add(u64, value.*, amount) catch {
@@ -129,16 +135,16 @@ fn checkedAdd(value: *u64, amount: u64) void {
 }
 
 fn observationFailure(err: anyerror) noreturn {
+    engine.metric_valid = false;
     writeErr("[roc-fuzz invalid observation] ");
     writeErr(@errorName(err));
     writeErr("\n");
     finishRocFailure();
 }
 
-fn allocationLength(ptr: *anyopaque, alignment: usize) usize {
-    const header_len = @max(alignment, @alignOf(usize));
+fn allocationMetadata(ptr: *anyopaque) usize {
     const size: *const usize = @ptrFromInt(@intFromPtr(ptr) - @sizeOf(usize));
-    return size.* - header_len;
+    return size.*;
 }
 
 fn deallocImpl(ptr: *anyopaque, alignment: usize) void {
@@ -147,8 +153,15 @@ fn deallocImpl(ptr: *anyopaque, alignment: usize) void {
 }
 
 pub export fn roc_alloc(length: usize, alignment: usize) callconv(.c) *anyopaque {
-    const ptr = allocImpl(length, alignment) orelse outOfMemory();
-    {
+    const ptr = allocImpl(length, alignment, false) orelse outOfMemory();
+    const internal = return_box.claim(@intFromPtr(ptr), length) catch |err| observationFailure(err);
+    if (internal) {
+        const metadata: *usize = @ptrFromInt(@intFromPtr(ptr) - @sizeOf(usize));
+        metadata.* = bookkeeping.pack(length, true) catch |err| observationFailure(err);
+    }
+    checkedAdd(&physical_live_allocs, 1);
+    checkedAdd(&physical_live_bytes, length);
+    if (!internal) {
         checkedAdd(&g_alloc_count, 1);
         checkedAdd(&g_live_alloc_count, 1);
         checkedAdd(&g_requested_bytes, length);
@@ -158,23 +171,34 @@ pub export fn roc_alloc(length: usize, alignment: usize) callconv(.c) *anyopaque
 }
 
 pub export fn roc_dealloc(ptr: *anyopaque, alignment: usize) callconv(.c) void {
-    const old_length = allocationLength(ptr, alignment);
-    engine.dealloc(old_length) catch |err| observationFailure(err);
-    if (g_live_alloc_count == 0) observationFailure(error.InvalidAllocation);
-    g_live_alloc_count -= 1;
-    checkedAdd(&g_dealloc_count, 1);
+    const metadata = allocationMetadata(ptr);
+    const old_length = bookkeeping.length(metadata);
+    if (physical_live_allocs == 0 or physical_live_bytes < old_length) observationFailure(error.InvalidAllocation);
+    physical_live_allocs -= 1;
+    physical_live_bytes -= old_length;
+    if (!bookkeeping.isBookkeeping(metadata)) {
+        engine.dealloc(old_length) catch |err| observationFailure(err);
+        if (g_live_alloc_count == 0) observationFailure(error.InvalidAllocation);
+        g_live_alloc_count -= 1;
+        checkedAdd(&g_dealloc_count, 1);
+    }
     deallocImpl(ptr, alignment);
 }
 
 pub export fn roc_realloc(ptr: *anyopaque, new_length: usize, alignment: usize) callconv(.c) *anyopaque {
-    const header_len = @max(alignment, @alignOf(usize));
-    const old_size_ptr: *const usize = @ptrFromInt(@intFromPtr(ptr) - @sizeOf(usize));
-    const old_length = old_size_ptr.* - header_len;
-    const new_ptr = allocImpl(new_length, alignment) orelse outOfMemory();
-    checkedAdd(&g_alloc_count, 1);
-    checkedAdd(&g_realloc_count, 1);
-    checkedAdd(&g_requested_bytes, new_length);
-    engine.realloc(old_length, new_length) catch |err| observationFailure(err);
+    const metadata = allocationMetadata(ptr);
+    const old_length = bookkeeping.length(metadata);
+    const internal = bookkeeping.isBookkeeping(metadata);
+    const new_ptr = allocImpl(new_length, alignment, internal) orelse outOfMemory();
+    if (physical_live_allocs == 0 or physical_live_bytes < old_length) observationFailure(error.InvalidAllocation);
+    physical_live_bytes -= old_length;
+    checkedAdd(&physical_live_bytes, new_length);
+    if (!internal) {
+        checkedAdd(&g_alloc_count, 1);
+        checkedAdd(&g_realloc_count, 1);
+        checkedAdd(&g_requested_bytes, new_length);
+        engine.realloc(old_length, new_length) catch |err| observationFailure(err);
+    }
     const copy_len = @min(old_length, new_length);
     @memcpy(@as([*]u8, @ptrCast(new_ptr))[0..copy_len], @as([*]const u8, @ptrCast(ptr))[0..copy_len]);
     deallocImpl(ptr, alignment);
@@ -218,12 +242,26 @@ fn hostedScopeStart(label: abi.RocStr) callconv(.c) u64 {
 }
 
 fn hostedScopeFinish(id: u64) callconv(.c) abi.FuzzScope_finish {
+    if (return_box.scope != null) observationFailure(error.UnfinishedReturnBox);
     const stats = engine.finish(id) catch |err| observationFailure(err);
     var result: abi.FuzzScope_finish = undefined;
     inline for (@typeInfo(observation.Stats).@"struct".fields) |field| {
         @field(result, field.name) = @field(stats, field.name);
     }
     return result;
+}
+
+fn hostedPrepareReturnBox() callconv(.c) void {
+    if (engine.depth == 0) observationFailure(error.NoActiveScope);
+    const id = engine.regions[engine.stack[engine.depth - 1]].id;
+    return_box.prepare(id) catch |err| observationFailure(err);
+}
+
+fn hostedScopeFinishReturn(id: u64, value: abi.RocBox) callconv(.c) abi.FuzzScope_finish_return {
+    return_box.finish(id, @intFromPtr(value)) catch |err| observationFailure(err);
+    // Transfer the opaque owned box back to Roc unchanged. Its payload remains
+    // alive through finish even when the caller projects only the statistics.
+    return .{ .value = value, .stats = hostedScopeFinish(id) };
 }
 
 fn hostedMark(label: abi.RocStr) callconv(.c) void {
@@ -250,6 +288,8 @@ fn hostedForbidden(label: abi.RocStr) callconv(.c) void {
 comptime {
     @export(&hostedScopeStart, .{ .name = "roc_fuzz_scope_start", .visibility = .hidden });
     @export(&hostedScopeFinish, .{ .name = "roc_fuzz_scope_finish", .visibility = .hidden });
+    @export(&hostedPrepareReturnBox, .{ .name = "roc_fuzz_prepare_return_box", .visibility = .hidden });
+    @export(&hostedScopeFinishReturn, .{ .name = "roc_fuzz_scope_finish_return", .visibility = .hidden });
     @export(&hostedMark, .{ .name = "roc_fuzz_mark", .visibility = .hidden });
     @export(&hostedBefore, .{ .name = "roc_fuzz_before", .visibility = .hidden });
     @export(&hostedCount, .{ .name = "roc_fuzz_count", .visibility = .hidden });
@@ -398,11 +438,11 @@ fn runOne(allocator: std.mem.Allocator, input: []const u8, capture: quality.Capt
     quality.healthAttempt(input);
     engine.reset(engine.live_allocs, engine.live_bytes);
     quality.healthObservationReady();
-    const live_before = g_live_alloc_count;
-    const bytes_before = engine.live_bytes;
+    const live_before = physical_live_allocs;
+    const bytes_before = physical_live_bytes;
     const status = abi.roc_fuzz_run(makeInput(input));
-    if (quality.workerLeakDetection() and (g_live_alloc_count > live_before or engine.live_bytes > bytes_before)) {
-        reportLeak(g_live_alloc_count -| live_before);
+    if (quality.workerLeakDetection() and (physical_live_allocs > live_before or physical_live_bytes > bytes_before)) {
+        reportLeak(physical_live_allocs -| live_before);
     }
     quality.healthFinish(status == 0);
     return .{
@@ -626,11 +666,11 @@ pub export fn LLVMFuzzerTestOneInput(data: ?[*]const u8, size: usize) callconv(.
     quality.healthAttempt(input);
     engine.reset(engine.live_allocs, engine.live_bytes);
     quality.healthObservationReady();
-    const live_before = g_live_alloc_count;
-    const bytes_before = engine.live_bytes;
+    const live_before = physical_live_allocs;
+    const bytes_before = physical_live_bytes;
     const status = abi.roc_fuzz_run(makeInput(input));
-    if (leak_detection_enabled and (g_live_alloc_count > live_before or engine.live_bytes > bytes_before)) {
-        reportLeak(g_live_alloc_count -| live_before);
+    if (leak_detection_enabled and (physical_live_allocs > live_before or physical_live_bytes > bytes_before)) {
+        reportLeak(physical_live_allocs -| live_before);
     }
     quality.healthFinish(status == 0);
     if (!engine.complete() or !engine.trace_rules_passed or (status == 0 and engine.region_count == 0)) {

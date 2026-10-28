@@ -801,6 +801,15 @@
       "expected_failure": true,
       "skip_seed": false,
       "skip_fuzz": false
+    },
+    {
+      "name": "qualityReturnedValues",
+      "path": "tests/targets/fixtures/qualityReturnedValues.roc",
+      "seed_hex": "00",
+      "libfuzzer_seed": 2239,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
     }
   ],
   "skips": [],

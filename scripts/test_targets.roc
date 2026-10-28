@@ -360,6 +360,26 @@ quality_step! = |item, work| {
 			return Err(StepFailed("scalar property measurements included fixture or decoder ownership cleanup"))
 		}
 	}
+	if item.name == "qualityReturnedValues" {
+		report : { examples : List({ observations : List(Observation) }) }
+		report = Json.parse(Path.read_utf8!(Path.join(directory, "unbaselined/report.json"))?)?
+		if report.examples.len() != 2 or !report.examples.all(
+			|example| {
+				unused = example.observations.keep_if(|region| region.name == "unused observation")
+				unused.len() == 1 and unused.all(
+					|region| {
+						stats = region.stats
+						stats.allocs == 1 and stats.reallocs == 0 and stats.deallocs == 0
+							and stats.exit_live_allocs == stats.entry_live_allocs + 1
+							and stats.exit_live_bytes == stats.entry_live_bytes + stats.requested_bytes
+							and stats.peak_live_bytes == stats.exit_live_bytes
+					},
+				)
+			},
+		) {
+			return Err(StepFailed("an unused measured return was dropped before its observation boundary"))
+		}
+	}
 	if !Script.trim(Str.from_utf8_lossy(listed.stdout_bytes)).is_empty() {
 		accepted = executable.output!(["accept", "--report-dir=accept"], directory)?
 		if accepted.status != Exited(0) {

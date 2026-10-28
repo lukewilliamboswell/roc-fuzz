@@ -91,6 +91,13 @@ windows, instrumentation limits and arithmetic overflow fail explicitly. The
 returned value is still alive at the measurement boundary. Nested windows are
 inclusive: a parent contains its children's allocator operations.
 
+The platform transfers measured results through an opaque ownership container
+before finishing the region. This keeps every returned field alive even when
+the caller reads only `stats` or discards the result. The private container is
+measurement bookkeeping and is excluded from allocator statistics and explicit
+counters in every enclosing region. Ordinary application `Box.box` allocations
+remain counted. The invocation-wide leak check includes both kinds of storage.
+
 [[separate-counts]]
 === Understand the statistics
 

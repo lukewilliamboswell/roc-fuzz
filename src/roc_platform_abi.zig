@@ -763,6 +763,52 @@ comptime {
     }
 }
 
+/// Element type for __AnonStruct_b94d4088b4417d03
+pub const __AnonStruct_b94d4088b4417d03 = if (@sizeOf(usize) == 4) extern struct {
+    stats: __AnonStruct_2466dab754f47a46,
+    value: RocBox,
+    /// Recursively decrement Roc-owned fields.
+    pub fn decref(self: @This(), roc_host: *RocHost) void {
+        const value = self;
+        value.stats.decref(roc_host);
+        decrefBox(@ptrCast(value.value), roc_host);
+    }
+
+    /// Increment Roc-owned fields.
+    pub fn incref(self: @This(), amount: isize) void {
+        const value = self;
+        value.stats.incref(amount);
+        increfBox(@ptrCast(value.value), amount);
+    }
+} else extern struct {
+    stats: __AnonStruct_2466dab754f47a46,
+    value: RocBox,
+    /// Recursively decrement Roc-owned fields.
+    pub fn decref(self: @This(), roc_host: *RocHost) void {
+        const value = self;
+        value.stats.decref(roc_host);
+        decrefBox(@ptrCast(value.value), roc_host);
+    }
+
+    /// Increment Roc-owned fields.
+    pub fn incref(self: @This(), amount: isize) void {
+        const value = self;
+        value.stats.incref(amount);
+        increfBox(@ptrCast(value.value), amount);
+    }
+};
+
+comptime {
+    if (@sizeOf(usize) == 8) {
+        if (@sizeOf(__AnonStruct_b94d4088b4417d03) != 80) @compileError("__AnonStruct_b94d4088b4417d03 size mismatch");
+        if (@alignOf(__AnonStruct_b94d4088b4417d03) != 8) @compileError("__AnonStruct_b94d4088b4417d03 alignment mismatch");
+    }
+    if (@sizeOf(usize) == 4) {
+        if (@sizeOf(__AnonStruct_b94d4088b4417d03) != 80) @compileError("__AnonStruct_b94d4088b4417d03 size mismatch");
+        if (@alignOf(__AnonStruct_b94d4088b4417d03) != 8) @compileError("__AnonStruct_b94d4088b4417d03 alignment mismatch");
+    }
+}
+
 /// Element type for __AnonStruct_fa4a9e94a9b0c16f
 pub const __AnonStruct_fa4a9e94a9b0c16f = if (@sizeOf(usize) == 4) extern struct {
     bytes: RocListWith(u8, false),
@@ -850,6 +896,27 @@ comptime {
     }
 }
 
+/// Return type record for Fuzz.scope_finish_return!
+/// Fields ordered by compiler-emitted ABI offsets.
+pub const FuzzScope_finish_returnRetRecord = if (@sizeOf(usize) == 4) extern struct {
+    stats: __AnonStruct_2466dab754f47a46,
+    value: RocBox,
+} else extern struct {
+    stats: __AnonStruct_2466dab754f47a46,
+    value: RocBox,
+};
+
+comptime {
+    if (@sizeOf(usize) == 8) {
+        if (@sizeOf(FuzzScope_finish_returnRetRecord) != 80) @compileError("FuzzScope_finish_returnRetRecord size mismatch");
+        if (@alignOf(FuzzScope_finish_returnRetRecord) != 8) @compileError("FuzzScope_finish_returnRetRecord alignment mismatch");
+    }
+    if (@sizeOf(usize) == 4) {
+        if (@sizeOf(FuzzScope_finish_returnRetRecord) != 80) @compileError("FuzzScope_finish_returnRetRecord size mismatch");
+        if (@alignOf(FuzzScope_finish_returnRetRecord) != 8) @compileError("FuzzScope_finish_returnRetRecord alignment mismatch");
+    }
+}
+
 /// Arguments for Fuzz.before!
 /// Roc signature: Str, Str => {}
 /// Refcounted fields are owned by the hosted function.
@@ -887,6 +954,14 @@ pub const FuzzScope_finishArgs = extern struct {
     arg0: u64,
 };
 
+/// Arguments for Fuzz.scope_finish_return!
+/// Roc signature: U64, Box(rigid) => { stats : { allocs : U64, deallocs : U64, entry_live_allocs : U64, entry_live_bytes : U64, exit_live_allocs : U64, exit_live_bytes : U64, peak_live_bytes : U64, reallocs : U64, requested_bytes : U64 }, value : Box(rigid) }
+/// Refcounted fields are owned by the hosted function.
+pub const FuzzScope_finish_returnArgs = extern struct {
+    arg0: u64,
+    arg1: RocBox,
+};
+
 /// Arguments for Fuzz.scope_start!
 /// Roc signature: Str => U64
 /// Refcounted fields are owned by the hosted function.
@@ -897,12 +972,20 @@ pub const FuzzScope_startArgs = extern struct {
 // Platform Type Aliases
 
 pub const FuzzScope_finish = __AnonStruct_2466dab754f47a46;
+pub const FuzzScope_finish_return = __AnonStruct_b94d4088b4417d03;
+pub const FuzzScope_finish_returnStats = __AnonStruct_2466dab754f47a46;
 pub const Example_for_host = __AnonStruct_fa4a9e94a9b0c16f;
 
 // Generated Refcount Helpers
 
 pub const __AnonStruct_2466dab754f47a46Release = struct {
     pub fn release(value: __AnonStruct_2466dab754f47a46, roc_host: *RocHost) void {
+        value.decref(roc_host);
+    }
+};
+
+pub const __AnonStruct_b94d4088b4417d03Release = struct {
+    pub fn release(value: __AnonStruct_b94d4088b4417d03, roc_host: *RocHost) void {
         value.decref(roc_host);
     }
 };
@@ -983,6 +1066,10 @@ pub extern fn roc_fuzz_live_alloc_count() callconv(.c) u64;
 ///     arg0.decref(roc_host);
 pub extern fn roc_fuzz_mark(arg0: RocStr) callconv(.c) void;
 
+/// Hosted symbol for Fuzz.prepare_return_box!
+/// Roc signature: {} => {}
+pub extern fn roc_fuzz_prepare_return_box() callconv(.c) void;
+
 /// Hosted symbol for Fuzz.realloc_count!
 /// Roc signature: {} => U64
 pub extern fn roc_fuzz_realloc_count() callconv(.c) u64;
@@ -994,6 +1081,13 @@ pub extern fn roc_fuzz_requested_bytes() callconv(.c) u64;
 /// Hosted symbol for Fuzz.scope_finish!
 /// Roc signature: U64 => { allocs : U64, deallocs : U64, entry_live_allocs : U64, entry_live_bytes : U64, exit_live_allocs : U64, exit_live_bytes : U64, peak_live_bytes : U64, reallocs : U64, requested_bytes : U64 }
 pub extern fn roc_fuzz_scope_finish(arg0: u64) callconv(.c) __AnonStruct_2466dab754f47a46;
+
+/// Hosted symbol for Fuzz.scope_finish_return!
+/// Roc signature: U64, Box(rigid) => { stats : { allocs : U64, deallocs : U64, entry_live_allocs : U64, entry_live_bytes : U64, exit_live_allocs : U64, exit_live_bytes : U64, peak_live_bytes : U64, reallocs : U64, requested_bytes : U64 }, value : Box(rigid) }
+/// Owned arguments. Release each exactly once before returning, unless it is
+/// moved into storage or into the result:
+///     decrefBox(@ptrCast(arg1), roc_host);
+pub extern fn roc_fuzz_scope_finish_return(arg0: u64, arg1: RocBox) callconv(.c) __AnonStruct_b94d4088b4417d03;
 
 /// Hosted symbol for Fuzz.scope_start!
 /// Roc signature: Str => U64

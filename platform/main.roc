@@ -22,9 +22,11 @@ platform "roc-fuzz"
 		"roc_fuzz_forbidden": Fuzz.forbidden!,
 		"roc_fuzz_live_alloc_count": Fuzz.live_alloc_count!,
 		"roc_fuzz_mark": Fuzz.mark!,
+		"roc_fuzz_prepare_return_box": Fuzz.prepare_return_box!,
 		"roc_fuzz_realloc_count": Fuzz.realloc_count!,
 		"roc_fuzz_requested_bytes": Fuzz.requested_bytes!,
 		"roc_fuzz_scope_finish": Fuzz.scope_finish!,
+		"roc_fuzz_scope_finish_return": Fuzz.scope_finish_return!,
 		"roc_fuzz_scope_start": Fuzz.scope_start!,
 	}
 	targets: {

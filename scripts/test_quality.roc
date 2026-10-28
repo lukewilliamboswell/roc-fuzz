@@ -13,6 +13,7 @@ import src/Script
 ## Native engines and actual supervised process lifecycle, without Roc fixtures.
 main! = |_args| {
 	zig = Script.command("zig")
+	zig.run!(["test", "src/allocation_bookkeeping.zig", "-lc"])?
 	zig.run!(["test", "src/observation.zig", "-lc"])?
 	zig.run!(["test", "src/quality_runner.zig", "-lc"])?
 	Env.with_temp_dir!(

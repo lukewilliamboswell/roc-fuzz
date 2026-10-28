@@ -58,7 +58,8 @@ Fuzz := [].{
 	keep : Outcome
 	keep = Keep
 
-	## Total allocations the platform has served this process so far.
+	## Total application allocations the platform has served this process so far.
+	## Private measurement ownership containers are excluded from all counters.
 	##
 	## Read it before and after a region of code and subtract to count that
 	## region's allocations. Counts every `roc_alloc` and `roc_realloc`; a
@@ -101,7 +102,8 @@ Fuzz := [].{
 	requested_bytes! : () => U64
 
 	## Inclusive allocator observations for one named region. Only Roc allocator
-	## hooks count; requested lengths exclude host bookkeeping. Peaks include
+	## hooks count; private measurement containers and host bookkeeping are
+	## excluded. Peaks include
 	## entry-live memory and the actual old/new overlap during reallocations.
 	Stats : { allocs : U64, reallocs : U64, deallocs : U64, requested_bytes : U64, entry_live_allocs : U64, entry_live_bytes : U64, exit_live_allocs : U64, exit_live_bytes : U64, peak_live_bytes : U64 }
 
