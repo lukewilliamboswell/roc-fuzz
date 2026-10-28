@@ -27,6 +27,10 @@ Operation : [All, Build, Check, Fuzz, Seed, Test]
 
 RawCase : { expected_failure : Bool, name : Str, path : Str, seed_hex : Str, skip_fuzz : Bool, skip_seed : Bool }
 
+AllocationStats : { allocs : U64, reallocs : U64, deallocs : U64, requested_bytes : U64, entry_live_allocs : U64, entry_live_bytes : U64, exit_live_allocs : U64, exit_live_bytes : U64, peak_live_bytes : U64 }
+
+Observation : { id : U64, parent_id : U64, name : Str, occurrence : U64, complete : Bool, stats : AllocationStats }
+
 TestCase := { expected_failure : Bool, name : Str, path : Path, seed : List(U8), skip_fuzz : Bool, skip_seed : Bool }.{}
 
 PlatformUrl :: Str.{
@@ -167,16 +171,16 @@ prepare_platform_tests! = |temporary, selected, url, suite_root| {
 	Ok(selected.map(|item| rebase(item, Path.join(temporary, Path.display(item.path)))))
 }
 
-Stage : [Check, Test, Build, Seed, Measure, Fuzz]
+Stage : [Check, Test, Build, Seed, Measure, Quality, Fuzz]
 
 stages_for = |operation|
 	match operation {
 		Check => [Check]
 		Test => [Test]
 		Build => [Build]
-		Seed => [Build, Seed, Measure]
+		Seed => [Build, Seed, Measure, Quality]
 		Fuzz => [Build, Fuzz]
-		All => [Check, Test, Build, Seed, Measure, Fuzz]
+		All => [Check, Test, Build, Seed, Measure, Quality, Fuzz]
 	}
 
 stage_name = |stage|
@@ -186,6 +190,7 @@ stage_name = |stage|
 		Build => "build"
 		Seed => "seed"
 		Measure => "measure"
+		Quality => "quality"
 		Fuzz => "fuzz"
 	}
 
@@ -248,7 +253,7 @@ is_skip = |outcome|
 ## Why `stage` is switched off for `item`, from its note in tests/targets.json.
 skip_note = |stage, item, notes|
 	match stage {
-		Seed | Measure if item.skip_seed => Ok(SkipNotes.describe(notes, item.name, "seed"))
+		Seed | Measure | Quality if item.skip_seed => Ok(SkipNotes.describe(notes, item.name, "seed"))
 		Fuzz if item.skip_fuzz => Ok(SkipNotes.describe(notes, item.name, "fuzz"))
 		_ => Err(NotSkipped)
 	}
@@ -270,11 +275,12 @@ run_step! = |stage, settings, roc, item, work|
 			run_quiet!(settings.verbose, executable, ["replay", Path.to_os_str(seed)], expected_code(item))
 		}
 		Measure => measure_step!(roc, item, work)
+		Quality => quality_step!(item, work)
 		Fuzz => fuzz_step!(settings, item, work)
 	}
 
 ## A case that is expected to fail must fail the way a target failure does.
-expected_code = |item| if (item.expected_failure) 77 else 0
+expected_code = |item| if (item.expected_failure) 1 else 0
 
 ## Run one command of a step and require `expected` as its exit code. The
 ## output is kept and shown only on failure, so a passing run prints one line
@@ -302,51 +308,74 @@ tail = |output| {
 	Str.join_with(lines.drop_first(if (lines.len() > 30) lines.len() - 30 else 0), "\n")
 }
 
-## The start of every line `measure` prints. A reader checks the version
-## before it trusts the fields.
-report_prefix = "{\"format\":\"roc-fuzz-allocs/1\","
-
-## Run the seed under `measure`, in an empty directory. It must exit 0 and
-## print nothing but report lines, or fail for a case that is expected to
-## fail, and it must not create `.roc-fuzz/` there as libFuzzer's commands do.
-## A target that reports must report the same counts from a build without
-## `--fuzz`, and `replay` must not print its reports.
+## Measure the actual property, requiring a completed observation inventory.
+## Instrumented and ordinary builds must observe the same allocator statistics.
 measure_step! = |roc, item, work| {
 	seed = seed_path!(item, work)?
 	directory = Path.join(Path.join(work, "measure"), item.name)
 	Path.create_all!(directory)?
 	executable = Script.command(Path.to_os_str(executable_path(work, item)))
 	measured = executable.output!(["measure", Path.to_os_str(seed)], directory)?
-	if Path.exists!(Path.join(directory, ".roc-fuzz"))? {
-		return Err(StepFailed("measure created .roc-fuzz/"))
-	}
 	match (item.expected_failure, measured.status) {
-		(True, Exited(code)) if code != 0 => Ok({})
-		(True, _) => Err(StepFailed("measure did not fail on a case that is expected to fail"))
+		(True, Exited(1)) => Ok({})
+		(True, _) => Err(StepFailed("measure did not report the expected finding"))
 		(False, Exited(0)) => {
-			reports = Str.from_utf8_lossy(measured.stdout_bytes).split_on("\n").keep_if(|line| !line.is_empty())
-			for line in reports {
-				if !Script.starts_with(line, report_prefix) {
-					return Err(StepFailed("measure printed something other than a report: ${line}"))
-				}
+			observations : List(Observation)
+			observations = Json.parse(Str.from_utf8_lossy(measured.stdout_bytes))?
+			if observations.is_empty() or !observations.all(|region| region.complete) or !observations.any(|region| region.name == "$property") {
+				return Err(StepFailed("measure returned an incomplete property inventory"))
 			}
-			if !reports.is_empty() {
-				replayed = executable.output!(["replay", Path.to_os_str(seed)], directory)?
-				if Str.from_utf8_lossy(replayed.stdout_bytes).contains(report_prefix) {
-					return Err(StepFailed("replay printed reports"))
-				}
-				plain = Path.join(Path.join(work, "plain"), item.name)
-				Path.create_all!(Path.join(work, "plain"))?
-				run_quiet!(Bool.False, roc, ["build", Path.to_os_str(item.path), OsStr.from_str("--output=${Path.display(plain)}")], 0)?
-				from_plain = Script.command(Path.to_os_str(plain)).output!(["measure", Path.to_os_str(seed)], directory)?
-				if from_plain.stdout_bytes != measured.stdout_bytes {
-					return Err(StepFailed("reports different counts when built without --fuzz"))
-				}
+			plain = Path.join(Path.join(work, "plain"), item.name)
+			Path.create_all!(Path.join(work, "plain"))?
+			run_quiet!(Bool.False, roc, ["build", Path.to_os_str(item.path), OsStr.from_str("--output=${Path.display(plain)}")], 0)?
+			from_plain = Script.command(Path.to_os_str(plain)).output!(["measure", Path.to_os_str(seed)], directory)?
+			if from_plain.status != Exited(0) or from_plain.stdout_bytes != measured.stdout_bytes {
+				return Err(StepFailed("allocation observations differ when built without --fuzz"))
 			}
 			Ok({})
 		}
 		(False, _) => Err(StepFailed("measure failed\n${tail(measured)}"))
 	}
+}
+
+## The real executable checks and accepts its source-authored inventory.
+quality_step! = |item, work| {
+	directory = Path.join(Path.join(work, "quality"), item.name)
+	Path.create_all!(directory)?
+	executable = Script.command(Path.to_os_str(executable_path(work, item)))
+	listed = executable.output!(["examples"], directory)?
+	if listed.status != Exited(0) {
+		return Err(StepFailed("examples failed\n${tail(listed)}"))
+	}
+	checked = executable.output!(["check", "--report-dir=unbaselined"], directory)?
+	if checked.status != Exited(0) {
+		return Err(StepFailed("declared examples failed\n${tail(checked)}"))
+	}
+	if item.name == "qualityLifetimes" {
+		report : { examples : List({ observations : List(Observation) }) }
+		report = Json.parse(Path.read_utf8!(Path.join(directory, "unbaselined/report.json"))?)?
+		expected : AllocationStats
+		expected = { allocs: 0, reallocs: 0, deallocs: 0, requested_bytes: 0, entry_live_allocs: 0, entry_live_bytes: 0, exit_live_allocs: 0, exit_live_bytes: 0, peak_live_bytes: 0 }
+		if report.examples.len() != 2 or !report.examples.all(|example| example.observations.len() == 1 and example.observations.all(|region| region.name == "$property" and region.stats == expected)) {
+			return Err(StepFailed("scalar property measurements included fixture or decoder ownership cleanup"))
+		}
+	}
+	if !Script.trim(Str.from_utf8_lossy(listed.stdout_bytes)).is_empty() {
+		accepted = executable.output!(["accept", "--report-dir=accept"], directory)?
+		if accepted.status != Exited(0) {
+			return Err(StepFailed("accept failed\n${tail(accepted)}"))
+		}
+		matched = executable.output!(["check", "--report-dir=matched"], directory)?
+		if matched.status != Exited(0) {
+			return Err(StepFailed("accepted observations did not match\n${tail(matched)}"))
+		}
+		report : { baseline_status : Str }
+		report = Json.parse(Path.read_utf8!(Path.join(directory, "matched/report.json"))?)?
+		if report.baseline_status != "matched" {
+			return Err(StepFailed("baseline was not matched"))
+		}
+	}
+	Ok({})
 }
 
 ## Fuzz the target for the configured time. In a campaign the corpus outlives
@@ -361,9 +390,18 @@ fuzz_step! = |settings, item, work| {
 	args = if (settings.verbose) base_args.append("--print-final-stats") else base_args
 	full_args = match settings.campaign {
 		Ok(_) => {
-			failures = Path.join(Path.join(root, "failures"), item.name)
+			report_parent = Path.join(Path.join(root, "reports"), item.name)
+			Path.create_all!(report_parent)?
+			counter_path = Path.join(report_parent, "next-run")
+			counter = if Path.is_file!(counter_path)? {
+				U64.from_str(Script.trim(Path.read_utf8!(counter_path)?))?
+			} else {
+				0
+			}
+			Path.write_utf8!(counter_path, (counter + 1).to_str())?
+			failures = Path.join(report_parent, "run-${counter.to_str()}")
 			Path.create_all!(failures)?
-			args.append(OsStr.from_str("--artifact-dir=${Path.display(failures)}"))
+			args.append(OsStr.from_str("--report-dir=${Path.display(failures)}"))
 		}
 		Err(NoValue) => args
 	}

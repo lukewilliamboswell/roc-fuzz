@@ -14,6 +14,7 @@ main! = |_args| {
 	stable = Script.roc_stable!()?
 	roc = Script.roc!()?
 	check_tooling!(stable)?
+	(Script.roc_stable!()?).run!(["scripts/test_quality.roc"])?
 	check_platform!(roc)?
 	check_fuzz_targets!()?
 	check_worktree!()?

@@ -24,6 +24,8 @@ main! = |_args| {
 			AutomationIO.write!(Path.join(source, "examples/nested/main.roc"), "app [target] { pf: platform \"../../platform/main.roc\", model: \"../shared/main.roc\" }\nvalue = {roc: \"body\"}\n".to_utf8())?
 			AutomationIO.write!(Path.join(source, "examples/shared/main.roc"), "package [] {}\n".to_utf8())?
 			AutomationIO.write!(Path.join(source, "examples/nested/Other.roc"), "answer = 42\n".to_utf8())?
+			AutomationIO.write!(Path.join(source, "examples/nested/witnesses/regression.bin"), [0, 1, 255, 0, 82, 70, 90])?
+			AutomationIO.write!(Path.join(source, "templates/quality/fuzz.roc.in"), "platform placeholder must remain outside example packaging\n".to_utf8())?
 			inventory : ReleaseExamples.Inventory
 			inventory = { schema: 1, cases: [{ name: "nested", path: "examples/nested/main.roc", seed_hex: "00", expected_failure: Bool.False, skip_seed: Bool.False, skip_fuzz: Bool.False }] }
 			AutomationIO.json!(Path.join(source, "tests/targets.json"), inventory)?
@@ -54,8 +56,10 @@ main! = |_args| {
 			Script.require!(example.build_args == ["--fuzz"] and example.cases.len() == 2, "Every example must replay and smoke a fuzz build")?
 			Script.require!(example.cases.first()?.args == ["replay", "../.roc-fuzz/corpus/nested/seed"], "Nested examples resolve seeds from their own directory")?
 			Script.require!(Path.read_bytes!(Path.join(canonical, "examples/.roc-fuzz/corpus/nested/seed"))? == [0], "Archive must carry decoded seed bytes")?
+			Script.require!(Path.read_bytes!(Path.join(canonical, "examples/nested/witnesses/regression.bin"))? == [0, 1, 255, 0, 82, 70, 90], "Archive must preserve original witness bytes and relative paths")?
 			entries = Archive.entries!(Archive.Format.Zip, first, ReleaseExamples.limit)?
 			Script.require!(entries.all(|entry| Script.starts_with(entry.name, "roc-fuzz-examples-1.2.3/")), "Archive must have one canonical root")?
+			Script.require!(!entries.any(|entry| entry.name.contains("templates/")), "Consumer templates must remain outside example packaging and URL rewrites")?
 			flat = Path.join(temp, "legacy.zip")
 			Archive.pack!(Archive.Format.Zip, suite, ["release.json", "tests/targets.json", "examples/nested/main.roc", "examples/nested/Other.roc", "examples/shared/main.roc"], flat)?
 			Script.require!(ReleaseExamples.unpack!(flat, Path.join(temp, "legacy-suite"))? == manifest, "Historical flat archives must remain readable")?

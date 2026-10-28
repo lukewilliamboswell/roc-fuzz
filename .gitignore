@@ -21,3 +21,6 @@
 # Generated tooling bytecode and release staging.
 __pycache__/
 /.release/
+
+# Native unit-test build and lifecycle fixture scratch files.
+/.zig-cache

@@ -349,6 +349,11 @@
       "input": "task:site",
       "component": "",
       "reason": "Development or release task; the bundle's contents are stated by its components and archive members"
+    },
+    {
+      "input": "task:test-quality",
+      "component": "",
+      "reason": "Native allocation, trace, baseline and supervisor tests; tests do not ship"
     }
   ],
   "imported_documents": [],
