@@ -11,6 +11,12 @@ decode_input = |generator, input|
 		Err(_) => Err(InvalidInput)
 	}
 
+# Sequence decoder ownership cleanup before the first scope effect. A pure
+# decoder's cursor drops may otherwise move past scope_start! into the region.
+prepare_input! : Fuzz.Generator(a), List(U8) => Try(a, [InvalidInput])
+	where [a.Binary.Parseable(errs)]
+prepare_input! = |generator, input| decode_input(generator, input)
+
 ## Define typed, deterministic inputs and the pure property that roc-fuzz tests.
 ##
 ## Most targets use [`target`](#Fuzz.target), return [`keep`](#Fuzz.keep) for useful
@@ -308,7 +314,7 @@ Fuzz := [].{
 				Err(_) => crash "example index is outside the declared inventory"
 			},
 			run!: |input| {
-				match decode_input(generator, input) {
+				match prepare_input!(generator, input) {
 					Ok(value) => {
 						measured = Fuzz.measure!("$property", || property!(value))
 						match measured.value {
