@@ -121,7 +121,7 @@ explores with `run --report-dir=...`. Upload evidence even on failure:
   uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
   with:
     name: quality-${{ runner.os }}
-    path: .roc-fuzz/evidence
+    path: .roc-fuzz/verify
     if-no-files-found: error
 ----
 

@@ -1,6 +1,6 @@
 = Design effective targets
 
-The first tutorial generated one `U8`. Application behavior usually accepts
+The first tutorial generated a list of `U8` values. Application behavior also accepts
 records, lists, strings, or domain types. Build a generator that produces values
 close to the operation's useful input domain, then keep the property focused on
 one behavior.
@@ -150,16 +150,17 @@ precondition is awkward to encode and the generated case is outside the property
 you are testing. Do not use `crash` or `expect` to reject such a case; those mean
 roc-fuzz found a failure worth saving.
 
-Watch the rejection rate as tooling adds support for it. If most inputs are
+Watch the report's attempted, accepted and rejected counts. If most inputs are
 rejected, redesign the generator so the campaign spends more time in the code
 that matters.
 
 == Keep saved inputs meaningful
 
-A saved file is decoded by the target's generator. Changing that generator can
-make an old file produce a different typed value. Keep generators stable when a
-corpus or failure matters, and retain the matching executable when exact
-historical reproduction is important.
+A saved entropy witness uses the target's generator; changing that generator
+can make it produce a different typed value. Encoded witnesses use the format
+parser instead, so their meaning depends on the parser and input type. Keep
+the relevant definitions stable when a corpus or failure matters, and retain
+the original bytes and matching executable for exact historical reproduction.
 
 The link:api/index.html[generated API reference] lists all generators and
 combinators. Continue with xref:campaigns.adoc[Run and maintain fuzzing campaigns]

@@ -91,8 +91,8 @@ equal the generated `initial` value.
 property. `crash` means roc-fuzz must save the case as a failure. `show` tells
 roc-fuzz how to render the generated value for a person.
 
-The application header selects an immutable roc-fuzz release and its compatible
-Roc compiler. For another project, select a release from
+The application header selects an immutable roc-fuzz release. Install the
+compatible Roc compiler documented with that release separately. For another project, select a release from
 https://github.com/lukewilliamboswell/roc-fuzz/releases[GitHub Releases] and use
 the compiler documented with that release. Roc obtains the platform through its
 normal package mechanism; there is no separate roc-fuzz installer.
@@ -110,29 +110,30 @@ Start with the bounded default run:
 
 [source,sh]
 ----
-./stack-fuzz run
+./stack-fuzz run --report-dir=.roc-fuzz/first-run
 ----
 
 roc-fuzz generates initial stacks and repeatedly runs the property. An empty
 stack passes even with the bug, while a non-empty stack can expose the mismatch
-between the two ends. The exact status lines and saved hash vary, but the end of
-the output includes commands shaped like these:
+between the two ends. The supervisor prints the outcome and report location:
 
 [source,console]
 ----
-Next steps:
-  ./stack-fuzz show .roc-fuzz/crash-<hash>
-  ./stack-fuzz replay .roc-fuzz/crash-<hash>
-  ./stack-fuzz minimize .roc-fuzz/crash-<hash> .roc-fuzz/minimized-crash
+Report: .roc-fuzz/first-run/report.json
 ----
 
-The saved file contains the reproducible input used by the generator. It is an
-implementation format for roc-fuzz, so inspect it with `show` instead of opening
-it as text:
+The report directory contains `report.json`, a human summary and the child's
+captured `run.log`. That log contains libFuzzer's progress and failure details;
+native crash artifacts are under `failures/`. For this finding, the supervisor
+also preserves the exact failing input as `original-input.bin`. Choose a fresh
+report directory when repeating the run.
+
+Saved inputs can contain generator entropy or encoded values. Inspect the
+decoded representative with `show` instead of opening the binary as text:
 
 [source,sh]
 ----
-./stack-fuzz show .roc-fuzz/crash-<hash>
+./stack-fuzz show .roc-fuzz/first-run/original-input.bin
 ----
 
 For this target, `show` prints the generated initial stack. Reproduce the failure
@@ -140,7 +141,7 @@ in a fresh process:
 
 [source,sh]
 ----
-./stack-fuzz replay .roc-fuzz/crash-<hash>
+./stack-fuzz replay .roc-fuzz/first-run/original-input.bin
 ----
 
 Then ask roc-fuzz for a smaller reproducing input:
@@ -148,7 +149,7 @@ Then ask roc-fuzz for a smaller reproducing input:
 [source,sh]
 ----
 ./stack-fuzz minimize \
-  .roc-fuzz/crash-<hash> .roc-fuzz/minimized-crash
+  .roc-fuzz/first-run/original-input.bin .roc-fuzz/minimized-crash
 ./stack-fuzz show .roc-fuzz/minimized-crash
 ./stack-fuzz replay .roc-fuzz/minimized-crash
 ----
@@ -183,6 +184,14 @@ target's `examples` list:
 [source,sh]
 ----
 ./stack-fuzz retain .roc-fuzz/minimized-crash --name previous-crash --output=fuzz/regressions
+----
+
+After adding the printed declaration, rebuild so the executable contains the
+new example, then check it:
+
+[source,sh]
+----
+roc build --fuzz fuzz/stack/main.roc --output=stack-fuzz
 ./stack-fuzz check
 ----
 
@@ -248,8 +257,10 @@ must not crash or hang.
 Generate useful values directly. If a parser accepts bytes of any shape, arbitrary
 bytes may be appropriate. If an operation requires a bounded port number or a
 non-empty list, express that rule in the generator so most search effort reaches
-the behavior you care about. Use `Fuzz.reject` only when a generated case lies
-outside the property; do not use `crash` to reject an ordinary invalid input.
+the behavior you care about. Enforce the same preconditions in the property or
+a validated input type: encoded examples and mutations bypass the generator.
+Return `Fuzz.reject` for inputs outside the property; do not use `crash` to
+reject an ordinary invalid input.
 
 Keep unrelated operations and properties in separate targets. A practical first
 set might include one target per parser, encoder/decoder pair, state transition,

@@ -75,15 +75,56 @@ native engine:
 Fuzz.measure! : Str, (() => a) => { value : a, stats : Fuzz.Stats }
 Fuzz.start_measure! : Str => Fuzz.Measurement
 Fuzz.Measurement.finish! : Fuzz.Measurement => Fuzz.Stats
+----
 
-measured = Fuzz.measure!("decode", || decode(input))
-check_result(measured.value)
-if measured.stats.reallocs != 0 { crash "decode unexpectedly reallocated" }
+Measurements and trace marks are effects. Use `test!` with `Fuzz.target_with!`
+when adding them to a target that previously used a pure `test`. This complete
+target checks a prepend operation and its allocation behavior:
 
+[source,roc]
+----
+app [target] { fuzz: platform "PLATFORM_URL" }
+
+import fuzz.Fuzz
+
+test! : List(U8) => Fuzz.Outcome
+test! = |input| {
+    if input.len() > 32 { return Fuzz.reject }
+    Fuzz.trace_rules!([Before("prepend", "checked"), Count("checked", 1)])
+    measured = Fuzz.measure!("prepend", || List.prepend(input, 0))
+    if measured.value.first() != Ok(0) or measured.value.drop_first(1) != input {
+        crash "prepend changed the input or inserted the wrong item"
+    }
+    if measured.stats.reallocs != 0 { crash "prepend unexpectedly reallocated" }
+    Fuzz.mark!("checked")
+    Fuzz.keep
+}
+
+target = Fuzz.target_with!({
+    name: "prepend-quality",
+    examples: [
+        Fuzz.example({ name: "empty", revision: "1", make: || [] }),
+        Fuzz.example({ name: "several", revision: "1", make: || [1.U8, 2, 3] }),
+    ],
+    generator: Fuzz.list(Fuzz.u8, 32),
+    test!,
+    show: Str.inspect,
+})
+----
+
+Replace `PLATFORM_URL` with the release's platform URL. The property enforces its
+size bound for encoded mutations as well as generated values. Inside an
+effectful `test!`, a manual window uses the same engine:
+
+[source,roc]
+----
 window = Fuzz.start_measure!("manual")
-value = build(input)
+value = List.prepend(input, 0)
 stats = window.finish!()
-use(value, stats)
+if value.first() != Ok(0) or value.drop_first(1) != input {
+    crash "prepend changed the input or inserted the wrong item"
+}
+if stats.reallocs != 0 { crash "prepend unexpectedly reallocated" }
 ----
 
 Finish manual windows exactly once, in nesting order. Invalid handles, abandoned

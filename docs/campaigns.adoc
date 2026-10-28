@@ -27,11 +27,11 @@ The most useful limits are:
 |`--time=N` |Stop after `N` seconds; `0` is unbounded. |Defaults to
 `60`.
 
-|`--runs=N` |Stop after `N` generated inputs. |Useful for repeatable CI
+|`--runs=N` |Stop after `N` attempted inputs. |Useful for repeatable CI
 checks.
 
-|`--max-input-size=N` |Limit raw entropy bytes supplied to the
-generator. |Start small and raise only when needed.
+|`--max-input-size=N` |Limit corpus input bytes, including framing, for
+entropy and encoded values. |Start small and raise only when needed.
 
 |`--timeout=N` |Treat one input taking longer than `N` seconds as a
 failure. |A few seconds for a normally fast target.
@@ -49,16 +49,19 @@ campaign with the same runner build and configuration.
 |Useful in CI and smoke tests.
 |===
 
-`--max-input-size` limits the generator's raw input, not necessarily
-every typed list or string it produces. Put bounds in the generator as
-well when a typed value could become expensive.
+`--max-input-size` bounds the binary input, not necessarily every typed list or
+string it produces. Generators control search bias; encoded examples and their
+mutations bypass them. Enforce domain and resource limits in property
+preconditions or validated input types for both forms, and return `Fuzz.reject`
+before an operation becomes too expensive. Generator bounds help the entropy
+path reach those valid values efficiently.
 
 Do not confuse the campaign seed with a saved input. Different engine
 builds, coverage layouts, or configurations may generate different
 mutation sequences from `--seed`. Reproduce a failure with its saved
 artifact and `replay`, not with the campaign seed alone.
 
-The runner reports compact status fields:
+The captured `run.log` contains libFuzzer's compact status fields:
 
 * `NEW`: an input reached behavior not represented by the corpus and was
 saved.
@@ -77,7 +80,7 @@ tighter bounds.
 
 == Maintain a corpus
 
-A corpus is a collection of small raw inputs that collectively reach
+A corpus is a collection of small binary inputs that collectively reach
 useful code. It is not a directory of every attempted input. Use a
 stable corpus directory across campaigns:
 
@@ -86,11 +89,11 @@ stable corpus directory across campaigns:
 TARGET run quality/corpus/my-target --time=3600 --max-input-size=4096
 ----
 
-Seed a target with a few small examples that reach meaningfully
-different behavior, then let the fuzzer extend them. Because roc-fuzz
-decodes raw entropy into typed values, a seed file's bytes may not
-resemble the value printed by `show`. Check manually created seeds with
-the target executable.
+Declare a few small `Fuzz.example` values that reach meaningfully different
+behavior; they become encoded corpus seeds that the fuzzer can mutate. Use
+`Fuzz.saved` for original entropy or encoded witnesses. Both forms reach the
+same property, and their binary bytes need not resemble the value printed by
+`show`. Check manually created seeds with the target executable.
 
 Reduce a large corpus into a new, initially empty directory while
 preserving coverage:
@@ -113,10 +116,10 @@ Dictionaries are most effective when recognizable bytes flow fairly
 directly into a parser. They may help less when a structural generator
 heavily transforms the raw input.
 
-Changing a generator can make old corpus and crash files decode to
-different typed values. The generator is part of the target's input
-format. Keep it stable when practical and use `show` to check saved
-inputs after a change.
+Changing a generator can change the typed values produced by entropy witnesses.
+Encoded witnesses use the format parser instead. Keep the relevant generator,
+parser and input type stable when practical, and use `show` to check saved inputs
+after a change. Preserve original bytes when storage shape matters.
 
 == Diagnose an unstable failure
 
