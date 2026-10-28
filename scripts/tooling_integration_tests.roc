@@ -46,6 +46,19 @@ main! = |_args| {
 			Script.require!(Path.read_utf8!(Path.join(source, "examples/nested/main.roc"))? == original, "Packaging must preserve source examples")?
 			suite = Path.join(temp, "suite")
 			actual = ReleaseExamples.unpack!(first, suite)?
+			canonical = Path.join(suite, "roc-fuzz-examples-1.2.3")
+			shared : ReleaseExamples.SharedSuite
+			shared = Json.parse(Path.read_utf8!(Path.join(canonical, "spec.json"))?)?
+			Script.require!(shared.release == manifest.version and shared.dependencies == [manifest.platform_url], "Shared suite must name the exact released bundle")?
+			example = shared.apps.first()?
+			Script.require!(example.build_args == ["--fuzz"] and example.cases.len() == 2, "Every example must replay and smoke a fuzz build")?
+			Script.require!(example.cases.first()?.args == ["replay", "../.roc-fuzz/corpus/nested/seed"], "Nested examples resolve seeds from their own directory")?
+			Script.require!(Path.read_bytes!(Path.join(canonical, "examples/.roc-fuzz/corpus/nested/seed"))? == [0], "Archive must carry decoded seed bytes")?
+			entries = Archive.entries!(Archive.Format.Zip, first, ReleaseExamples.limit)?
+			Script.require!(entries.all(|entry| Script.starts_with(entry.name, "roc-fuzz-examples-1.2.3/")), "Archive must have one canonical root")?
+			flat = Path.join(temp, "legacy.zip")
+			Archive.pack!(Archive.Format.Zip, suite, ["release.json", "tests/targets.json", "examples/nested/main.roc", "examples/nested/Other.roc", "examples/shared/main.roc"], flat)?
+			Script.require!(ReleaseExamples.unpack!(flat, Path.join(temp, "legacy-suite"))? == manifest, "Historical flat archives must remain readable")?
 			Script.require!(actual == manifest, "Manifest must survive packaging")?
 			Script.require!(ReleaseExamples.unpack!(first, suite) |> Try.is_err, "Unpacking must require a fresh destination")?
 			Script.require!(Path.is_file!(Path.join(suite, "examples/shared/main.roc"))?, "Package must include the helper packages beside the examples")?

@@ -98,7 +98,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
         with:
           install-nix: 'true'
 
@@ -125,7 +125,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
         with:
           install-nix: 'true'
 
@@ -150,7 +150,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
         with:
           install-nix: 'true'
 
@@ -250,7 +250,7 @@ jobs:
       # from a locked supplier file, so there is no supplier SBOM to fetch.
       - id: sbom
         name: Bind the bundle's SBOM sidecars
-        uses: lukewilliamboswell/roc-automation/actions/sbom-sidecars@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
+        uses: lukewilliamboswell/roc-automation/actions/sbom-sidecars@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
         with:
           files: ${{ steps.bundle.outputs.file }}
           version: ${{ needs.validate.outputs.release_version }}
@@ -308,7 +308,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
         with:
           install-nix: 'true'
 
@@ -320,14 +320,14 @@ jobs:
 
       - id: renderer
         name: Locate the roc-docs renderer Blueprint.lock pins
-        uses: lukewilliamboswell/roc-automation/actions/blueprint-tool@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
+        uses: lukewilliamboswell/roc-automation/actions/blueprint-tool@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
         with:
           task: docs-path
           label: roc-docs tools-0.4.0
 
       - id: docs
         name: Build versioned HTML, PDF, and API documentation
-        uses: lukewilliamboswell/roc-automation/actions/build-docs@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
+        uses: lukewilliamboswell/roc-automation/actions/build-docs@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
         with:
           renderer-binary: ${{ steps.renderer.outputs.binary }}
           site-url: https://lukewilliamboswell.github.io/roc-fuzz/
@@ -376,9 +376,13 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
         with:
           install-nix: 'true'
+
+      - name: Build the reviewed shared archive tester
+        id: shared-suite
+        uses: ./.github/actions/setup-shared-suite
 
       - name: Install the Roc nightly this run resolved
         uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
@@ -413,6 +417,28 @@ jobs:
           bundle_path: .release/test-bundles/${{ matrix.artifact_file }}
           bundle_name: ${{ matrix.bundle_name }}
           release_version: ${{ needs.validate.outputs.release_version }}
+
+      - name: Test the exact canonical archive through the shared engine
+        env:
+          RP_REPOSITORY: ${{ github.repository }}
+          RP_NAME: roc-fuzz
+          RP_COMPILER: roc
+          RP_OUTPUT: ${{ github.workspace }}/.release/shared-suite
+          RP_DIRECTORY: ${{ runner.temp }}/shared-suite-evidence
+          SHARED_TESTER: ${{ steps.shared-suite.outputs.executable }}
+        run: |
+          mkdir -p "$RP_OUTPUT"
+          cp .release/assets/*.zip "$RP_OUTPUT/"
+          cp .release/test-bundles/*.tar.zst "$RP_OUTPUT/"
+          "$SHARED_TESTER" test-archive
+
+      - name: Preserve shared archive test evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: shared-suite-${{ matrix.os }}
+          path: ${{ runner.temp }}/shared-suite-evidence
+          if-no-files-found: warn
 
   attest:
     name: Attest the tested assets
@@ -534,7 +560,7 @@ jobs:
       # publishes. It refuses a tag that already exists.
       - id: publish
         name: Stage a draft, verify every asset, then publish
-        uses: lukewilliamboswell/roc-automation/actions/publish-release@7aff4132691ad4fc348abe9df146a57512b49bd6 # tools-0.4.0
+        uses: lukewilliamboswell/roc-automation/actions/publish-release@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
         with:
           version: ${{ needs.validate.outputs.release_version }}
           prerelease: ${{ needs.validate.outputs.is_prerelease }}

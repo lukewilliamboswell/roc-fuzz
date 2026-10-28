@@ -623,3 +623,18 @@ from depending on every app record or tag-union layout.
 The platform supports x64-musl and Apple Silicon macOS. Keep native
 calls behind the generated bindings, so that a compiler ABI change is caught by
 the bindings check and by compilation.
+
+== Shared examples archive
+
+Starting with 0.4.5, the examples ZIP has one root named
+`roc-fuzz-examples-VERSION`, containing `README.md`, `spec.json`, and `examples/`.
+The specification derives from the published examples in `tests/targets.json`.
+Each app requests `build_args: ["--fuzz"]` and records replay and one-second
+seeded smoke cases. Cases keep exact stdout and exit expectations while
+`stderr_match: "ignore"` allows libFuzzer statistics to vary; raw stderr remains
+available for diagnosis. Seeds and local harness metadata live under
+`examples/.roc-fuzz/`. Historical flat archives remain readable.
+
+The release test jobs run the exact ZIP and bundle through the reviewed shared
+`release-package test-archive` utility before publication. Its loopback bundle
+replacement preserves the archived sources and verifies the candidate bytes.

@@ -1,0 +1,29 @@
+name: Build reviewed shared suite tester
+description: Compile the shared archive tester with its own tooling compiler before installing the project nightly
+outputs:
+  executable:
+    description: Shared release-package executable
+    value: ${{ runner.temp }}/roc-fuzz-shared-suite
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: lukewilliamboswell/roc-automation
+        ref: a25b5129340b9b2ad1744d20330b8ee4d38a1849
+        path: .test-cache/shared-automation
+        persist-credentials: false
+    - uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
+      with:
+        version: nightly-new-compiler
+        nightly-tag: nightly-2026-10-09-258ab27
+    - shell: bash
+      run: |
+        set -euo pipefail
+        roc build .test-cache/shared-automation/scripts/release_package.roc --output="$RUNNER_TEMP/roc-fuzz-shared-suite"
+        # Prevent setup-roc from finding the tooling compiler as the project compiler.
+        tooling=$(dirname "$(realpath "$(command -v roc)")")
+        case "$tooling" in
+          "$GITHUB_WORKSPACE"/roc_nightly-*) mv "$tooling" "$RUNNER_TEMP/roc-fuzz-shared-tooling" ;;
+          *) echo 'Unexpected tooling compiler location' >&2; exit 1 ;;
+        esac

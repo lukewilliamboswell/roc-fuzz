@@ -16,8 +16,10 @@ import pf.Fuzz
 # other `_bom` decoders use `?`, so calling them through a record field and
 # discarding the result inside `Fuzz.expect_no_leaks!` reported one leaked
 # allocation whenever the output was longer than 23 bytes (a heap string).
-# Reproduces on nightly-2026-10-23-18478ff; this case is an expected failure
-# until the compiler releases the value on time.
+# Reproduces on nightly-2026-10-23-18478ff (exit 77). Fixed by roc#12652
+# (eca4b94008f364406ae18c10910d5af46d0de81c), present in
+# nightly-2026-10-27-de79a0f (exit 0). Keep the lifetime assertion as a
+# passing regression: https://github.com/roc-lang/roc/pull/12652
 check : U64 -> Try({}, [Empty])
 check = |n| if (n == 0) Err(Empty) else Ok({})
 

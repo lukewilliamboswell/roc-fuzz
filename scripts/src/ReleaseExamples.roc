@@ -19,6 +19,9 @@ ReleaseExamples := [].{
 	Case : { name : Str, path : Str, seed_hex : Str, expected_failure : Bool, skip_seed : Bool, skip_fuzz : Bool }
 	Inventory : { schema : U64, cases : List(Case) }
 	ArchivedInventory : { schema : U64, cases : List(Case), skips : List(SkipNotes.Note) }
+	SharedCase : { name : Str, args : List(Str), stdin : Str, stdout : Str, stderr : Str, stderr_match : Str, exit_code : I32, skip : Try({ reason : Str, issue : Str }, [Missing]) }
+	SharedApp : { path : Str, build_args : List(Str), cases : List(SharedCase) }
+	SharedSuite : { schema_version : U64, release : Str, dependencies : List(Str), apps : List(SharedApp) }
 	limit : U64
 	limit = 100 * 1024 * 1024
 	validate_suite! = |root| {
@@ -89,7 +92,9 @@ ReleaseExamples := [].{
 		archived = { schema: inventory.schema, cases, skips: notes.keep_if(|note| cases.any(|item| item.name == note.name)) }
 		names = AutomationIO.tracked!(root, ["examples"])?.concat(["tests/targets.json"])
 		Env.with_temp_dir!(
-			|staging| {
+			|temporary| {
+				archive_root = "roc-fuzz-examples-${manifest.version}"
+				staging = Path.join(temporary, archive_root)
 				for name in names {
 					path = Path.join(root, name)
 					if !Archive.safe_name(name) or Path.type!(path)? != IsFile {
@@ -99,8 +104,7 @@ ReleaseExamples := [].{
 				}
 				AutomationIO.json!(Path.join(staging, "tests/targets.json"), archived)?
 				ReleaseExamples.rewrite!(staging, "platform", manifest.platform_url)?
-				# The archive differs from the repository in the platform
-				# dependency and in nothing else.
+				# Application sources differ only in their platform dependency.
 				for name in names.keep_if(|item| Script.ends_with(item, ".roc")) {
 					original = Path.read_utf8!(Path.join(root, name))?
 					for header in RocSource.app_header(original)? {
@@ -111,9 +115,35 @@ ReleaseExamples := [].{
 					}
 				}
 				AutomationIO.json!(Path.join(staging, "release.json"), manifest)?
-				Path.write_utf8!(Path.join(staging, "README.md"), "# roc-fuzz ${manifest.version} examples\n\nThese are the repository's examples at the commit of release ${manifest.version}. Each application depends on that release's platform bundle:\n\n    ${manifest.platform_url}\n\nNothing else differs from the repository, and no example pins a compiler. The release was built and tested with Roc `${manifest.compiler}`.\n\n```sh\nroc build --fuzz examples/jsonRoundTrip.roc\n./examples/jsonRoundTrip run\n```\n")?
+				Path.write_utf8!(Path.join(staging, "README.md"), "# roc-fuzz ${manifest.version} examples\n\nThese are the repository's examples at the commit of release ${manifest.version}. Each application depends on that release's platform bundle:\n\n    ${manifest.platform_url}\n\nApplication sources differ only in that dependency, and no example pins a compiler. The archive adds the shared test specification, seeds, and local harness metadata. The release was built and tested with Roc `${manifest.compiler}`.\n\n```sh\nroc build --fuzz examples/jsonRoundTrip.roc\n./examples/jsonRoundTrip run\n```\n")?
 				_ = ReleaseExamples.validate_release!(staging)?
-				Archive.pack!(Archive.Format.Zip, staging, names.concat(["release.json", "README.md"]), output)
+				# Retain the local harness metadata inside the canonical examples tree.
+				metadata = "examples/.roc-fuzz"
+				AutomationIO.json!(Path.join(staging, "${metadata}/release.json"), manifest)?
+				AutomationIO.json!(Path.join(staging, "${metadata}/targets.json"), archived)?
+				var $apps = []
+				var $seeds = []
+				for item in cases {
+					seed = "${metadata}/corpus/${item.name}/seed"
+					AutomationIO.write!(Path.join(staging, seed), seed_bytes(item.seed_hex)?)?
+					$seeds = $seeds.append(seed)
+					parent_depth = Str.split_on(item.path, "/").len() - 2
+					corpus = "${Str.repeat("../", parent_depth)}.roc-fuzz/corpus/${item.name}"
+					code = if (item.expected_failure) 77 else 0
+					$apps = $apps.append({
+						path: item.path,
+						build_args: ["--fuzz"],
+						cases: [
+							{ name: "replay", args: ["replay", "${corpus}/seed"], stdin: "", stdout: "", stderr: "", stderr_match: "ignore", exit_code: code, skip: shared_skip(item.skip_seed, item.name, "seed", notes)? },
+							{ name: "smoke", args: ["run", corpus, "--time=1", "--seed=1"], stdin: "", stdout: "", stderr: "", stderr_match: "ignore", exit_code: code, skip: shared_skip(item.skip_fuzz, item.name, "fuzz", notes)? },
+						],
+					})
+				}
+				suite : SharedSuite
+				suite = { schema_version: 1, release: manifest.version, dependencies: [manifest.platform_url], apps: $apps }
+				AutomationIO.json!(Path.join(staging, "spec.json"), suite)?
+				archived_names = names.keep_if(|name| Script.starts_with(name, "examples/")).concat(["README.md", "spec.json", "${metadata}/release.json", "${metadata}/targets.json"]).concat($seeds)
+				Archive.pack!(Archive.Format.Zip, temporary, archived_names.map(|name| "${archive_root}/${name}"), output)
 			},
 		)
 	}
@@ -195,7 +225,23 @@ ReleaseExamples := [].{
 		)
 
 	unpack! = |archive, destination| {
-		_ = Archive.extract!(Archive.Format.Zip, archive, destination, ReleaseExamples.limit)?
+		entries = Archive.extract!(Archive.Format.Zip, archive, destination, ReleaseExamples.limit)?
+		# Historical archives were flat; canonical archives have one named root.
+		if !Path.exists!(Path.join(destination, "release.json"))? {
+			prefix = Str.split_on(entries.first()?.name, "/").first()?
+			if entries.any(|entry| !Script.starts_with(entry.name, "${prefix}/")) {
+				return Err(InvalidReleaseArchiveRoot)
+			}
+			canonical = Path.join(destination, prefix)
+			metadata : Manifest
+			metadata = Json.parse(Path.read_utf8!(Path.join(canonical, "examples/.roc-fuzz/release.json"))?)?
+			if prefix != "roc-fuzz-examples-${metadata.version}" {
+				return Err(InvalidReleaseArchiveRoot)
+			}
+			Path.copy_dir!(Path.join(canonical, "examples"), Path.join(destination, "examples"))?
+			AutomationIO.write!(Path.join(destination, "release.json"), Path.read_bytes!(Path.join(canonical, "examples/.roc-fuzz/release.json"))?)?
+			AutomationIO.write!(Path.join(destination, "tests/targets.json"), Path.read_bytes!(Path.join(canonical, "examples/.roc-fuzz/targets.json"))?)?
+		}
 		ReleaseExamples.validate_release!(destination)
 	}
 	fetch! : Selection, Path => Try({}, _)
@@ -314,3 +360,30 @@ expect !valid_version("0.0.1-dry")
 fixture_release : Str, Bool, Bool -> ReleaseExamples.Release
 fixture_release = |version, draft, prerelease| { id: 1, tag_name: version, draft, prerelease, assets: [{ name: "hash.tar.zst", browser_download_url: "https://github.com/owner/repo/releases/download/1.0.0/hash.tar.zst", digest: "sha256:${Str.repeat("a", 64)}" }] }
 expect ReleaseExamples.select_release([fixture_release("1.2.0", Bool.False, Bool.False), fixture_release("1.10.0", Bool.False, Bool.False), fixture_release("9.0.0", Bool.True, Bool.False), fixture_release("2.0.0-rc1", Bool.False, Bool.True), fixture_release("linker-inputs-sha256-abc", Bool.False, Bool.False)]).map_ok(|release| release.tag_name) == Ok("1.10.0")
+
+shared_skip = |disabled, name, operation, notes| {
+	if !disabled {
+		return Ok(Err(Missing))
+	}
+	match notes.keep_if(|note| note.name == name and note.operation == operation) {
+		[note] => Ok(Ok({ reason: note.reason, issue: note.issue }))
+		_ => Err(MissingSharedSkipNote(name))
+	}
+}
+
+seed_bytes = |hex| {
+	var $bytes = []
+	var $index = 0
+	while $index < hex.to_utf8().len() {
+		$bytes = $bytes.append(seed_nibble(hex.to_utf8().get($index)?)? * 16 + seed_nibble(hex.to_utf8().get($index + 1)?)?)
+		$index = $index + 2
+	}
+	Ok($bytes)
+}
+
+seed_nibble = |byte| if (byte >= '0' and byte <= '9') Ok(byte - '0') else if (byte >= 'a' and byte <= 'f') Ok(byte - 'a' + 10) else Err(InvalidSeedHex)
+expect seed_bytes("00ff10") == Ok([0, 255, 16])
+
+expect shared_skip(Bool.False, "example", "seed", []) == Ok(Err(Missing))
+expect shared_skip(Bool.True, "example", "seed", []) == Err(MissingSharedSkipNote("example"))
+expect shared_skip(Bool.True, "example", "seed", [{ name: "example", operation: "seed", reason: "broken", issue: "https://github.com/o/r/issues/1" }]) == Ok(Ok({ reason: "broken", issue: "https://github.com/o/r/issues/1" }))
