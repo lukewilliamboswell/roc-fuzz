@@ -274,13 +274,16 @@ Fuzz := [].{
 	## its generation policy.
 	target_with : { name : Str, examples : List(Example(a)), generator : Generator(a), test : a -> Outcome, show : a -> Str } -> Target
 		where [a.Binary.Encodable, a.Binary.Parseable(errs)]
-	target_with = |config| Fuzz.target_with!({
-		name: config.name,
-		examples: config.examples,
-		generator: config.generator,
-		test!: |value| (config.test)(value),
-		show: config.show,
-	})
+	target_with = |config| {
+		property = config.test
+		Fuzz.target_with!({
+			name: config.name,
+			examples: config.examples,
+			generator: config.generator,
+			test!: |value| property(value),
+			show: config.show,
+		})
+	}
 
 	## Effectful sibling of [`target_with`](#Fuzz.target_with).
 	##
@@ -289,19 +292,25 @@ Fuzz := [].{
 	## value in place instead of reallocating.
 	target_with! : { name : Str, examples : List(Example(a)), generator : Generator(a), test! : a => Outcome, show : a -> Str } -> Target
 		where [a.Binary.Encodable, a.Binary.Parseable(errs)]
-	target_with! = |config|
+	target_with! = |config| {
+		# Capture only the values each callback needs. Capturing config itself
+		# would retain saved fixture bytes in the property closure after decode.
+		declared_examples = config.examples
+		generator = config.generator
+		property! = config.test!
+		show_value = config.show
 		Target.new({
 			name: config.name,
-			example_count: || config.examples.len(),
-			example: |index| match config.examples.get(index) {
+			example_count: || declared_examples.len(),
+			example: |index| match declared_examples.get(index) {
 				Ok(Typed(declared)) => { name: declared.name, revision: declared.revision, bytes: Binary.encode((declared.make)()) }
 				Ok(Saved(declared)) => declared
 				Err(_) => crash "example index is outside the declared inventory"
 			},
 			run!: |input| {
-				match decode_input(config.generator, input) {
+				match decode_input(generator, input) {
 					Ok(value) => {
-						measured = Fuzz.measure!("$property", || (config.test!)(value))
+						measured = Fuzz.measure!("$property", || property!(value))
 						match measured.value {
 							Keep => 0
 							Reject => 1
@@ -311,41 +320,46 @@ Fuzz := [].{
 				}
 			},
 			show: |input| {
-				match decode_input(config.generator, input) {
-					Ok(value) => (config.show)(value)
+				match decode_input(generator, input) {
+					Ok(value) => show_value(value)
 					Err(_) => "<rejected: malformed input or decoding budget exceeded>"
 				}
 			},
 		})
+	}
 
 	## Effectful sibling of [`from_bytes`](#Fuzz.from_bytes).
 	from_bytes! : { name : Str, examples : List(Example(List(U8))), test! : List(U8) => U8 } -> Target
-	from_bytes! = |config|
+	from_bytes! = |config| {
+		property! = config.test!
 		Fuzz.target_with!({
 			name: config.name,
 			examples: config.examples,
 			generator: Fuzz.raw_bytes,
 			test!: |input| {
-				if ((config.test!)(input) == 0) Keep else Reject
+				if (property!(input) == 0) Keep else Reject
 			},
 			show: |input| Str.inspect(input),
 		})
+	}
 
 	## Adapt an existing `List(U8) -> U8` quality target.
 	##
 	## Zero keeps the input; a nonzero byte rejects it. A crash or failed expect
 	## remains a failure. New targets usually prefer typed inputs and examples.
 	from_bytes : { name : Str, examples : List(Example(List(U8))), test : List(U8) -> U8 } -> Target
-	from_bytes = |config|
+	from_bytes = |config| {
+		property = config.test
 		Fuzz.target_with({
 			name: config.name,
 			examples: config.examples,
 			generator: Fuzz.raw_bytes,
 			test: |input| {
-				if ((config.test)(input) == 0) Keep else Reject
+				if (property(input) == 0) Keep else Reject
 			},
 			show: |input| Str.inspect(input),
 		})
+	}
 
 	## Generate the same value without consuming any input bytes.
 	constant : a -> Generator(a)
