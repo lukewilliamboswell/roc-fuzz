@@ -460,7 +460,7 @@ fn printHelp() void {
         \\  --baseline=PATH     override <target-name>_baseline.json in the working directory
         \\  --profile=NAME      select the named allocation profile (default: default)
         \\  --report-dir=DIR    write one report and original-run evidence to an empty directory
-        \\  --time=SECONDS      campaign budget (default: 60; 0: unbounded)
+        \\  --time=SECONDS      campaign budget (default: 60; exploration 0: unbounded)
         \\  --runs=COUNT        bound exploration by executions
         \\  --timeout=SECONDS   invocation deadline (default: 10)
         \\  --max-input-size=BYTES  input size bound

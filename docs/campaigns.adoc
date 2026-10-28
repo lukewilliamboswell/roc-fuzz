@@ -201,3 +201,11 @@ Friendly execution options include:
 Provenance options are `--source-revision`, `--roc-version`,
 `--platform-release` and `--platform-sha256`, each supplied as `--name=value`.
 See xref:quality.adoc[Add fuzzing to CI] for evidence and baseline workflows.
+
+Minimization and corpus reduction accept `--time`, `--runs`, `--timeout` and
+`--report-dir`. They default to a 60-second campaign budget and require a positive
+`--time`; unbounded exploration remains available with `run --time=0` or
+`explore --time=0`. A successful minimization writes the best witness, including
+the unchanged original if no reduction was found. Failed minimization preserves
+an existing output. Corpus reduction requires an absent or empty output directory
+that does not overlap the input directory.
