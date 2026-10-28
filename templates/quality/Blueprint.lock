@@ -1,0 +1,29 @@
+(
+	(fetched ((
+		(name "roc")
+		(obtained Published)
+		(served ())
+		(sha256 "1efa0bf74d93964c270e60761ed6148f2e132c3adfcc5361149b518ef8488649")
+		(size 73792574)
+		(system "x86_64-linux")
+		(urls ("https://github.com/roc-lang/nightlies/releases/download/nightly-2026-10-27-de79a0f/roc_nightly-linux_x86_64-2026-10-27-de79a0f.tar.gz"))
+		(witness "https://api.github.com/repos/roc-lang/nightlies/releases/tags/nightly-2026-10-27-de79a0f")) (
+		(name "roc")
+		(obtained Both)
+		(served ("release-assets.githubusercontent.com"))
+		(sha256 "7dee228e7024472b240401fb669f30a8e13c37286e1bb7102772114fe5a4c094")
+		(size 70666135)
+		(system "aarch64-darwin")
+		(urls ("https://github.com/roc-lang/nightlies/releases/download/nightly-2026-10-27-de79a0f/roc_nightly-macos_apple_silicon-2026-10-27-de79a0f.tar.gz"))
+		(witness "https://api.github.com/repos/roc-lang/nightlies/releases/tags/nightly-2026-10-27-de79a0f"))))
+	(format (
+		(major 2)
+		(minor 0)))
+	(hints ())
+	(intent (
+		(build_sources ())
+		(inputs ())
+		(overlays ())
+		(resolvers ())
+		(sources ())))
+	(sources ()))
