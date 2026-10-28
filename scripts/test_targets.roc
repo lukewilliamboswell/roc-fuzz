@@ -315,9 +315,22 @@ measure_step! = |roc, item, work| {
 	directory = Path.join(Path.join(work, "measure"), item.name)
 	Path.create_all!(directory)?
 	executable = Script.command(Path.to_os_str(executable_path(work, item)))
-	measured = executable.output!(["measure", Path.to_os_str(seed)], directory)?
+	measure_args = if (item.name == "qualityLateRule")
+		["measure", Path.to_os_str(seed), "--report-dir=late-rule-recording"]
+	else
+		["measure", Path.to_os_str(seed)]
+	measured = executable.output!(measure_args, directory)?
 	match (item.expected_failure, measured.status) {
-		(True, Exited(1)) => Ok({})
+		(True, Exited(1)) => {
+			if item.name == "qualityLateRule" {
+				trace : { metric_valid : Bool, trace_rules_valid : Bool, trace_rules_passed : Bool, complete : Bool }
+				trace = Json.parse(Path.read_utf8!(Path.join(directory, "late-rule-recording/example-0-original-trace.json"))?)?
+				if !trace.metric_valid or trace.trace_rules_valid or trace.trace_rules_passed or trace.complete {
+					return Err(StepFailed("a late trace rule changed allocation validity or lost its unfinished original observation"))
+				}
+			}
+			Ok({})
+		}
 		(True, _) => Err(StepFailed("measure did not report the expected finding"))
 		(False, Exited(0)) => {
 			observations : List(Observation)

@@ -90,7 +90,7 @@ fn initHost() void {
 }
 
 fn allocImpl(length: usize, alignment: usize, internal: bool) ?*anyopaque {
-    const metadata = bookkeeping.pack(length, internal) catch |err| observationFailure(err);
+    const metadata = bookkeeping.pack(length, internal) catch |err| invalidMetric(err);
     const actual_alignment = @max(alignment, @alignOf(usize));
     const header_len = actual_alignment;
     const total = std.math.add(usize, length, header_len) catch return null;
@@ -107,7 +107,8 @@ fn allocImpl(length: usize, alignment: usize, internal: bool) ?*anyopaque {
 /// allocations a region performed and whether that region left anything
 /// outstanding.
 ///
-/// `g_alloc_count` counts every `roc_alloc` and `roc_realloc` served, matching
+/// Private measurement ownership containers are excluded from these counters.
+/// `g_alloc_count` counts application `roc_alloc` and `roc_realloc` calls, matching
 /// the roc test platform's `Host.alloc_count!`. `g_live_alloc_count` is the
 /// number of allocations still outstanding: a realloc replaces one block with
 /// another and so leaves the balance unchanged, which is why the reallocation
@@ -134,8 +135,12 @@ fn checkedAdd(value: *u64, amount: u64) void {
     };
 }
 
-fn observationFailure(err: anyerror) noreturn {
+fn invalidMetric(err: anyerror) noreturn {
     engine.metric_valid = false;
+    observationFailure(err);
+}
+
+fn observationFailure(err: anyerror) noreturn {
     writeErr("[roc-fuzz invalid observation] ");
     writeErr(@errorName(err));
     writeErr("\n");
@@ -154,10 +159,10 @@ fn deallocImpl(ptr: *anyopaque, alignment: usize) void {
 
 pub export fn roc_alloc(length: usize, alignment: usize) callconv(.c) *anyopaque {
     const ptr = allocImpl(length, alignment, false) orelse outOfMemory();
-    const internal = return_box.claim(@intFromPtr(ptr), length) catch |err| observationFailure(err);
+    const internal = return_box.claim(@intFromPtr(ptr), length) catch |err| invalidMetric(err);
     if (internal) {
         const metadata: *usize = @ptrFromInt(@intFromPtr(ptr) - @sizeOf(usize));
-        metadata.* = bookkeeping.pack(length, true) catch |err| observationFailure(err);
+        metadata.* = bookkeeping.pack(length, true) catch |err| invalidMetric(err);
     }
     checkedAdd(&physical_live_allocs, 1);
     checkedAdd(&physical_live_bytes, length);
@@ -173,12 +178,12 @@ pub export fn roc_alloc(length: usize, alignment: usize) callconv(.c) *anyopaque
 pub export fn roc_dealloc(ptr: *anyopaque, alignment: usize) callconv(.c) void {
     const metadata = allocationMetadata(ptr);
     const old_length = bookkeeping.length(metadata);
-    if (physical_live_allocs == 0 or physical_live_bytes < old_length) observationFailure(error.InvalidAllocation);
+    if (physical_live_allocs == 0 or physical_live_bytes < old_length) invalidMetric(error.InvalidAllocation);
     physical_live_allocs -= 1;
     physical_live_bytes -= old_length;
     if (!bookkeeping.isBookkeeping(metadata)) {
         engine.dealloc(old_length) catch |err| observationFailure(err);
-        if (g_live_alloc_count == 0) observationFailure(error.InvalidAllocation);
+        if (g_live_alloc_count == 0) invalidMetric(error.InvalidAllocation);
         g_live_alloc_count -= 1;
         checkedAdd(&g_dealloc_count, 1);
     }
@@ -190,7 +195,7 @@ pub export fn roc_realloc(ptr: *anyopaque, new_length: usize, alignment: usize) 
     const old_length = bookkeeping.length(metadata);
     const internal = bookkeeping.isBookkeeping(metadata);
     const new_ptr = allocImpl(new_length, alignment, internal) orelse outOfMemory();
-    if (physical_live_allocs == 0 or physical_live_bytes < old_length) observationFailure(error.InvalidAllocation);
+    if (physical_live_allocs == 0 or physical_live_bytes < old_length) invalidMetric(error.InvalidAllocation);
     physical_live_bytes -= old_length;
     checkedAdd(&physical_live_bytes, new_length);
     if (!internal) {
@@ -234,7 +239,7 @@ fn hostedRequestedBytes() callconv(.c) u64 {
 fn hostedScopeStart(label: abi.RocStr) callconv(.c) u64 {
     var copy: [observation.max_name_bytes]u8 = undefined;
     const bytes = label.asSlice();
-    if (bytes.len > copy.len) observationFailure(error.NameTooLong);
+    if (bytes.len > copy.len) invalidMetric(error.NameTooLong);
     const len = bytes.len;
     @memcpy(copy[0..len], bytes);
     label.decref(&roc_host);
@@ -242,7 +247,7 @@ fn hostedScopeStart(label: abi.RocStr) callconv(.c) u64 {
 }
 
 fn hostedScopeFinish(id: u64) callconv(.c) abi.FuzzScope_finish {
-    if (return_box.scope != null) observationFailure(error.UnfinishedReturnBox);
+    if (return_box.scope != null) invalidMetric(error.UnfinishedReturnBox);
     const stats = engine.finish(id) catch |err| observationFailure(err);
     var result: abi.FuzzScope_finish = undefined;
     inline for (@typeInfo(observation.Stats).@"struct".fields) |field| {
@@ -252,13 +257,13 @@ fn hostedScopeFinish(id: u64) callconv(.c) abi.FuzzScope_finish {
 }
 
 fn hostedPrepareReturnBox() callconv(.c) void {
-    if (engine.depth == 0) observationFailure(error.NoActiveScope);
+    if (engine.depth == 0) invalidMetric(error.NoActiveScope);
     const id = engine.regions[engine.stack[engine.depth - 1]].id;
-    return_box.prepare(id) catch |err| observationFailure(err);
+    return_box.prepare(id) catch |err| invalidMetric(err);
 }
 
 fn hostedScopeFinishReturn(id: u64, value: abi.RocBox) callconv(.c) abi.FuzzScope_finish_return {
-    return_box.finish(id, @intFromPtr(value)) catch |err| observationFailure(err);
+    return_box.finish(id, @intFromPtr(value)) catch |err| invalidMetric(err);
     // Transfer the opaque owned box back to Roc unchanged. Its payload remains
     // alive through finish even when the caller projects only the statistics.
     return .{ .value = value, .stats = hostedScopeFinish(id) };
