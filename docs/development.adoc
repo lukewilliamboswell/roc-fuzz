@@ -638,3 +638,10 @@ available for diagnosis. Seeds and local harness metadata live under
 The release test jobs run the exact ZIP and bundle through the reviewed shared
 `release-package test-archive` utility before publication. Its loopback bundle
 replacement preserves the archived sources and verifies the candidate bytes.
+
+The daily `Nightly compatibility` workflow uses the shared single-job caller
+on Linux x86-64 and Apple Silicon. Empty selectors test the latest final release
+against the latest nightly and report through the shared compatibility gate.
+Diagnostic selector overrides test historical pairs and do not update the issue
+about the latest pair. The separate builtin fuzz campaign retains its own
+schedule and corpus; its result does not determine release compatibility.
