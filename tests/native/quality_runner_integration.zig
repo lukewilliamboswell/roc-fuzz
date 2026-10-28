@@ -40,6 +40,20 @@ const Suite = struct {
     fn expectBaselineUnchanged(self: Suite, prior: []const u8) !void {
         try std.testing.expectEqualStrings(prior, try self.read("fixture_target_baseline.json"));
     }
+
+    fn command(self: Suite, arguments: []const []const u8, mode: []const u8, expected_exit: u8) !void {
+        var environ = try self.environ.clone(self.allocator);
+        try environ.put("ROCFUZZ_FIXTURE_CASE", mode);
+        var argv: std.ArrayList([]const u8) = .empty;
+        try argv.append(self.allocator, self.fixture);
+        try argv.appendSlice(self.allocator, arguments);
+        const result = try std.process.run(self.allocator, self.io, .{ .argv = argv.items, .cwd = .{ .path = self.root }, .environ_map = &environ, .timeout = .{ .duration = .{ .raw = .fromSeconds(30), .clock = .awake } } });
+        if (result.term != .exited or result.term.exited != expected_exit) {
+            std.debug.print("arguments={any}; termination={any}; stdout={s}; stderr={s}\n", .{ arguments, result.term, result.stdout, result.stderr });
+            return error.UnexpectedExitStatus;
+        }
+        try std.testing.expectEqualStrings("", result.stdout);
+    }
 };
 
 fn field(value: std.json.Value, key: []const u8) !std.json.Value {
@@ -225,5 +239,42 @@ pub fn main(init: std.process.Init) !void {
     const failed_listing = try std.process.run(allocator, init.io, .{ .argv = &.{ fixture, "examples" }, .cwd = .{ .path = root }, .environ_map = &preparation_crash_environment });
     try std.testing.expect(failed_listing.term == .exited and failed_listing.term.exited == 2);
     try std.testing.expect(std.mem.indexOf(u8, failed_listing.stderr, "infrastructure_error") != null);
+
+    // Minimize always has a campaign bound. A successful no-op still produces
+    // OUTPUT, while native failure preserves any existing destination.
+    try suite.command(&.{ "minimize", "run/example-0.bin", "minimum.bin", "--time=1", "--report-dir=minimize-report" }, "", 0);
+    try std.testing.expectEqualStrings("one", try suite.read("minimum.bin"));
+    try std.testing.expectEqualStrings("one", try suite.read("run/example-0.bin"));
+    const minimize_log = try std.json.parseFromSlice([]const []const u8, allocator, try suite.read("minimize-report/run.log"), .{});
+    try expectArgument(minimize_log.value, "-max_total_time=1");
+    try expectArgument(minimize_log.value, "-timeout=10");
+    try suite.command(&.{ "minimize", "run/example-0.bin", "minimum-runs.bin", "--runs=3", "--report-dir=minimize-runs-report" }, "minimize-smaller", 0);
+    try std.testing.expectEqualStrings("m", try suite.read("minimum-runs.bin"));
+    const runs_log = try std.json.parseFromSlice([]const []const u8, allocator, try suite.read("minimize-runs-report/run.log"), .{});
+    try expectArgument(runs_log.value, "-max_total_time=60");
+    try expectArgument(runs_log.value, "-runs=3");
+    try suite.command(&.{ "minimize", "run/example-0.bin", "minimum.bin", "--time=1", "--report-dir=minimize-failure-report" }, "raw-failure", 1);
+    try std.testing.expectEqualStrings("one", try suite.read("minimum.bin"));
+    try suite.command(&.{ "minimize", "run/example-0.bin", "run/../run/example-0.bin", "--time=1" }, "", 2);
+    try suite.command(&.{ "minimize", "run/example-0.bin", "run/missing-parent/../example-0.bin", "--time=1" }, "", 2);
+    const original_path = try allocator.dupeZ(u8, try suite.path("run/example-0.bin"));
+    const hardlink_path = try allocator.dupeZ(u8, try suite.path("input-alias.bin"));
+    if (std.c.link(original_path.ptr, hardlink_path.ptr) != 0) return error.CannotCreateAliasFixture;
+    try suite.command(&.{ "minimize", "run/example-0.bin", "input-alias.bin", "--time=1" }, "", 2);
+    try std.testing.expectEqualStrings("one", try suite.read("run/example-0.bin"));
+    try suite.command(&.{ "reduce-corpus", ".roc-fuzz/corpus", "reduced-corpus", "--time=1", "--report-dir=reduce-report" }, "reduce-copy", 0);
+    try std.testing.expectEqualStrings("useful", try suite.read("reduced-corpus/retained"));
+    try suite.command(&.{ "reduce-corpus", ".roc-fuzz/corpus", "reduced-corpus", "--time=1" }, "", 2);
+    try suite.command(&.{ "reduce-corpus", ".roc-fuzz/corpus", ".roc-fuzz/corpus/descendant", "--time=1" }, "", 2);
+    try suite.command(&.{ "reduce-corpus", ".roc-fuzz/corpus", ".roc-fuzz", "--time=1" }, "", 2);
+    const source_path = try allocator.dupeZ(u8, try suite.path(".roc-fuzz/corpus"));
+    const alias_path = try allocator.dupeZ(u8, try suite.path("corpus-alias"));
+    if (std.c.symlink(source_path.ptr, alias_path.ptr) != 0) return error.CannotCreateAliasFixture;
+    try suite.command(&.{ "reduce-corpus", ".roc-fuzz/corpus", "corpus-alias/descendant", "--time=1" }, "", 2);
     std.debug.print("quality runner integration: all checks passed\n", .{});
+}
+
+fn expectArgument(arguments: []const []const u8, expected: []const u8) !void {
+    for (arguments) |argument| if (std.mem.eql(u8, argument, expected)) return;
+    return error.MissingNativeArgument;
 }

@@ -110,6 +110,7 @@ pub fn healthObservationReady() void {
 extern "c" fn fileno(*std.c.FILE) c_int;
 extern "c" fn fsync(c_int) c_int;
 extern "c" fn mkstemp([*:0]u8) c_int;
+extern "c" fn mkdtemp([*:0]u8) ?[*:0]u8;
 extern "c" fn fdopen(c_int, [*:0]const u8) ?*std.c.FILE;
 extern "c" fn fflush(?*std.c.FILE) c_int;
 extern "c" fn ferror(*std.c.FILE) c_int;
@@ -541,6 +542,7 @@ const Options = struct {
     corpus: []const u8 = ".roc-fuzz/corpus",
     exploration_options: []const []const u8 = &.{},
     campaign_deadline_ms: ?u64 = 75_000,
+    time_seconds: ?u64 = null,
     provenance: Provenance = .{},
 };
 
@@ -609,6 +611,7 @@ fn parseOptions(allocator: Allocator, argc: usize, argv: [*][*:0]u8) !Options {
     if (time) |seconds| {
         options.campaign_deadline_ms = if (seconds == 0) null else try std.math.add(u64, try std.math.mul(u64, seconds, 1000), try std.math.add(u64, options.timeout_ms, 5000));
     } else if (has_runs) options.campaign_deadline_ms = null else options.campaign_deadline_ms = try std.math.add(u64, 65_000, options.timeout_ms);
+    options.time_seconds = time;
     options.arguments = try positional.toOwnedSlice(allocator);
     options.exploration_options = try exploration_args.toOwnedSlice(allocator);
     if (std.mem.eql(u8, options.command, "run") or std.mem.eql(u8, options.command, "explore")) {
@@ -623,9 +626,9 @@ fn commandIs(command: []const u8, expected: []const u8) bool {
 }
 
 fn pathsOverlap(allocator: Allocator, left: []const u8, right: []const u8) !bool {
-    const a = try std.fs.path.resolve(allocator, &.{left});
-    const b = try std.fs.path.resolve(allocator, &.{right});
-    return std.mem.eql(u8, a, b) or
+    const a = try canonicalPath(allocator, left);
+    const b = try canonicalPath(allocator, right);
+    return std.mem.eql(u8, a, b) or std.mem.eql(u8, a, "/") or std.mem.eql(u8, b, "/") or
         (std.mem.startsWith(u8, a, b) and a.len > b.len and a[b.len] == std.fs.path.sep) or
         (std.mem.startsWith(u8, b, a) and b.len > a.len and b[a.len] == std.fs.path.sep);
 }
@@ -1086,6 +1089,121 @@ fn retain(allocator: Allocator, argc: usize, argv: [*][*:0]u8, executable: []con
     return if (rendering.passed()) 0 else 1;
 }
 
+/// Resolve existing parents too, so a new output below a symlink cannot hide
+/// that it overlaps the input directory.
+fn canonicalPath(allocator: Allocator, path: []const u8) ![]const u8 {
+    const absolute = if (std.fs.path.isAbsolute(path)) try allocator.dupe(u8, path) else try std.fs.path.join(allocator, &.{ try std.process.currentPathAlloc(io(), allocator), path });
+    return std.Io.Dir.cwd().realPathFileAlloc(io(), absolute, allocator) catch |err| switch (err) {
+        error.FileNotFound => {
+            const parent = std.fs.path.dirname(absolute) orelse return err;
+            return std.fs.path.resolve(allocator, &.{ try canonicalPath(allocator, parent), std.fs.path.basename(absolute) });
+        },
+        else => return err,
+    };
+}
+
+fn sameFile(allocator: Allocator, input: []const u8, output: []const u8) !bool {
+    if (std.mem.eql(u8, try canonicalPath(allocator, input), try canonicalPath(allocator, output))) return true;
+    const input_z = try allocator.dupeZ(u8, input);
+    const output_z = try allocator.dupeZ(u8, output);
+    var first: std.c.Stat = undefined;
+    var second: std.c.Stat = undefined;
+    if (std.c.fstatat(std.c.AT.FDCWD, input_z.ptr, &first, 0) != 0) return error.CannotInspectInput;
+    if (std.c.fstatat(std.c.AT.FDCWD, output_z.ptr, &second, 0) != 0) {
+        return switch (std.posix.errno(@as(c_int, -1))) {
+            .NOENT => false,
+            else => error.CannotInspectOutput,
+        };
+    }
+    return first.dev == second.dev and first.ino == second.ino;
+}
+
+fn requireEmptyDirectory(path: []const u8) !void {
+    var directory = std.Io.Dir.cwd().openDir(io(), path, .{ .iterate = true }) catch |err| switch (err) {
+        error.FileNotFound => return,
+        else => return err,
+    };
+    defer directory.close(io());
+    var iterator = directory.iterate();
+    if (try iterator.next(io()) != null) return error.OutputDirectoryNotEmpty;
+}
+
+fn printLog(path: []const u8, allocator: Allocator) !void {
+    const path_z = try allocator.dupeZ(u8, path);
+    const file = std.c.fopen(path_z.ptr, "rb") orelse return error.CannotReadLog;
+    defer _ = std.c.fclose(file);
+    var buffer: [64 * 1024]u8 = undefined;
+    while (true) {
+        const count = std.c.fread(&buffer, 1, buffer.len, file);
+        if (count == 0) break;
+        writeFd(2, buffer[0..count]);
+    }
+    if (ferror(file) != 0) return error.CannotReadLog;
+}
+
+fn findingCommand(allocator: Allocator, executable: []const u8, options: Options) !u8 {
+    if (options.arguments.len != 2) return error.ExpectedInputAndOutput;
+    if (options.baseline != null or !commandIs(options.profile, "default") or options.detailed or options.no_detect_leaks) return error.UnsupportedFindingOption;
+    const input = options.arguments[0];
+    const output = options.arguments[1];
+    const minimizing = commandIs(options.command, "minimize");
+    const input_path = try canonicalPath(allocator, input);
+    const output_path = try canonicalPath(allocator, output);
+    if (minimizing) {
+        if (try sameFile(allocator, input, output)) return error.InputAndOutputAreSameFile;
+    } else {
+        if (try pathsOverlap(allocator, input_path, output_path)) return error.InputAndOutputDirectoriesOverlap;
+        var directory = try std.Io.Dir.cwd().openDir(io(), input_path, .{});
+        directory.close(io());
+        try requireEmptyDirectory(output_path);
+    }
+    const original = if (minimizing) try readFile(allocator, input, max_input_len) else &.{};
+    const report_dir = try createReportDirectory(allocator, options.report_dir);
+    const report_path = try canonicalPath(allocator, report_dir);
+    if (try pathsOverlap(allocator, report_path, input_path) or try pathsOverlap(allocator, report_path, output_path)) return error.FindingPathsOverlapReportDirectory;
+    const log_path = try std.fs.path.join(allocator, &.{ report_dir, "run.log" });
+    const seconds = options.time_seconds orelse 60;
+    if (seconds == 0) return error.FindingBudgetMustBePositive;
+    const deadline = try std.math.add(u64, try std.math.mul(u64, seconds, 1000), try std.math.add(u64, options.timeout_ms, 5000));
+    var arguments: std.ArrayList([]const u8) = .empty;
+    try arguments.appendSlice(allocator, &.{ executable, "raw" });
+    try arguments.append(allocator, try std.fmt.allocPrint(allocator, "-timeout={d}", .{options.timeout_ms / 1000}));
+    // libFuzzer's crash minimizer otherwise silently substitutes 600 seconds,
+    // including when a run bound is provided. Always supply the campaign bound.
+    try arguments.append(allocator, try std.fmt.allocPrint(allocator, "-max_total_time={d}", .{seconds}));
+    for (options.exploration_options) |argument| {
+        if (valueAfter(argument, "--runs=")) |value| {
+            try arguments.append(allocator, try std.fmt.allocPrint(allocator, "-runs={s}", .{value}));
+        } else if (!std.mem.startsWith(u8, argument, "--time=") and !std.mem.startsWith(u8, argument, "--timeout=")) return error.UnsupportedFindingOption;
+    }
+    if (!minimizing) {
+        try std.Io.Dir.createDirPath(.cwd(), io(), output_path);
+        try arguments.appendSlice(allocator, &.{ "-merge=1", output_path, input_path });
+        const result = try runChild(allocator, arguments.items, log_path, deadline);
+        try printLog(log_path, allocator);
+        return if (result.passed()) 0 else 1;
+    }
+    if (std.fs.path.dirname(output_path)) |parent| try std.Io.Dir.createDirPath(.cwd(), io(), parent);
+    const staging = try std.fmt.allocPrintSentinel(allocator, "{s}.minimize-XXXXXX", .{output_path}, 0);
+    if (mkdtemp(staging.ptr) == null) return error.CannotCreateMinimizationDirectory;
+    defer std.Io.Dir.cwd().deleteTree(io(), staging) catch {};
+    const staged_input = try std.fs.path.join(allocator, &.{ staging, "input.bin" });
+    const staged_output = try std.fs.path.join(allocator, &.{ staging, "output.bin" });
+    try writeFile(allocator, staged_input, original);
+    try arguments.appendSlice(allocator, &.{ "-minimize_crash=1", try std.fmt.allocPrint(allocator, "-exact_artifact_path={s}", .{staged_output}), staged_input });
+    const result = try runChild(allocator, arguments.items, log_path, deadline);
+    try printLog(log_path, allocator);
+    if (!result.passed()) return 1;
+    const reduced = readFile(allocator, staged_output, max_input_len) catch |err| switch (err) {
+        error.FileNotFound => original,
+        else => return err,
+    };
+    // libFuzzer may succeed without writing a smaller witness. The command's
+    // output contract still holds, with the exact original storage witness.
+    try atomicWrite(allocator, output, if (reduced.len < original.len) reduced else original);
+    return 0;
+}
+
 /// Returns false for help, advanced libFuzzer modes, and the exploration worker.
 /// Handled commands terminate the process after the durable report is complete.
 pub fn dispatch(argc: usize, argv: [*][*:0]u8, target_name: []const u8, adapter: Adapter) bool {
@@ -1128,27 +1246,8 @@ pub fn dispatch(argc: usize, argv: [*][*:0]u8, target_name: []const u8, adapter:
         }
         std.c._exit(0);
     }
-    if (commandIs(command, "minimize") or commandIs(command, "reduce-corpus")) {
-        // These libFuzzer modes still have a supervisor. They are re-executed
-        // through the explicit raw boundary so native workers cannot recurse.
-        if (argc != 4) fail("minimize and reduce-corpus require INPUT OUTPUT");
-        const input = std.mem.span(argv[2]);
-        const output = std.mem.span(argv[3]);
-        const report_dir = createReportDirectory(allocator, null) catch |err| failError(err);
-        const log_path = std.fs.path.join(allocator, &.{ report_dir, "run.log" }) catch |err| failError(err);
-        var arguments: std.ArrayList([]const u8) = .empty;
-        arguments.appendSlice(allocator, &.{ executable, "raw", "-timeout=10" }) catch |err| failError(err);
-        if (commandIs(command, "minimize")) {
-            arguments.appendSlice(allocator, &.{ "-minimize_crash=1", std.fmt.allocPrint(allocator, "-exact_artifact_path={s}", .{output}) catch |err| failError(err), input }) catch |err| failError(err);
-        } else {
-            std.Io.Dir.createDirPath(.cwd(), io(), output) catch |err| failError(err);
-            arguments.appendSlice(allocator, &.{ "-merge=1", output, input }) catch |err| failError(err);
-        }
-        const result = runChild(allocator, arguments.items, log_path, null) catch |err| failError(err);
-        writeFd(1, readFile(allocator, log_path, max_json_len) catch |err| failError(err));
-        std.c._exit(if (result.passed()) 0 else 1);
-    }
     const options = parseOptions(allocator, argc, argv) catch |err| failError(err);
+    if (commandIs(command, "minimize") or commandIs(command, "reduce-corpus")) std.c._exit(findingCommand(allocator, executable, options) catch |err| failError(err));
     if (commandIs(options.command, "run") or commandIs(options.command, "check") or commandIs(options.command, "accept") or commandIs(options.command, "explore")) std.c._exit(checkAndExplore(allocator, executable, target_name, options, adapter) catch |err| failError(err));
     if (commandIs(options.command, "replay") or commandIs(options.command, "measure") or commandIs(options.command, "show")) std.c._exit(runInputCommand(allocator, executable, target_name, options, adapter) catch |err| failError(err));
     return false;

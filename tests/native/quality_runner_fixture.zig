@@ -104,6 +104,22 @@ pub fn main(init: std.process.Init) !void {
     for (args, argv) |argument, *slot| slot.* = (try allocator.dupeZ(u8, argument)).ptr;
     const adapter = quality.Adapter{ .prepare_examples = examples, .run_one = runOne, .show = show, .original_snapshot = snapshot };
     if (quality.dispatch(argv.len, argv.ptr, "fixture_target", adapter)) return;
+    if (args.len >= 2 and std.mem.eql(u8, args[1], "raw")) {
+        const encoded = try std.json.Stringify.valueAlloc(allocator, args, .{});
+        _ = std.c.write(2, encoded.ptr, encoded.len);
+        _ = std.c.write(2, "\n", 1);
+        for (args) |argument| {
+            if (std.mem.startsWith(u8, argument, "-exact_artifact_path=")) {
+                if (modeIs("minimize-smaller") or modeIs("raw-failure")) try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = argument[21..], .data = "m" });
+            }
+        }
+        if (modeIs("reduce-copy")) {
+            const path = try std.fs.path.join(allocator, &.{ args[args.len - 2], "retained" });
+            try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = path, .data = "useful" });
+        }
+        if (modeIs("raw-failure")) std.c._exit(1);
+        return;
+    }
     if (args.len >= 2 and std.mem.eql(u8, args[1], "__quality-explore")) {
         const storage = quality.sharedObservation(u64).?;
         storage.* = 31;
