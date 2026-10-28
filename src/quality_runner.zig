@@ -1106,16 +1106,35 @@ fn sameFile(allocator: Allocator, input: []const u8, output: []const u8) !bool {
     if (std.mem.eql(u8, try canonicalPath(allocator, input), try canonicalPath(allocator, output))) return true;
     const input_z = try allocator.dupeZ(u8, input);
     const output_z = try allocator.dupeZ(u8, output);
-    var first: std.c.Stat = undefined;
-    var second: std.c.Stat = undefined;
-    if (std.c.fstatat(std.c.AT.FDCWD, input_z.ptr, &first, 0) != 0) return error.CannotInspectInput;
-    if (std.c.fstatat(std.c.AT.FDCWD, output_z.ptr, &second, 0) != 0) {
-        return switch (std.posix.errno(@as(c_int, -1))) {
-            .NOENT => false,
-            else => error.CannotInspectOutput,
+    if (builtin.os.tag == .linux) {
+        const linux = std.os.linux;
+        var first = std.mem.zeroes(linux.Statx);
+        var second = std.mem.zeroes(linux.Statx);
+        while (true) switch (linux.errno(linux.statx(linux.AT.FDCWD, input_z.ptr, 0, .{ .INO = true }, &first))) {
+            .SUCCESS => break,
+            .INTR => continue,
+            else => return error.CannotInspectInput,
         };
+        while (true) switch (linux.errno(linux.statx(linux.AT.FDCWD, output_z.ptr, 0, .{ .INO = true }, &second))) {
+            .SUCCESS => break,
+            .INTR => continue,
+            .NOENT => return false,
+            else => return error.CannotInspectOutput,
+        };
+        if (!first.mask.INO or !second.mask.INO) return error.FileIdentityUnavailable;
+        return first.dev_major == second.dev_major and first.dev_minor == second.dev_minor and first.ino == second.ino;
+    } else {
+        var first: std.c.Stat = undefined;
+        var second: std.c.Stat = undefined;
+        if (std.c.fstatat(std.c.AT.FDCWD, input_z.ptr, &first, 0) != 0) return error.CannotInspectInput;
+        if (std.c.fstatat(std.c.AT.FDCWD, output_z.ptr, &second, 0) != 0) {
+            return switch (std.posix.errno(@as(c_int, -1))) {
+                .NOENT => false,
+                else => error.CannotInspectOutput,
+            };
+        }
+        return first.dev == second.dev and first.ino == second.ino;
     }
-    return first.dev == second.dev and first.ino == second.ino;
 }
 
 fn requireEmptyDirectory(path: []const u8) !void {
