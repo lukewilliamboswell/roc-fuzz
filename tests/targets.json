@@ -310,7 +310,7 @@
     {
       "name": "floatMinMax",
       "path": "examples/floatMinMax.roc",
-      "seed_hex": "020000000000000000050000000000000000",
+      "seed_hex": "000000000000000000000000000000000000",
       "libfuzzer_seed": 1038,
       "expected_failure": false,
       "skip_seed": false,
@@ -763,6 +763,60 @@
       "seed_hex": "526f63",
       "libfuzzer_seed": 2234,
       "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "qualityInputs",
+      "path": "tests/targets/fixtures/qualityInputs.roc",
+      "seed_hex": "0102030405",
+      "libfuzzer_seed": 2235,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "qualityLifetimes",
+      "path": "tests/targets/fixtures/qualityLifetimes.roc",
+      "seed_hex": "00",
+      "libfuzzer_seed": 2236,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "qualityRejected",
+      "path": "tests/targets/fixtures/qualityRejected.roc",
+      "seed_hex": "00",
+      "libfuzzer_seed": 2237,
+      "expected_failure": true,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "qualityByteRejected",
+      "path": "tests/targets/fixtures/qualityByteRejected.roc",
+      "seed_hex": "00",
+      "libfuzzer_seed": 2238,
+      "expected_failure": true,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "qualityReturnedValues",
+      "path": "tests/targets/fixtures/qualityReturnedValues.roc",
+      "seed_hex": "00",
+      "libfuzzer_seed": 2239,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "qualityLateRule",
+      "path": "tests/targets/fixtures/qualityLateRule.roc",
+      "seed_hex": "00",
+      "libfuzzer_seed": 2240,
+      "expected_failure": true,
       "skip_seed": false,
       "skip_fuzz": false
     }

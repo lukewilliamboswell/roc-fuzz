@@ -11,14 +11,20 @@ main! = |data| {
 	{ value: string, state } = first.arbitrary_str()
 	{ value: retain, .. } = state.ratio(1, 2)
 	tmp = if (retain) string else ""
-	is_empty = Fuzz.expect_allocs_at_most!(0, |{}| string.is_empty())
+	is_empty = Fuzz.expect_allocs_at_most!(0, || string.is_empty())
 	if is_empty != (string.count_utf8_bytes() == 0) {
 		crash "string emptiness disagreed with its byte length"
 	}
 	tmp.count_utf8_bytes().to_u8_wrap()
 }
 
-target = Fuzz.from_bytes!({
+target = Fuzz.target_with!({
+	examples: [],
 	name: "strIsEmpty",
-	test!: main!,
+	generator: Fuzz.raw_bytes,
+	test!: |input| {
+		_ = main!(input)
+		Fuzz.keep
+	},
+	show: Str.inspect,
 })

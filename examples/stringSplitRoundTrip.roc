@@ -3,6 +3,9 @@ app [target] { fuzz: platform "../platform/main.roc" }
 import fuzz.Fuzz
 
 Input := { delimiter : Str, value : Str }.{
+	parser_for : _
+	encoder_for : _
+
 	generator_for : Fuzz.FuzzEncoding -> Fuzz.Generator(Input)
 	generator_for = |_| {
 		{
@@ -23,7 +26,7 @@ test! = |input| {
 	limit = 2 * Str.count_utf8_bytes(input.value) + 4
 	rejoined = Fuzz.expect_allocs_at_most!(
 		limit,
-		|{}| {
+		|| {
 			parts = input.value.split_on(input.delimiter)
 			Str.join_with(parts, input.delimiter)
 		},
@@ -37,6 +40,10 @@ test! = |input| {
 }
 
 target = Fuzz.target_with!({
+	examples: [
+		Fuzz.example({ name: "empty-or-zero", revision: "1", make: || Input.{ delimiter: "", value: "" } }),
+		Fuzz.example({ name: "representative", revision: "1", make: || Input.{ delimiter: ",", value: "one,two,,three" } }),
+	],
 	name: "string-split-round-trip",
 	generator: Input.generator_for(Default),
 	test!,

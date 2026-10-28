@@ -97,7 +97,7 @@ test! = |values| {
 	items = List.map_with_index(values, |value, index| { key: value, position: index })
 	n = List.len(items)
 	limit = 4 * n * (bit_length(n) + 1) + 32
-	sorted = Fuzz.expect_allocs_at_most!(limit, |{}| List.sort_with(items, compare_items))
+	sorted = Fuzz.expect_allocs_at_most!(limit, || List.sort_with(items, compare_items))
 
 	if List.len(sorted) != List.len(items) {
 		crash "sorting a list of strings changed its length"
@@ -120,6 +120,7 @@ test! = |values| {
 }
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "listSortStrings",
 	generator: Fuzz.list(Fuzz.str, 300),
 	test!,

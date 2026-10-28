@@ -122,13 +122,18 @@ check_stable_sort = |items, sorted| {
 ## number of elements.
 test! : Input => Fuzz.Outcome
 test! = |input| {
+	if input.length > 2000 or input.period > 64 {
+		return Fuzz.reject
+	}
+
 	items = build(input)
-	sorted = Fuzz.expect_allocs_at_most!(5, |{}| List.sort_by(items, |item| item.key))
+	sorted = Fuzz.expect_allocs_at_most!(5, || List.sort_by(items, |item| item.key))
 	check_stable_sort(items, sorted)
 	Fuzz.keep
 }
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "listSortPatterns",
 	generator: Fuzz.map2(
 		Fuzz.map2(Fuzz.u8, Fuzz.u64_in(0, 2000), |pattern, length| { pattern, length }),

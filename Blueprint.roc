@@ -46,6 +46,7 @@ config = [
 	# Everything a pull request must pass that does not depend on the target.
 	Task("check", [Use("dev"), Run(["scripts/check_all.roc"])]),
 	Task("check-supply-chain", [Use("dev"), Run(["scripts/check_supply_chain.roc", "--"])]),
+	Task("test-quality", [Use("dev"), Run(["scripts/test_quality.roc"])]),
 	Task("native-sanitizers", [Use("dev"), Run(["scripts/test_native_sanitizers.roc"])]),
 	# The host and its linker inputs. Arguments follow `--`, for example
 	# `blueprint run build-platform -- --target x64musl`.

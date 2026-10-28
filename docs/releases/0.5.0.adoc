@@ -1,0 +1,86 @@
+= roc-fuzz 0.5.0
+
+roc-fuzz now combines pure Roc correctness, named source examples, exact
+allocation baselines, logical traces and coverage-guided exploration in one
+self-contained target executable.
+
+Use the platform dependency attached to this release:
+
+[source,roc]
+----
+app [target] { fuzz: platform "{platform-url}" }
+----
+
+== Examples and reproducible inputs
+
+Every target configuration declares `examples`, using `[]` when it has none.
+`Fuzz.example({ name, revision, make: || value })` creates a typed seed;
+`Fuzz.saved({ name, revision, bytes })` preserves an original witness. Each
+example runs once in a fresh process, independently of coverage retention.
+Typed values become actual mutable corpus seeds through the platform's binary
+format, derived using Roc's existing encoder/parser protocols. Nominal input
+types opt in with `encoder_for : _` and `parser_for : _`.
+
+Bare entropy witnesses keep their generator interpretation. Logical encoding
+is not a snapshot of allocation capacity, sharing or slices. Keep original
+bytes for storage-sensitive findings. Preconditions or validated types must
+validate both decoded and generated values; generator bounds express bias.
+
+== Allocation and logical trace evidence
+
+`Fuzz.measure!("region", || operation(input))` returns `{ value, stats }` and
+records a named observation. `start_measure!` and `Measurement.finish!` use the
+same scope engine. Statistics distinguish allocations, reallocations,
+deallocations, requested bytes, entry/exit live memory and actual peak live
+bytes, including old/new overlap during reallocations. The property itself is
+measured after generation/decoding and before adapter teardown.
+
+Trace rules support `Before`, exact `Count` and `Forbidden` over direct marks
+and completed immediate-child regions. Online validation continues after
+bounded capture truncates. Detailed replay identifies repeated paths, gaps and
+unfinished regions. Timing measurements and timing assertions are excluded.
+
+The earlier measurement/report API is replaced by named measurements. All
+zero-argument callbacks use `||` and signatures such as `() => a`. Byte target
+adapters now forward nonzero return values as rejection.
+
+== One supervised workflow
+
+`TARGET` or `TARGET run` checks examples and baselines, then explores and writes
+one report. Defaults remain 60 seconds of exploration, with a 10-second
+invocation deadline and leak checks. Failed examples skip exploration.
+`check`, `explore`, `accept`, `examples`, `show`, `replay`, `measure`, `retain`,
+`minimize`, `reduce-corpus` and the advanced `raw` boundary are embedded commands.
+CI uses `run --report-dir=...` instead of the earlier `ci` command.
+
+Baselines default to `<declared-target-name>_baseline.json` in the working
+directory, with `--baseline=PATH` and `--profile=NAME` overrides. Every inventory,
+revision, actual input digest, metric version and statistic must match. Both
+increases and reductions require explicit acceptance. A missing entry is
+`unbaselined`. Acceptance is separate from checking and preserves previous data
+when the inventory fails or a write cannot complete.
+
+Reports distinguish outcomes from allocation/trace evidence and capture
+completeness. Exploration counts attempted, accepted and rejected inputs; zero
+accepted inputs is unsuccessful and inconclusive. Original bytes and bounded
+trace breadcrumbs remain in supervisor-owned shared storage even when a child
+crashes. Diagnostic replay remains separate evidence.
+
+== Upgrade and verification
+
+The provider-free Blueprint template uses pinned Roc downloads and ordinary
+tasks and workflows. Consumers need no Nix, Zig, Python, Git executable or
+standalone coordinator. The maintainer environment still uses Nix. Acceptance
+is an explicit maintainer task, never part of verification.
+
+Supported hosts are Linux x86-64 with musl and Apple Silicon macOS 11 or newer.
+This release is validated with Roc `nightly-2026-10-27-de79a0f`. Float encoding
+follows Roc value semantics; use integer bits for NaN-payload properties. The
+current compiler's default specialization can fail on binary dictionaries with
+structural record/tuple keys; `--specialize=no` avoids that compiler limitation.
+
+See the https://lukewilliamboswell.github.io/roc-fuzz/[manual], the generated API
+reference, and the release's checksums, SBOM and provenance. Existing artifacts
+are preserved; there is no automatic corpus migration or cross-version baseline
+comparison. Build a target, review its declared inventory, explicitly accept its
+allocation observations, and commit the resulting baseline for each host/profile.

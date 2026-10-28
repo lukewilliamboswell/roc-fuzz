@@ -323,13 +323,14 @@ blueprint run test-targets -- --operation fuzz --max-total-time 2
 ----
 
 `blueprint run check` needs no native inputs: it formats, tests the scripts,
-runs the pin and supply-chain checks, type-checks the platform and runs its
+runs the pin and supply-chain checks, the native allocation/trace engine and
+supervisor lifecycle suite, type-checks the platform and runs its
 `expect` tests from `platform/main.roc`, and type-checks every case in
 `tests/targets.json`. After native inputs are prepared, `test-targets`
 provides the focused operations shown above.
 
 `test-targets` runs each stage of the operation (check, test, build, seed,
-measure, fuzz) over every selected case and prints one line per step as it
+measure, quality, fuzz) over every selected case and prints one line per step as it
 finishes, with its position, `PASS`, `FAIL` or `SKIP`, and its time in
 milliseconds. A failed step does not stop the run: the case's later stages are
 skipped and every other case carries on. The run ends with each failure and the
@@ -445,18 +446,15 @@ their day, and the driver treats Roc's version-mismatch warning as a failure, so
 those archives pass only with the compiler they name. Later archives carry no
 pin.
 
-Every target asserts on allocation behaviour as well as on results. A
-property can check what an operation computes but not what it costs, so
-a builtin that stops mutating a uniquely owned value in place and starts
-copying it still returns the right answer and no content property
-notices. Pin the cost with `Fuzz.expect_allocs_at_most!` or
-`Fuzz.expect_allocs_at_least!`, and build the target with
-`Fuzz.target_with!` or `Fuzz.from_bytes!` so the property may perform
-effects. The `check` stage requires one of those assertion helpers; raw
-counter reads, measurements, and leak-only checks do not satisfy the
-policy. A target that genuinely cannot assert on cost belongs in
-the allocation-assertion exemptions in `scripts/test_targets.roc` with a concrete
-reason.
+Every property callback has an automatic allocation observation. Source examples
+run independently of the coverage corpus and can be accepted into an exact
+baseline. Explicit named regions use `Fuzz.measure!` or manual measurement
+windows; ordinary Roc assertions inspect their statistics. Existing builtin
+regressions also use allocation assertion helpers around specific operations.
+The `quality` stage exercises the real executable's unbaselined, acceptance and
+exact-match workflow for targets with declared examples. The native suite tests
+crashes, deadlines, rejected inputs, baseline drift in both directions, original
+shared evidence and atomic write failures.
 
 Assert on a difference between two counter reads, never on a raw value:
 the counter is process-wide and libFuzzer reuses one process across
@@ -469,7 +467,9 @@ everything it allocated, and fails the input otherwise. Pass
 `--no-detect-leaks` to a run to turn that off.
 
 The byte-oriented builtin targets live under `tests/targets/builtins/`
-and use `Fuzz.from_bytes`. They are regression tests for the compiler and its
+and use explicit byte generators and `Fuzz.keep` outcomes. Their original
+byte-valued probe results keep aliases alive and are not rejection statuses.
+They are regression tests for the compiler and its
 builtins: `tests/targets.json` lists them beside the examples, pull-request CI
 runs them, and a release's examples archive leaves them out. The applications
 under `examples/` are an end-user gallery and should

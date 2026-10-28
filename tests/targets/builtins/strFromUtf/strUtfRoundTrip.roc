@@ -47,6 +47,7 @@ test! = |original| {
 }
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "strUtfRoundTrip",
 	generator: Fuzz.str,
 	test!,

@@ -3,6 +3,9 @@ app [target] { pf: platform "../../../platform/main.roc" }
 import pf.Fuzz
 
 Input := { hi : U64, lo : U64, mode : U8, fraction : U64 }.{
+	parser_for : _
+	encoder_for : _
+
 	generator_for : Fuzz.FuzzEncoding -> Fuzz.Generator(Input)
 	generator_for = |_| {
 		{
@@ -81,7 +84,7 @@ test! = |input| {
 
 	{ rounded, floored, ceiled, truncated } = Fuzz.expect_allocs_at_most!(
 		0,
-		|{}| {
+		|| {
 			rounded: Dec.round_try(x),
 			floored: Dec.floor_try(x),
 			ceiled: Dec.ceiling_try(x),
@@ -172,6 +175,7 @@ test! = |input| {
 }
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "decRound",
 	generator: Input.generator_for(Fuzz.FuzzEncoding.Default),
 	test!,

@@ -162,77 +162,50 @@ CI.
 
 == Command reference
 
-Run `TARGET --help` for the executable's own summary.
-
 [cols="2,3",options="header"]
 |===
-|Command |Purpose
-
-|`TARGET run [CORPUS] [OPTION...]`
-|Run a local campaign, using the default corpus or the supplied directory.
-
-|`TARGET show INPUT`
-|Render the typed Roc value decoded from one saved input.
-
-|`TARGET replay INPUT`
-|Run one saved input in a fresh process.
-
-|`TARGET measure [INPUT]`
-|Run one input, or an empty one, outside libFuzzer and print the target's
-allocation reports. See <<allocation-ratchets>>.
-
-|`TARGET minimize INPUT OUTPUT`
-|Find a smaller input that reproduces the same failure and write it to `OUTPUT`.
-
-|`TARGET reduce-corpus INPUT OUTPUT`
-|Copy a smaller coverage-preserving subset of `INPUT` into an empty `OUTPUT`
-directory.
-
-|`TARGET ci REPORT_DIR [CORPUS] [OPTION...]`
-|Run a supervised campaign and write its report, summary, log, hashes, and
-failure files to a new or empty report directory.
+|Command |Behavior
+|`TARGET` or `TARGET run [CORPUS] [OPTIONS]` |Check examples and baseline, then explore, with one report.
+|`TARGET check [OPTIONS]` |Run each declared example once in a fresh process and compare the baseline.
+|`TARGET accept [OPTIONS]` |Explicitly accept the complete valid allocation observations.
+|`TARGET explore [CORPUS] [OPTIONS]` |Run coverage-guided exploration independently.
+|`TARGET examples` |List names, revisions and input digests.
+|`TARGET show INPUT` |Display the decoded representative.
+|`TARGET replay INPUT [--detailed]` |Reproduce one input under the supervisor.
+|`TARGET measure INPUT` |Print one input's named allocation observations as JSON.
+|`TARGET retain INPUT --name NAME --output DIR` |Keep original bytes and print a source declaration.
+|`TARGET minimize INPUT OUTPUT [OPTIONS]` |Minimize a reproducing finding within the campaign budget.
+|`TARGET reduce-corpus INPUT OUTPUT` |Retain coverage-relevant inputs in OUTPUT.
+|`TARGET raw ...` |Advanced libFuzzer controls.
 |===
 
-The stable `run` and `ci` options are:
+Friendly execution options include:
 
 [cols="2,3",options="header"]
 |===
 |Option |Meaning
-
-|`--time=N`
-|Stop after `N` seconds. The default is `60`; `0` is intentionally unbounded.
-
-|`--runs=N`
-|Stop after `N` generated inputs.
-
-|`--max-input-size=N`
-|Limit the raw entropy bytes supplied to the typed generator.
-
-|`--memory-limit=N`
-|Stop when the process exceeds `N` MB.
-
-|`--timeout=N`
-|Treat one input taking longer than `N` seconds as a failure.
-
-|`--dictionary=FILE`
-|Add format-specific byte tokens to the mutation strategy.
-
-|`--seed=N`
-|Select the campaign's random seed. Preserve a failure with its saved input,
-not this seed alone.
-
-|`--artifact-dir=DIR`
-|Write failure inputs under `DIR`.
-
-|`--no-detect-leaks`
-|Disable the per-input leak check for a documented exceptional campaign.
-
-|`--print-final-stats`
-|Print execution and resource counters when the run finishes.
+|`--time=N` |Exploration budget in seconds; default 60, 0 unbounded.
+|`--runs=N` |Exploration execution bound.
+|`--timeout=N` |Invocation deadline in seconds; default 10.
+|`--max-input-size=N` |Bound corpus input bytes, from 1 byte through 1 MiB.
+|`--memory-limit=N` |Exploration process RSS limit in MiB.
+|`--dictionary=FILE` |Mutation tokens.
+|`--seed=N` |Exploration random seed; retain input bytes for reproduction.
+|`--report-dir=DIR` |Absent or empty destination for the complete report.
+|`--baseline=PATH` |Override `<declared-target-name>_baseline.json`.
+|`--profile=NAME` |Select the named baseline profile.
+|`--detailed` |Capture a detailed logical trace for replay.
+|`--no-detect-leaks` |Disable the broader invocation leak check.
 |===
 
-The `ci` command also accepts provenance fields including `--source-revision`,
-`--roc-version`, `--platform-release`, and `--platform-sha256`. See
-xref:quality.adoc[Add fuzzing to CI] for their use and the report layout. The
-xref:internals.adoc#use-the-libfuzzer-interface[raw engine command] is an
-advanced escape hatch rather than part of the normal interface.
+Provenance options are `--source-revision`, `--roc-version`,
+`--platform-release` and `--platform-sha256`, each supplied as `--name=value`.
+See xref:quality.adoc[Add fuzzing to CI] for evidence and baseline workflows.
+
+Minimization and corpus reduction accept `--time`, `--runs`, `--timeout` and
+`--report-dir`. They default to a 60-second campaign budget and require a positive
+`--time`; unbounded exploration remains available with `run --time=0` or
+`explore --time=0`. A successful minimization writes the best witness, including
+the unchanged original if no reduction was found. Failed minimization preserves
+an existing output. Corpus reduction requires an absent or empty output directory
+that does not overlap the input directory.

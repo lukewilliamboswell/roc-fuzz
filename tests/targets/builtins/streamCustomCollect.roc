@@ -85,6 +85,7 @@ test! = |{ items, known }| {
 }
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "streamCustomCollect",
 	generator: case_gen,
 	test!,

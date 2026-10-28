@@ -19,7 +19,7 @@ main! = |data| {
 
 	out = Fuzz.expect_allocs_at_most!(
 		1,
-		|{}| Str.concat(str1, str2),
+		|| Str.concat(str1, str2),
 	)
 	if out.count_utf8_bytes() != str1.count_utf8_bytes() + str2.count_utf8_bytes() {
 		crash "concatenated string has the wrong byte length"
@@ -28,7 +28,13 @@ main! = |data| {
 	(tmp1.count_utf8_bytes() + tmp2.count_utf8_bytes()).to_u8_wrap()
 }
 
-target = Fuzz.from_bytes!({
+target = Fuzz.target_with!({
+	examples: [],
 	name: "strConcat",
-	test!: main!,
+	generator: Fuzz.raw_bytes,
+	test!: |input| {
+		_ = main!(input)
+		Fuzz.keep
+	},
+	show: Str.inspect,
 })

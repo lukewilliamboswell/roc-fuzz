@@ -3,6 +3,9 @@ app [target] { fuzz: platform "../platform/main.roc" }
 import fuzz.Fuzz
 
 Input := { left : F64, right : F64 }.{
+	parser_for : _
+	encoder_for : _
+
 	generator_for : Fuzz.FuzzEncoding -> Fuzz.Generator(Input)
 	generator_for = |_| {
 		{
@@ -29,7 +32,7 @@ test! = |input| {
 
 	{ smaller, larger } = Fuzz.expect_allocs_at_most!(
 		0,
-		|{}| { smaller: F64.min(input.left, input.right), larger: F64.max(input.left, input.right) },
+		|| { smaller: F64.min(input.left, input.right), larger: F64.max(input.left, input.right) },
 	)
 
 	if smaller > larger {
@@ -48,6 +51,10 @@ test! = |input| {
 }
 
 target = Fuzz.target_with!({
+	examples: [
+		Fuzz.example({ name: "empty-or-zero", revision: "1", make: || Input.{ left: 0.0, right: -0.0 } }),
+		Fuzz.example({ name: "representative", revision: "1", make: || Input.{ left: F64.lowest, right: F64.highest } }),
+	],
 	name: "floatMinMax",
 	generator: Input.generator_for(Fuzz.FuzzEncoding.Default),
 	test!,

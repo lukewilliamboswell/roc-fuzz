@@ -1,123 +1,597 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/lukewilliamboswell/roc-fuzz/refs/heads/trunk/docs/roc-fuzz-ci-report.schema.json",
-  "title": "roc-fuzz CI evidence report",
+  "title": "roc-fuzz quality evidence report",
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schema_version",
+    "format",
     "target",
-    "started_at_unix_ms",
-    "finished_at_unix_ms",
-    "duration_ms",
+    "host_target",
+    "profile",
+    "command",
     "outcome",
-    "finding_kind",
+    "baseline_status",
+    "baseline_path",
+    "examples",
+    "exploration",
+    "error_message",
     "provenance",
-    "configuration",
-    "executable",
-    "termination",
-    "libfuzzer",
-    "corpus",
-    "failures",
-    "log"
+    "preparation",
+    "metric_version",
+    "configuration"
   ],
   "properties": {
-    "schema_version": { "const": "roc-fuzz-ci/v1" },
-    "target": { "type": "string", "minLength": 1 },
-    "started_at_unix_ms": { "type": "integer" },
-    "finished_at_unix_ms": { "type": "integer" },
-    "duration_ms": { "type": "integer", "minimum": 0 },
-    "outcome": { "enum": ["passed", "finding", "infrastructure_error"] },
-    "finding_kind": {
-      "type": ["string", "null"],
-      "enum": [null, "roc_expectation", "roc_crash", "roc_leak", "native_crash", "timeout", "oom", "slow_unit", "unknown"]
+    "format": {
+      "const": "roc-fuzz-quality/1"
+    },
+    "target": {
+      "type": "string",
+      "minLength": 1
+    },
+    "host_target": {
+      "type": "string"
+    },
+    "profile": {
+      "type": "string",
+      "minLength": 1
+    },
+    "command": {
+      "enum": [
+        "run",
+        "check",
+        "accept",
+        "explore",
+        "show",
+        "replay",
+        "measure",
+        "examples"
+      ]
+    },
+    "outcome": {
+      "enum": [
+        "passed",
+        "finding",
+        "baseline_changed",
+        "inconclusive",
+        "infrastructure_error"
+      ]
+    },
+    "baseline_status": {
+      "enum": [
+        "not_checked",
+        "unbaselined",
+        "matched",
+        "changed",
+        "accepted",
+        "invalid",
+        "write_failed"
+      ]
+    },
+    "baseline_path": {
+      "type": "string"
+    },
+    "examples": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/example"
+      }
+    },
+    "exploration": {
+      "$ref": "#/$defs/exploration"
+    },
+    "error_message": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "provenance": {
+      "$ref": "#/$defs/provenance"
+    },
+    "preparation": {
+      "$ref": "#/$defs/preparation"
+    },
+    "metric_version": {
+      "const": "roc-fuzz-allocations/1"
+    },
+    "configuration": {
+      "$ref": "#/$defs/configuration"
+    }
+  },
+  "$defs": {
+    "termination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exit_code",
+        "signal",
+        "timed_out"
+      ],
+      "properties": {
+        "exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 255
+        },
+        "signal": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "timed_out": {
+          "type": "boolean"
+        }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allocs",
+        "reallocs",
+        "deallocs",
+        "requested_bytes",
+        "entry_live_allocs",
+        "entry_live_bytes",
+        "exit_live_allocs",
+        "exit_live_bytes",
+        "peak_live_bytes"
+      ],
+      "properties": {
+        "allocs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reallocs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deallocs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "requested_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "entry_live_allocs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "entry_live_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "exit_live_allocs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "exit_live_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "peak_live_bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "parent_id",
+        "name",
+        "occurrence",
+        "complete",
+        "stats"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "parent_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "name": {
+          "type": "string"
+        },
+        "occurrence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "stats": {
+          "$ref": "#/$defs/stats"
+        }
+      }
+    },
+    "example": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "revision",
+        "input_sha256",
+        "input_path",
+        "outcome",
+        "termination",
+        "metric_valid",
+        "trace_rules_passed",
+        "capture_complete",
+        "observations",
+        "diagnostics",
+        "finding_kind",
+        "log"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "input_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "input_path": {
+          "type": "string"
+        },
+        "outcome": {
+          "enum": [
+            "passed",
+            "failed",
+            "rejected",
+            "crash",
+            "timeout",
+            "invalid_metrics",
+            "trace_violation",
+            "incomplete_observations",
+            "invalid_observations"
+          ]
+        },
+        "termination": {
+          "$ref": "#/$defs/termination"
+        },
+        "metric_valid": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "trace_rules_passed": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "capture_complete": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "observations": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/observation"
+              }
+            }
+          ]
+        },
+        "diagnostics": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "finding_kind": {
+          "$ref": "#/$defs/findingKind"
+        },
+        "log": {
+          "$ref": "#/$defs/logSpan"
+        }
+      }
+    },
+    "exploration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "skipped_reason",
+        "attempted",
+        "accepted",
+        "rejected",
+        "termination",
+        "original_input",
+        "original_input_length",
+        "original_input_sha256",
+        "original_input_complete",
+        "original_trace",
+        "original_trace_input_matches",
+        "breadcrumbs",
+        "breadcrumb_complete",
+        "finding_kind",
+        "log"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "not_requested",
+            "skipped",
+            "passed",
+            "finding",
+            "inconclusive"
+          ]
+        },
+        "skipped_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "attempted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "accepted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rejected": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "termination": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/termination"
+            }
+          ]
+        },
+        "original_input": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "original_input_length": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "original_input_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "original_input_complete": {
+          "type": "boolean"
+        },
+        "original_trace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "original_trace_input_matches": {
+          "type": "boolean"
+        },
+        "breadcrumbs": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "breadcrumb_complete": {
+          "type": "boolean"
+        },
+        "finding_kind": {
+          "$ref": "#/$defs/findingKind"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/logSpan"
+            }
+          ]
+        }
+      }
     },
     "provenance": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["source_revision", "roc_version", "platform_release", "platform_sha256"],
+      "required": [
+        "source_revision",
+        "roc_version",
+        "platform_release",
+        "platform_sha256"
+      ],
       "properties": {
-        "source_revision": { "type": ["string", "null"] },
-        "roc_version": { "type": ["string", "null"] },
-        "platform_release": { "type": ["string", "null"] },
-        "platform_sha256": { "type": ["string", "null"], "pattern": "^[0-9A-Fa-f]{64}$" }
+        "source_revision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roc_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "platform_release": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "platform_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9A-Fa-f]{64}$"
+        }
+      }
+    },
+    "findingKind": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        null,
+        "assertion",
+        "roc_crash",
+        "native_crash",
+        "leak",
+        "timeout",
+        "oom",
+        "invalid_observation",
+        "trace_violation",
+        "infrastructure_error",
+        "unknown"
+      ]
+    },
+    "logSpan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "offset",
+        "length"
+      ],
+      "properties": {
+        "path": {
+          "const": "run.log"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "preparation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "termination",
+        "finding_kind",
+        "log",
+        "error_message"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "not_requested",
+            "passed",
+            "failed"
+          ]
+        },
+        "termination": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/termination"
+            }
+          ]
+        },
+        "finding_kind": {
+          "$ref": "#/$defs/findingKind"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/logSpan"
+            }
+          ]
+        },
+        "error_message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
     "configuration": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["corpus", "time_seconds", "runs", "max_input_size", "memory_limit_mb", "timeout_seconds", "dictionary", "seed", "leak_detection", "command"],
+      "required": [
+        "invocation_deadline_ms",
+        "campaign_deadline_ms",
+        "leak_detection",
+        "detailed_capture",
+        "corpus",
+        "exploration_options"
+      ],
       "properties": {
-        "corpus": { "type": "string" },
-        "time_seconds": { "type": ["string", "null"] },
-        "runs": { "type": ["string", "null"] },
-        "max_input_size": { "type": ["string", "null"] },
-        "memory_limit_mb": { "type": ["string", "null"] },
-        "timeout_seconds": { "type": ["string", "null"] },
-        "dictionary": { "type": ["string", "null"] },
-        "seed": { "type": ["string", "null"] },
-        "leak_detection": { "type": "boolean" },
-        "command": { "type": "array", "items": { "type": "string" }, "minItems": 5 }
-      }
-    },
-    "executable": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["name", "sha256"],
-      "properties": {
-        "name": { "type": "string" },
-        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
-      }
-    },
-    "termination": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["exit_code", "signal"],
-      "properties": {
-        "exit_code": { "type": ["integer", "null"], "minimum": 0, "maximum": 255 },
-        "signal": { "type": ["integer", "null"], "minimum": 0 }
-      }
-    },
-    "libfuzzer": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["coverage_kind", "executed_units", "average_exec_per_sec", "new_units_added", "slowest_unit_time_sec", "peak_rss_mb", "coverage_edges", "coverage_features"],
-      "properties": {
-        "coverage_kind": { "const": "sanitizer_edge_feedback" },
-        "executed_units": { "$ref": "#/$defs/nullableCount" },
-        "average_exec_per_sec": { "$ref": "#/$defs/nullableCount" },
-        "new_units_added": { "$ref": "#/$defs/nullableCount" },
-        "slowest_unit_time_sec": { "$ref": "#/$defs/nullableCount" },
-        "peak_rss_mb": { "$ref": "#/$defs/nullableCount" },
-        "coverage_edges": { "$ref": "#/$defs/nullableCount" },
-        "coverage_features": { "$ref": "#/$defs/nullableCount" }
-      }
-    },
-    "corpus": { "$ref": "#/$defs/manifest" },
-    "failures": { "$ref": "#/$defs/manifest" },
-    "log": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["path", "size", "sha256"],
-      "properties": {
-        "path": { "const": "run.log" },
-        "size": { "type": "integer", "minimum": 0 },
-        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
-      }
-    }
-  },
-  "$defs": {
-    "nullableCount": { "type": ["integer", "null"], "minimum": 0 },
-    "manifest": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["path", "size", "sha256"],
-        "properties": {
-          "path": { "type": "string" },
-          "size": { "type": "integer", "minimum": 0 },
-          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        "invocation_deadline_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "campaign_deadline_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "leak_detection": {
+          "type": "boolean"
+        },
+        "detailed_capture": {
+          "type": "boolean"
+        },
+        "corpus": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "exploration_options": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     }

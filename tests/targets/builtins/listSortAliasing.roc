@@ -38,9 +38,9 @@ needs_reordering = |values| List.len(values) >= 2
 check_sorted! : List(U64), Str, Bool => {}
 check_sorted! = |values, description, must_allocate| {
 	sorted = if must_allocate {
-		Fuzz.expect_allocs_at_least!(1, |{}| List.sort(values))
+		Fuzz.expect_allocs_at_least!(1, || List.sort(values))
 	} else {
-		Fuzz.expect_allocs_at_most!(4, |{}| List.sort(values))
+		Fuzz.expect_allocs_at_most!(4, || List.sort(values))
 	}
 	if List.len(sorted) != List.len(values) {
 		crash "sorting ${description} changed the length of the list"
@@ -64,9 +64,9 @@ test! = |input| {
 	# fewer than two elements is already sorted, so the sort may return it
 	# without copying.
 	shared_sorted = if needs_reordering(base) {
-		Fuzz.expect_allocs_at_least!(1, |{}| List.sort(base))
+		Fuzz.expect_allocs_at_least!(1, || List.sort(base))
 	} else {
-		Fuzz.expect_allocs_at_most!(4, |{}| List.sort(base))
+		Fuzz.expect_allocs_at_most!(4, || List.sort(base))
 	}
 	if !List.is_eq(base, snapshot) {
 		crash "sorting a shared list modified the original list"
@@ -104,6 +104,7 @@ test! = |input| {
 }
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "listSortAliasing",
 	generator: Fuzz.map2(
 		Fuzz.list(Fuzz.u64, 300),

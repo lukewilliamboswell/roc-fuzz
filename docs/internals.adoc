@@ -25,8 +25,9 @@ second, can grow without a practical memory bound, or is expected to
 terminate the process for invalid input. If a crash, timeout, or memory
 blow-up would be a bug, it remains a useful fuzzing failure.
 
-A saved raw input produces the same typed value and result when the
-target and generator are unchanged. Keep the executable alongside
+A saved entropy input produces the same typed value and result when the
+target and generator are unchanged. Encoded examples use the binary parser and
+the same property instead. Keep the executable alongside
 important failure artifacts when exact historical reproduction matters.
 
 == Understand generator dispatch
@@ -50,7 +51,7 @@ Conceptually, `Fuzz.target` has this requirement:
 
 [source,roc]
 ----
-target : { name : Str, test : a -> Outcome, show : a -> Str } -> Target
+target : { name : Str, examples : List(Example(a)), test : a -> Outcome, show : a -> Str } -> Target
     where [a.generator_for : FuzzEncoding -> Generator(a)]
 ----
 
@@ -63,179 +64,141 @@ type. Use `Fuzz.target_with` with an explicit `Generator(a)` for a local
 structural input or when choosing between generators for the same type
 in different targets.
 
-== Assert on allocations
+== Measure allocations and validate traces
 
-A property can check what a builtin computes but not what it costs. A
-builtin that stops mutating a uniquely owned value in place and starts
-copying it still produces correct answers, so no content-based property
-will notice the regression. `Fuzz` exposes the platform's allocation
-counters so a target can assert on cost as well as correctness:
+Every property callback has an automatic `$property` region. Decoding and
+entropy generation finish before that region starts. Named regions use one
+native engine:
 
 [source,roc]
 ----
-Fuzz.alloc_count! : () => U64          # roc_alloc and roc_realloc calls served this process
-Fuzz.live_alloc_count! : () => U64     # allocations not yet freed
-Fuzz.realloc_count! : () => U64        # roc_realloc calls alone
-Fuzz.dealloc_count! : () => U64        # roc_dealloc calls
-Fuzz.requested_bytes! : () => U64      # bytes asked for by allocations and reallocations
-Fuzz.measure_allocs! : ({} => a) => { value : a, allocations : U64 }
-Fuzz.measure_alloc_counts! : ({} => a) => { value : a, counts : Fuzz.AllocCounts }
-Fuzz.expect_allocs_at_most! : U64, ({} => a) => a
-Fuzz.expect_allocs_at_least! : U64, ({} => a) => a
-Fuzz.expect_no_leaks! : ({} => a) => {}
-Fuzz.report_allocs! : Str, ({} => a) => a
-Fuzz.report_alloc_counts! : Str, Fuzz.AllocCounts => {}
+Fuzz.measure! : Str, (() => a) => { value : a, stats : Fuzz.Stats }
+Fuzz.start_measure! : Str => Fuzz.Measurement
+Fuzz.Measurement.finish! : Fuzz.Measurement => Fuzz.Stats
+
+measured = Fuzz.measure!("decode", || decode(input))
+check_result(measured.value)
+if measured.stats.reallocs != 0 { crash "decode unexpectedly reallocated" }
+
+window = Fuzz.start_measure!("manual")
+value = build(input)
+stats = window.finish!()
+use(value, stats)
 ----
 
-The counters are process-wide and monotonic,
-and libFuzzer reuses one process across millions of inputs, so never
-assert on a raw value. Always read the counter before and after the
-region you care about and assert on the difference; `measure_allocs!`
-and `expect_allocs_at_most!` and `expect_allocs_at_least!` do this for
-you.
+Finish manual windows exactly once, in nesting order. Invalid handles, abandoned
+windows, instrumentation limits and arithmetic overflow fail explicitly. The
+returned value is still alive at the measurement boundary. Nested windows are
+inclusive: a parent contains its children's allocator operations.
 
-Only assert zero allocations for a value that is genuinely uniquely
-owned and pre-sized. If the value is aliased anywhere, copy-on-write
-allocation is correct behavior, not a regression. Measure only the
-region you mean to check: a constructor call such as
-`Dict.with_capacity` allocates the entries and bucket lists, so keep it
-outside the measured window.
-
-[source,roc]
-----
-# Build the dict OUTSIDE the measured region: Dict.with_capacity itself
-# allocates the entries and bucket lists.
-d = Dict.with_capacity(n)
-
-filled = Fuzz.expect_allocs_at_most!(
-    0,
-    |{}| {
-        var $result = d
-        var $i = 0
-        while $i < n {
-            $result = Dict.insert($result, $i, $i * 2)
-            $i = $i + 1
-        }
-        $result
-    },
-)
-----
-
-Allocation assertions need an effectful test, so build the target with
-`Fuzz.target_with!` or `Fuzz.from_bytes!` instead of their pure
-counterparts. `target_with!` takes `test! : a => Outcome`; `from_bytes!`
-takes `test! : List(U8) => U8`.
-
-These constructors exist because the runner calls a target through the
-widened `run! : List(U8) => U8`, not the older pure
-`run : List(U8) -> U8`. This is a backward-compatible change: a pure
-function body already satisfies an effectful signature, so every
-existing target keeps compiling and running unchanged. Keep targets pure
-unless the property itself needs one of the allocation combinators above
--- a pure target is deterministic, and libFuzzer's crash replay and
-minimization rely on that determinism to reproduce and shrink a saved
-failure.
+The platform transfers measured results through an opaque ownership container
+before finishing the region. This keeps every returned field alive even when
+the caller reads only `stats` or discards the result. The private container is
+measurement bookkeeping and is excluded from allocator statistics and explicit
+counters in every enclosing region. Ordinary application `Box.box` allocations
+remain counted. The invocation-wide leak check includes both kinds of storage.
 
 [[separate-counts]]
-=== Count each kind of allocator call
+=== Understand the statistics
 
-`measure_allocs!` counts allocations and reallocations together, so it
-cannot tell a region that grows one list from a region that allocates
-twice. `measure_alloc_counts!` keeps them apart, in a
-`Fuzz.AllocCounts` record:
+`allocs`, `reallocs`, `deallocs`:: Separate Roc allocator hook counts. A realloc
+counts once as a realloc; its internal allocation and release are not counted
+again. `allocs + reallocs` gives the number of allocation requests.
+`requested_bytes`:: Sum of each allocation's requested length and each realloc's
+full new length. This includes Roc's own allocation headers and excludes the
+host's bookkeeping header. It measures traffic, rather than RSS or copied bytes.
+`entry_live_allocs`, `entry_live_bytes`:: Roc allocations already live at entry,
+including input storage. Allocations made before a window contribute its entry
+and peak memory, rather than its allocation count.
+`exit_live_allocs`, `exit_live_bytes`:: Memory alive when the window finishes.
+This can include a returned value and is not itself a leak.
+`peak_live_bytes`:: Actual maximum live requested bytes during the window,
+including entry-live memory and simultaneous old/new blocks during realloc.
 
-`allocs`:: `roc_alloc` calls. `allocs + reallocs` is what
-`measure_allocs!` reports as `allocations` for the same region.
-`reallocs`:: `roc_realloc` calls.
-`deallocs`:: `roc_dealloc` calls. A reallocation frees the block it
-replaces without counting a deallocation.
-`requested_bytes`:: The lengths the region asked for: each allocation's
-length, plus each reallocation's full new length, whether it grows or
-shrinks the block. A deallocation and a zero-length request add nothing.
+The broader invocation leak check runs after the complete target adapter returns.
+It includes input preparation and teardown, which the property region excludes.
+`--no-detect-leaks` disables that check. Metrics remain separate from trace rules
+and from diagnostic capture completeness.
 
-`requested_bytes` measures allocator traffic. It is not the heap still in
-use, the process's resident memory, or the bytes a reallocation copies,
-and it includes the compiler's header in front of each allocation. The
-platform serves every request or ends the process, so a region that
-completes made no request that went uncounted. The total stops at the
-largest `U64` instead of wrapping.
+Ordinary Roc assertions can inspect any statistic. The allocation assertion
+helpers `expect_allocs_at_most!` and `expect_allocs_at_least!` take zero-argument
+callbacks (`|| operation(input)`) and count allocations plus reallocations.
+Low-level process counters remain available for tightly focused assertions;
+assert on differences, never their absolute process-wide totals.
 
-Count only what a region builds and drops itself. A value that outlives
-the region is freed wherever the optimiser chooses, which can be inside
-the region in one build and after it in another.
-
-[[allocation-ratchets]]
-=== Hold allocation counts with a ratchet
-
-A ratchet keeps each hot operation's counts in a reviewed data file and
-fails a pull request whose counts go up. roc-fuzz can be the platform
-for one, with nothing fuzzed and no host of the package's own.
-
-Wrap each measured operation in `report_allocs!`. Only its body is
-measured; setup outside it, and building the label, are not:
+=== Declare logical trace rules
 
 [source,roc]
 ----
-test! : List(U8) => U8
-test! = |_| {
-    _ = Fuzz.report_allocs!("100 inserts into the middle", |{}| insert(document, 100))
-    longer = insert(document, 100)
-    _ = Fuzz.report_allocs!("100 deletes from the middle", |{}| delete(longer, 100))
-    0
-}
-
-target = Fuzz.from_bytes!({ name: "allocations", test! })
+Fuzz.trace_rules!([
+    Before("decode", "checked"),
+    Count("checked", 1),
+    Forbidden("fallback"),
+])
+measured = Fuzz.measure!("decode", || decode(input))
+check_result(measured.value)
+Fuzz.mark!("checked")
 ----
 
-Then build the target and run `measure`:
+Register rules before the region's first event. Events are direct marks and
+completed immediate-child regions. `Before(a, b)` requires both events and every
+`a` before every `b`; `Count(event, n)` requires exactly `n`; `Forbidden(event)`
+requires none. A grandchild completion is an event of its immediate parent.
 
-[source,sh]
-----
-roc build tests/allocations/main.roc --output=allocations
-./allocations measure
-----
+Rules are evaluated online even after diagnostic capture fills. Detailed replay
+exports ordered events, explicit gaps and unfinished regions. Parent identifiers
+and occurrence numbers distinguish repeated names. Neither traces nor assertions
+contain timestamps. Capture truncation does not turn an invalid trace into a
+passing one and does not invalidate completed allocation statistics.
 
-`measure` runs the target once, on the named input file or on an empty
-input, outside libFuzzer's driver. It prints one line per report on
-standard output and exits 0. For example, with illustrative numbers:
+[[allocation-ratchets]]
+=== Accept an exact allocation baseline
 
-[source,json]
-----
-{"format":"roc-fuzz-allocs/1","label":"100 inserts into the middle","allocs":307,"reallocs":0,"deallocs":305,"requested_bytes":9824}
-----
+Declare examples with names, revisions and `make: || value`, alongside saved
+artifacts. `TARGET check` runs each once in a fresh process. `TARGET accept` runs
+the same complete inventory once and atomically accepts valid observations.
+No warm-up or statistical repetition is needed for these deterministic metrics.
 
-Each line is one JSON object. Check that `format` is
-`roc-fuzz-allocs/1` before reading the other fields; a change to what a
-field means will change the version. A later version 1 may add fields,
-so ignore any you do not know. `label` is the string passed to
-`report_allocs!`, escaped as a JSON string.
+The default file is `<declared-target-name>_baseline.json` in the working
+directory: a target named `my_target` uses `my_target_baseline.json`. Override it
+with `--baseline=PATH`. Entries are separate by host target and `--profile=NAME`.
+An absent entry reports `unbaselined` and permits normal execution.
 
-A crash, a failed `expect` or a leak under `measure` exits 1, with the
-message on standard error, so a harness never mistakes a failure for a
-report. `measure` creates no files. `run`, `replay` and every other
-command discard reports, so the same target can also be fuzzed.
+Every example name, revision, exact input SHA-256, region inventory, metric
+version and statistic must match. Reductions and increases both need explicit
+acceptance. Failed or rejected examples, incomplete observations and failed
+baseline writes preserve the existing accepted file. Check and acceptance never
+repeat examples to produce a more convenient result.
 
-The harness compares each line with its ceilings, prints the measured
-value beside the ceiling, and fails when a count is higher. It can also
-say when a ceiling could come down. Keep a separate ceiling for
-`requested_bytes`: two regions with the same number of calls can ask for
-very different amounts of memory.
+=== Binary inputs and witness identity
 
-Things that affect the counts:
+Structural values use the platform-owned binary format through Roc's existing
+`encoder_for` and `parser_for` derivation. Nominal inputs opt in with both methods.
+`Fuzz.encode(value)` creates a versioned encoded-value input; `Fuzz.entropy(bytes)`
+frames generator entropy. Source examples are encoded into actual mutable seeds.
+Host preparation copies bytes and releases temporary Roc values before running
+an input. Encoding does not invert arbitrary `Fuzz.map` functions.
 
-* A plain `roc build` is enough, and gives the same counts as
-  `roc build --fuzz`; the regression target
-  `tests/targets/fixtures/allocationReport.roc` checks this on each
-  supported host. Record which build, optimisation level and target a
-  ceiling was measured on.
-* Counts depend on the compiler, its optimisation level and possibly the
-  target, so compare with "no more than" and expect to revisit
-  ceilings when the compiler changes.
-* Counts have been reported to differ with the state of the compiler's
-  module cache: a fixed few more allocations on the first measured
-  operation when every module is a cache hit. This has not been reproduced
-  independently; see
-  https://github.com/lukewilliamboswell/roc-fuzz/issues/71[issue 71].
+The frame is `RFZ`, version byte `1`, form byte (`0` entropy, `1` value), then
+payload. Bare historical bytes without the reserved `RFZ` prefix remain entropy.
+Artifacts whose interpretation changes across platform versions need their
+original executable; cross-version corpus migration is outside this API.
+Unsupported versions, malformed
+values and exceeded decoding budgets reject. The parser allows at most 1 MiB,
+4096 value nodes and 128 total containers, validating counts before allocation.
+
+Generation chooses bias. Preconditions or validated types define validity for
+both forms; a range enforced only by a generator cannot protect encoded values.
+Logical encoding is not a storage snapshot. Preserve original entropy when
+aliasing, capacity or slices are part of a witness. `retain` copies original
+bytes, then prints a saved declaration and a decoded representative.
+
+Float encoding follows Roc's floating-point value semantics. Do not rely on
+NaN payloads surviving compiler operations; use integer bit inputs for
+payload-sensitive properties. With the October 27 compiler, dictionary keys
+that are structural records or tuples can crash compiler specialization during
+codec derivation. `--specialize=no` avoids that compiler limitation; ordinary
+scalar and tag keys work with the default backend.
 
 == Use the libFuzzer interface
 

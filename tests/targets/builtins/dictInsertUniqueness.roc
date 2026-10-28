@@ -30,7 +30,7 @@ main! = |data| {
 	unique_start = Dict.with_capacity(n)
 	unique = Fuzz.expect_allocs_at_most!(
 		0,
-		|{}| {
+		|| {
 			var $dict = unique_start
 			var $i = 0
 			while $i < n {
@@ -47,7 +47,7 @@ main! = |data| {
 	# An empty input inserts nothing, so there is nothing to copy.
 	shared = Fuzz.expect_allocs_at_least!(
 		if (n == 0) 0 else 1,
-		|{}| {
+		|| {
 			var $dict = base
 			var $j = 0
 			while $j < n {
@@ -70,7 +70,13 @@ main! = |data| {
 	0
 }
 
-target = Fuzz.from_bytes!({
+target = Fuzz.target_with!({
+	examples: [],
 	name: "dictInsertUniqueness",
-	test!: main!,
+	generator: Fuzz.raw_bytes,
+	test!: |input| {
+		_ = main!(input)
+		Fuzz.keep
+	},
+	show: Str.inspect,
 })

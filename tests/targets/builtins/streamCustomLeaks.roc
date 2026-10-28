@@ -86,11 +86,11 @@ drop_after! = |stream, limit| {
 
 test! : Case => Fuzz.Outcome
 test! = |{ items, pulls, fail_at, known }| {
-	Fuzz.expect_no_leaks!(|{}| Stream.collect!(finite(items, known)))
-	Fuzz.expect_no_leaks!(|{}| drop_after!(finite(items, known), pulls.to_u64()))
-	Fuzz.expect_no_leaks!(|{}| drop_after!(infinite(items), pulls.to_u64()))
+	Fuzz.expect_no_leaks!(|| Stream.collect!(finite(items, known)))
+	Fuzz.expect_no_leaks!(|| drop_after!(finite(items, known), pulls.to_u64()))
+	Fuzz.expect_no_leaks!(|| drop_after!(infinite(items), pulls.to_u64()))
 	Fuzz.expect_no_leaks!(
-		|{}| {
+		|| {
 			out = Stream.collect!(failing(items, fail_at.to_u64()))
 			if fail_at.to_u64() < items.len() {
 				match out.last() {
@@ -107,6 +107,7 @@ test! = |{ items, pulls, fail_at, known }| {
 }
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "streamCustomLeaks",
 	generator: case_gen,
 	test!,

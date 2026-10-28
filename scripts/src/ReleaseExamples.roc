@@ -129,7 +129,7 @@ ReleaseExamples := [].{
 					$seeds = $seeds.append(seed)
 					parent_depth = Str.split_on(item.path, "/").len() - 2
 					corpus = "${Str.repeat("../", parent_depth)}.roc-fuzz/corpus/${item.name}"
-					code = if (item.expected_failure) 77 else 0
+					code = if (item.expected_failure) 1 else 0
 					$apps = $apps.append({
 						path: item.path,
 						build_args: ["--fuzz"],

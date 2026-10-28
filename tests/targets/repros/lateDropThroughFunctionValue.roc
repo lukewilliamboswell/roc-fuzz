@@ -32,18 +32,32 @@ make = |bytes| {
 apply : (List(U8) -> Try(List(U8), e)), List(U8) -> Try(List(U8), e)
 apply = |f, x| f(x)
 
+# Read backing storage after the second sample. The content-dependent hosted
+# effect prevents this from becoming a metadata-only use of the list, while
+# neither contains nor the counter read allocates. Keeping the original input
+# alive gives both samples the same ownership boundary, so an extra allocation
+# from apply's discarded result still changes the balance by one.
+keep_input_alive! : List(U8) => {}
+keep_input_alive! = |bytes| {
+	if bytes.contains(42) {
+		_ = Fuzz.live_alloc_count!()
+	}
+}
+
 main! : List(U8) => U8
 main! = |data| {
 	before = Fuzz.live_alloc_count!()
 	_ = apply(make, data)
 	after = Fuzz.live_alloc_count!()
+	keep_input_alive!(data)
 	if after != before {
-		crash "apply(make, data) left ${(after - before).to_str()} allocation(s) live after its result was discarded"
+		crash "apply(make, data) changed live allocations from ${before.to_str()} to ${after.to_str()} after its result was discarded"
 	}
 	0
 }
 
 target = Fuzz.from_bytes!({
+	examples: [],
 	name: "lateDropThroughFunctionValue",
 	test!: main!,
 })

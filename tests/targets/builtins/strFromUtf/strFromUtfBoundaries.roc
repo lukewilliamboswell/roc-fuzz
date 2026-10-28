@@ -66,6 +66,10 @@ bytes = |case| {
 
 test! : Case => Fuzz.Outcome
 test! = |case| {
+	if case.prefix > 200 or case.suffix > 300 or case.partial > 3 {
+		return Fuzz.reject
+	}
+
 	input = bytes(case)
 	if case.utf32 {
 		Wide.check!(Wide.utf32, input)
@@ -76,6 +80,7 @@ test! = |case| {
 }
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "strFromUtfBoundaries",
 	generator,
 	test!,

@@ -59,7 +59,8 @@ check_list! = |label, case, ops| {
 	input = if (case.shape == 3) holder.drop_first(case.junk.len()) else shaped_list(case)
 	original = List.with_capacity(input.len()).concat(input)
 	alias = input
-	{ value: result, allocations } = Fuzz.measure_allocs!(|{}| (ops.utf8_prefix)(input))
+	{ value: result, stats: allocations_stats } = Fuzz.measure!("result", || (ops.utf8_prefix)(input))
+	allocations = allocations_stats.allocs + allocations_stats.reallocs
 	if allocations != 0 {
 		crash "${label}.from_utf8_prefix allocated ${allocations.to_str()} times"
 	}
@@ -88,7 +89,8 @@ check_str! = |label, case, ops| {
 	input = if (case.shape == 3) holder.drop_prefix(junk) else shaped_str(case)
 	original = List.with_capacity(0).concat(input.to_utf8())
 	alias = input
-	{ value: result, allocations } = Fuzz.measure_allocs!(|{}| (ops.str_prefix)(input))
+	{ value: result, stats: allocations_stats } = Fuzz.measure!("result", || (ops.str_prefix)(input))
+	allocations = allocations_stats.allocs + allocations_stats.reallocs
 	if allocations != 0 {
 		crash "${label}.from_str_prefix allocated ${allocations.to_str()} times"
 	}
@@ -222,11 +224,12 @@ check! = |case| {
 
 test! : Case => Fuzz.Outcome
 test! = |case| {
-	Fuzz.expect_no_leaks!(|{}| check!(case))
+	Fuzz.expect_no_leaks!(|| check!(case))
 	Fuzz.keep
 }
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "numPrefixAlloc",
 	generator,
 	test!,

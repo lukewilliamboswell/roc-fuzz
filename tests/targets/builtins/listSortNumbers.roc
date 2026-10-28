@@ -35,7 +35,7 @@ reference_sort = |values| List.fold(values, [], insert_sorted)
 ## with the number of elements.
 test! : List(U64) => Fuzz.Outcome
 test! = |values| {
-	sorted = Fuzz.expect_allocs_at_most!(4, |{}| List.sort(values))
+	sorted = Fuzz.expect_allocs_at_most!(4, || List.sort(values))
 
 	if List.len(sorted) != List.len(values) {
 		crash "List.sort changed the length of the list"
@@ -49,6 +49,7 @@ test! = |values| {
 }
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "listSortNumbers",
 	generator: Fuzz.list(Fuzz.u64, 400),
 	test!,

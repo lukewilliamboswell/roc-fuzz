@@ -34,7 +34,7 @@ reference_sort_reversed = |values| List.fold(values, [], insert_descending)
 ## across list lengths, never scaling with the number of elements.
 test! : List(U64) => Fuzz.Outcome
 test! = |values| {
-	sorted = Fuzz.expect_allocs_at_most!(4, |{}| List.sort_reversed(values))
+	sorted = Fuzz.expect_allocs_at_most!(4, || List.sort_reversed(values))
 
 	if List.len(sorted) != List.len(values) {
 		crash "List.sort_reversed changed the length of the list"
@@ -48,6 +48,7 @@ test! = |values| {
 }
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "listSortReversed",
 	generator: Fuzz.list(Fuzz.u64, 400),
 	test!,

@@ -102,7 +102,7 @@ test_narrow! = |input| {
 	)
 	sorted = Fuzz.expect_allocs_at_most!(
 		4,
-		|{}| List.sort_with(items, |left, right| compare_u64(left.key, right.key)),
+		|| List.sort_with(items, |left, right| compare_u64(left.key, right.key)),
 	)
 	expected = reference_sort_with(items, |left, right| compare_u64(left.key, right.key))
 	if !List.is_eq(sorted, expected) {
@@ -134,7 +134,7 @@ test_wide! = |input| {
 	)
 	sorted = Fuzz.expect_allocs_at_most!(
 		8,
-		|{}| List.sort_with(items, |left, right| compare_u64(left.key, right.key)),
+		|| List.sort_with(items, |left, right| compare_u64(left.key, right.key)),
 	)
 	expected = reference_sort_with(items, |left, right| compare_u64(left.key, right.key))
 	if !List.is_eq(sorted, expected) {
@@ -149,9 +149,18 @@ test_wide! = |input| {
 ## or has to allocate to order pointers and gather afterward (wide, >96
 ## bytes, which is why it gets a looser bound than narrow).
 test! : Input => Fuzz.Outcome
-test! = |input| if (input.wide) test_wide!(input) else test_narrow!(input)
+test! = |input| {
+	if input.modulus == 0 {
+		Fuzz.reject
+	} else if input.wide {
+		test_wide!(input)
+	} else {
+		test_narrow!(input)
+	}
+}
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "listSortWideElements",
 	generator: Fuzz.map2(
 		Fuzz.map2(

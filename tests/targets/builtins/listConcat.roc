@@ -18,7 +18,7 @@ main! = |data| {
 
 	out = Fuzz.expect_allocs_at_most!(
 		1,
-		|{}| List.concat(bytes1, bytes2),
+		|| List.concat(bytes1, bytes2),
 	)
 	if List.len(out) != List.len(bytes1) + List.len(bytes2) {
 		crash "concatenated list has the wrong length"
@@ -35,7 +35,13 @@ main! = |data| {
 	x.plus_wrap(y)
 }
 
-target = Fuzz.from_bytes!({
+target = Fuzz.target_with!({
+	examples: [],
 	name: "listConcat",
-	test!: main!,
+	generator: Fuzz.raw_bytes,
+	test!: |input| {
+		_ = main!(input)
+		Fuzz.keep
+	},
+	show: Str.inspect,
 })

@@ -92,6 +92,7 @@ test! = |case| {
 }
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "strFromUtfSlices",
 	generator,
 	test!,

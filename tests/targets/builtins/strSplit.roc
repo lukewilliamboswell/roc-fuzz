@@ -17,14 +17,20 @@ main! = |data| {
 	tmp2 = if (retain2) delimiter else ""
 
 	limit = 2 * string.count_utf8_bytes() + 4
-	parts = Fuzz.expect_allocs_at_most!(limit, |{}| string.split_on(delimiter))
+	parts = Fuzz.expect_allocs_at_most!(limit, || string.split_on(delimiter))
 	if Str.join_with(parts, delimiter) != string {
 		crash "split string did not rejoin to the original"
 	}
 	(tmp1.count_utf8_bytes() + tmp2.count_utf8_bytes()).to_u8_wrap()
 }
 
-target = Fuzz.from_bytes!({
+target = Fuzz.target_with!({
+	examples: [],
 	name: "strSplit",
-	test!: main!,
+	generator: Fuzz.raw_bytes,
+	test!: |input| {
+		_ = main!(input)
+		Fuzz.keep
+	},
+	show: Str.inspect,
 })

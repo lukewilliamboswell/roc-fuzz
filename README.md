@@ -3,18 +3,13 @@
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/lukewilliamboswell/roc-fuzz/badge)](https://scorecard.dev/viewer/?uri=github.com/lukewilliamboswell/roc-fuzz)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/14753/badge)](https://www.bestpractices.dev/projects/14753)
 
-`roc-fuzz` helps Roc application authors find inputs they did not think to test.
-You write a small fuzz target that generates ordinary Roc values, calls one
-part of your application, and checks a rule that must always hold. roc-fuzz
-then explores variations, saves any failure, and lets you inspect, reproduce,
-and minimize it.
+`roc-fuzz` checks pure Roc code through one self-contained executable. Declare
+known examples, assert on results and allocation costs, validate logical traces,
+and explore nearby inputs with coverage feedback. Saved failures can be rendered,
+replayed, retained as source regressions, and minimized.
 
-Unit tests remain the right tool for named examples and known regressions.
-Fuzzing complements them when the input space is too large to enumerate: it
-uses feedback from the compiled program to retain inputs that reach new behavior
-and explore nearby cases. This is especially useful for parsers, codecs,
-normalizers, collections, state transitions, and other fast in-memory code with
-a clear property.
+Each declared example runs once in a fresh process. Exact allocation baselines
+require explicit acceptance; ordinary checks never update them.
 
 The platform supports Linux x86-64 with musl and Apple Silicon macOS 11 or newer.
 
@@ -22,7 +17,9 @@ A target builds directly into a self-contained executable:
 
 ```sh
 roc build --fuzz my_target_app.roc
-./my_target_app run
+./my_target_app check
+./my_target_app accept   # explicitly review and accept allocation observations
+./my_target_app run --report-dir=.roc-fuzz/evidence
 ```
 
 For example, the core of this target generates `U64` values and checks that JSON
@@ -47,12 +44,19 @@ test = |value| {
 }
 
 target = Fuzz.target_with({
+	examples: [Fuzz.example({ name: "zero", revision: "1", make: || 0 })],
 	name: "json-u64-round-trip",
 	generator: Fuzz.u64,
 	test,
 	show: |value| Str.inspect(value),
 })
 ```
+
+The default baseline is `<declared-target-name>_baseline.json` in the working
+directory. Use `--baseline=PATH` and `--profile=NAME` when needed. Default runs
+check examples and the baseline, then explore for 60 seconds with a 10-second
+invocation deadline and leak checks. See the provider-free
+[consumer template](templates/quality/README.adoc) for Blueprint tasks and CI.
 
 The [roc-fuzz manual](https://lukewilliamboswell.github.io/roc-fuzz/) covers
 target design, failure investigation, campaign tuning, corpora, CI evidence,

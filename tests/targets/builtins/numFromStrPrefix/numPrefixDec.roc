@@ -16,11 +16,12 @@ generator = Prefix.case_generator
 
 test! : Prefix.Case => Fuzz.Outcome
 test! = |case| {
-	Fuzz.expect_no_leaks!(|{}| Prefix.check_dec!(case))
+	Fuzz.expect_no_leaks!(|| Prefix.check_dec!(case))
 	Fuzz.keep
 }
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "numPrefixDec",
 	generator,
 	test!,

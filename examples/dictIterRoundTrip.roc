@@ -40,8 +40,12 @@ round_trip_alloc_budget = 64
 
 test! : List((U8, U8)) => Fuzz.Outcome
 test! = |entries| {
+	if entries.len() > 20 or entries.any(|(key, _)| key > 7 and key != junk_key) {
+		return Fuzz.reject
+	}
+
 	Fuzz.expect_no_leaks!(
-		|{}| {
+		|| {
 			real_pairs = List.drop_if(entries, |(k, _)| k == junk_key)
 
 			filtered_iter = List.iter(entries).keep_if(|(k, _)| k != junk_key)
@@ -60,7 +64,7 @@ test! = |entries| {
 
 			round_tripped = Fuzz.expect_allocs_at_most!(
 				round_trip_alloc_budget,
-				|{}| Dict.from_iter(Dict.iter(dict)),
+				|| Dict.from_iter(Dict.iter(dict)),
 			)
 			if !Dict.is_eq(round_tripped, dict) {
 				crash "Dict.from_iter(Dict.iter(d)) round trip changed the dict"
@@ -73,6 +77,10 @@ test! = |entries| {
 }
 
 target = Fuzz.target_with!({
+	examples: [
+		Fuzz.example({ name: "empty-or-zero", revision: "1", make: || [] }),
+		Fuzz.example({ name: "representative", revision: "1", make: || [(255, 1), (1, 2), (1, 3), (255, 4)] }),
+	],
 	name: "dict-iter-round-trip",
 	generator: entries_gen,
 	test!,

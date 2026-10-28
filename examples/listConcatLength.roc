@@ -8,7 +8,7 @@ import fuzz.Fuzz
 ## Observed: exactly 1 allocation, regardless of `input`'s length.
 test! : List(U8) => Fuzz.Outcome
 test! = |input| {
-	combined = Fuzz.expect_allocs_at_most!(1, |{}| List.concat(input, input))
+	combined = Fuzz.expect_allocs_at_most!(1, || List.concat(input, input))
 	if List.len(combined) == List.len(input) * 2 {
 		Fuzz.keep
 	} else {
@@ -17,6 +17,10 @@ test! = |input| {
 }
 
 target = Fuzz.target_with!({
+	examples: [
+		Fuzz.example({ name: "empty-or-zero", revision: "1", make: || [] }),
+		Fuzz.example({ name: "representative", revision: "1", make: || [1, 2, 3] }),
+	],
 	name: "list-concat-length",
 	generator: Fuzz.bytes,
 	test!,

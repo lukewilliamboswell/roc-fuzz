@@ -1,0 +1,180 @@
+= roc-fuzz: a platform for pure Roc quality
+
+Design proposal for 0.5.0. Implementation base: `ef080d2` (refreshed
+`origin/trunk`, 2026-10-28). The original checkout and its edits are preserved.
+
+== One platform experience
+
+Correctness assertions, allocation measurements, logical trace assertions,
+retained regressions and coverage-guided exploration share the host embedded
+in each target executable. Timing measurements are excluded. Deadlines and
+campaign budgets are execution controls only.
+
+Zero-argument Roc functions use `||`, signatures such as `() -> a`, and calls
+such as `func()`. Checking and acceptance execute each declared example exactly
+once in a fresh process. Repetition adds no default evidence for deterministic
+measurements. The default accepted baseline is `<target-name>_baseline.json`
+in the working directory, with an explicit path override.
+
+== Reproducible inputs
+
+The platform owns a versioned binary format implemented with Roc's existing
+`encoder_for` and `parser_for` protocols, without compiler changes or codec
+objects. Structural types compose automatically; nominal types opt in:
+
+[source,roc]
+----
+Input := { bytes : List(U8), radix : U8 }.{
+    parser_for : _
+    encoder_for : _
+    generator_for = |_| {
+        { bytes: Fuzz.bytes, radix: Fuzz.u8_in(2, 36) }.Fuzz
+    }
+}
+
+examples: [
+    Fuzz.example({ name: "empty", revision: "1", make: || Input.{ bytes: [], radix: 10 } }),
+    Fuzz.saved({ name: "previous-crash", revision: "1", bytes: regression_bytes }),
+]
+----
+
+Typed examples become real mutable corpus seeds. Preparation copies bytes into
+host-owned storage and drops temporary Roc fixtures before execution. Encoded
+values pass through the parser; generated entropy passes through the configured
+generator; both call the same property. Saved artifacts retain their recorded
+form. Arbitrary generators remain one-way functions: encoding never tries to
+invert `Fuzz.map`. Generation controls bias; property preconditions or validated
+input types define validity for both forms. Existing generator-only assumptions
+must be audited. Every source example runs independently of coverage retention.
+
+Logical encoding is not a storage snapshot. Original artifacts remain intact;
+logical rendering never replaces a storage-sensitive witness. Floating-point
+equivalence must be documented honestly; payload-sensitive NaN properties use
+integer bit inputs.
+
+== Measurements and traces
+
+The property callback is measured automatically after generation or decoding.
+Explicit measurement uses the same native scope engine:
+
+[source,roc]
+----
+Fuzz.measure! : Str, (() => a) => { value : a, stats : Stats }
+Fuzz.start_measure! : Str => Measurement
+Measurement.finish! : Measurement => Stats
+
+measured = Fuzz.measure!("decode", || decode(input))
+check_result(measured.value)
+----
+
+Statistics separate allocation, reallocation and deallocation counts, requested
+bytes, entry/exit live counts and bytes, and actual peak live bytes. Only Roc
+allocator hooks count; host bookkeeping is excluded from requested lengths.
+Peaks include entry-live memory and actual old/new overlap during reallocation.
+Nested scopes are inclusive, returned values remain live at the boundary, and
+invalid scopes or arithmetic overflow fail explicitly. The wider invocation
+leak check remains separate.
+
+Regions also define logical traces. Events are direct marks and completed
+immediate-child regions. Rules must be registered before events begin:
+
+* `Before(a, b)`: both occur, and every `a` precedes every `b`.
+* `Count(event, n)`: exactly `n` occurrences.
+* `Forbidden(event)`: no occurrences.
+
+Online validation continues independently of bounded diagnostic capture.
+Diagnostic traces are ordered, identify repeated regions by path and occurrence,
+and explicitly show capture gaps and unfinished regions. There are no timestamps
+or timing assertions. Metric validity, trace-rule results, capture completeness
+and baseline status are distinct evidence.
+
+== Exact ratchets and findings
+
+Baseline entries are separated by host target and named profile. Comparison
+requires complete example and region inventories, revisions, actual input
+digests, metric versions and exact statistics. Both increases and reductions
+require acceptance. Without an accepted entry, execution reports `unbaselined`.
+
+`accept` runs the complete declared inventory once per example in fresh
+processes, then atomically replaces the relevant entry. Failed assertions,
+rejections, incomplete observations and write failures preserve the existing
+file. Acceptance is separate from ordinary checking and CI.
+
+Examples and corpus entries describe inputs; assertions, crashes, leaks, limits
+and timeouts describe outcomes; measurements and traces describe evidence.
+Retaining a finding preserves its original bytes and prints a source declaration
+and decoded representative value.
+
+== Executable commands
+
+[cols="1,3",options="header"]
+|===
+|Command |Behavior
+|`TARGET` or `TARGET run` |Check examples and baselines, then explore, with one report.
+|`TARGET check` |Check declared examples and baselines.
+|`TARGET explore` |Coverage-guided exploration.
+|`TARGET accept` |Accept the complete valid allocation baseline explicitly.
+|`TARGET examples` |List declared examples.
+|`TARGET show INPUT` |Display decoded input.
+|`TARGET replay INPUT` |Reproduce an input, optionally recording details.
+|`TARGET measure INPUT` |Collect one input's measurements.
+|`TARGET retain INPUT --name NAME --output DIR` |Preserve a witness and print its declaration.
+|`TARGET minimize INPUT OUTPUT` |Minimize a finding.
+|`TARGET reduce-corpus INPUT OUTPUT` |Reduce a coverage corpus.
+|`TARGET raw ...` |Advanced libFuzzer controls.
+|===
+
+One supervisor coordinates modes; CI uses `run --report-dir=...`. Defaults are
+60 seconds of exploration, a 10-second invocation deadline and leak checks.
+Failed examples skip exploration and record why. Rejection must be forwarded
+to libFuzzer. Exploration reports attempted, accepted and rejected executions;
+zero accepted executions is inconclusive and unsuccessful. Bounded original-run
+breadcrumbs live in supervisor-owned shared memory. Diagnostic replay is
+separate evidence.
+
+== Frozen integration boundaries
+
+Input format, observations, worker transport and reports are versioned as v1.
+Input framing identifies encoded values versus generator entropy; invalid framed
+values reject rather than falling through to entropy. Bare inputs without the
+reserved `RFZ` prefix retain their entropy interpretation. Typed examples encode
+logical values rather than storage shape; dictionary traversal order can affect
+encoded bytes even for equality-equivalent dictionaries.
+
+The Roc target bridge exposes name, run, show, example count and indexed example
+metadata/bytes callbacks. The coordinator exclusively edits `platform/main.roc`,
+`src/main.zig` and generated `src/roc_platform_abi.zig`. Bindings are regenerated,
+never hand edited. Scope hooks use numeric handles and a fixed statistics record.
+Preparation returns host-owned seed copies and releases Roc values first.
+Worker results separate outcomes, observations and capture completeness.
+
+The input agent owns codecs, examples and public API; the observation agent owns
+the native scope/trace engine; the runner agent owns supervision, exact baselines,
+reports and finding commands. Their private branches live under
+`/private/tmp/roc-fuzz-quality/`; signed focused commits are integrated with
+authorship preserved. Shared wiring belongs to the coordinator.
+
+== Validation and delivery
+
+Tests cover encoding roundtrips, nominal opt-in, malformed/budgeted decoding,
+both input forms, mutable seeds, generator validity, storage-sensitive entropy,
+fixture ownership, allocation accounting and overlap, nesting, manual windows,
+returned values, overflow, trace ordering/counts/forbidden events, truncation,
+unfinished scopes, exact baselines, inventory/revision drift, atomic failures,
+one execution per example, baseline paths, crashes, timeouts, all-rejected
+exploration, preserved evidence, replay, minimization and complete default runs.
+
+Run repository checks, native tests, generated-glue checks, every target,
+documentation checks and exact-bundle tests. Validate Linux x86-64 musl and
+Apple Silicon macOS. Add a no-provider Blueprint consumer template outside the
+example URL rewriting path, with pinned Roc downloads and ordinary tasks and
+workflows; consumers need no Nix, Zig, Python, Git executable or coordinator.
+Package witness fixtures and validate relative paths.
+
+Prepare 0.5.0 subject to the API bump check. Rebuild both hosts and validate PR
+dry-run assets before merge. Stable publication uses the existing workflow from
+`trunk`. Keep published integration history stable; review fixes are new commits.
+No upstream Blueprint PR is required. Maintainer tooling may retain Nix.
+
+Excluded: compatibility layers, corpus migration, cross-version comparison,
+custom arbitrary metrics and timing measurements.

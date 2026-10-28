@@ -1,0 +1,45 @@
+app [target] { fuzz: platform "@platform-url@" }
+
+import fuzz.Fuzz
+import "witnesses/previous.bin" as previous_bytes : List(U8)
+
+Input := { values : List(U64) }.{
+	parser_for : _
+	encoder_for : _
+
+	generator_for = |_| Fuzz.map(Fuzz.list(Fuzz.u64, 32), |values| Input.{ values })
+}
+
+test! : Input => Fuzz.Outcome
+test! = |input| {
+	Fuzz.trace_rules!([Before("encode", "decode"), Count("decode", 1), Forbidden("mismatch")])
+	encoded = Fuzz.measure!("encode", || Json.to_str(input.values))
+	decoded = Fuzz.measure!(
+		"decode",
+		|| {
+			result : Try(List(U64), _)
+			result = Json.parse(encoded.value)
+			result
+		},
+	)
+	match decoded.value {
+		Ok(values) if values == input.values => {}
+		_ => crash "JSON round trip changed the input"
+	}
+	if decoded.stats.reallocs > input.values.len() + 1 {
+		crash "JSON decoding exceeded the reallocation budget"
+	}
+	Fuzz.keep
+}
+
+target = Fuzz.target_with!({
+	name: "my_target",
+	examples: [
+		Fuzz.example({ name: "empty", revision: "1", make: || Input.{ values: [] } }),
+		Fuzz.example({ name: "boundaries", revision: "1", make: || Input.{ values: [0, U64.highest] } }),
+		Fuzz.saved({ name: "retained-entropy", revision: "1", bytes: previous_bytes }),
+	],
+	generator: |state| Input.generator_for(Default)(state),
+	test!,
+	show: Str.inspect,
+})

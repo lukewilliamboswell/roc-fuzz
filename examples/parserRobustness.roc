@@ -12,7 +12,7 @@ test! : Str => Fuzz.Outcome
 test! = |input| {
 	limit = 4 * Str.count_utf8_bytes(input) + 16
 	parsed : Try(U64, _)
-	parsed = Fuzz.expect_allocs_at_most!(limit, |{}| Json.parse(input))
+	parsed = Fuzz.expect_allocs_at_most!(limit, || Json.parse(input))
 
 	# Valid and invalid JSON are both ordinary results. A crash or timeout is
 	# the failure this target is looking for.
@@ -23,6 +23,10 @@ test! = |input| {
 }
 
 target = Fuzz.target_with!({
+	examples: [
+		Fuzz.example({ name: "empty-or-zero", revision: "1", make: || "" }),
+		Fuzz.example({ name: "representative", revision: "1", make: || "123" }),
+	],
 	name: "parser-robustness",
 	generator: Fuzz.str,
 	test!,

@@ -11,9 +11,10 @@
 :source-highlighter: rouge
 
 [.lead]
-roc-fuzz helps Roc application authors find inputs they did not think to test.
-You describe values to try and a rule that must always hold; roc-fuzz explores,
-saves any failure, and gives you commands to inspect, reproduce, and minimize it.
+roc-fuzz checks pure Roc code through correctness assertions, declared examples,
+allocation measurements, logical trace rules and coverage-guided exploration.
+One target executable checks exact accepted observations and preserves original
+findings for inspection, replay, retention and minimization.
 
 ifdef::backend-html5[]
 link:api/index.html[Browse the generated API reference] ·

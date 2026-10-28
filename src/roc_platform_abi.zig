@@ -703,10 +703,15 @@ pub const RocEnv = struct {
     roc_io: RocIo,
 };
 
-/// Element type for __AnonStruct_21ead0ad67315635
-pub const __AnonStruct_21ead0ad67315635 = if (@sizeOf(usize) == 4) extern struct {
+/// Element type for __AnonStruct_2466dab754f47a46
+pub const __AnonStruct_2466dab754f47a46 = if (@sizeOf(usize) == 4) extern struct {
     allocs: u64,
     deallocs: u64,
+    entry_live_allocs: u64,
+    entry_live_bytes: u64,
+    exit_live_allocs: u64,
+    exit_live_bytes: u64,
+    peak_live_bytes: u64,
     reallocs: u64,
     requested_bytes: u64,
     /// Recursively decrement Roc-owned fields.
@@ -725,6 +730,11 @@ pub const __AnonStruct_21ead0ad67315635 = if (@sizeOf(usize) == 4) extern struct
 } else extern struct {
     allocs: u64,
     deallocs: u64,
+    entry_live_allocs: u64,
+    entry_live_bytes: u64,
+    exit_live_allocs: u64,
+    exit_live_bytes: u64,
+    peak_live_bytes: u64,
     reallocs: u64,
     requested_bytes: u64,
     /// Recursively decrement Roc-owned fields.
@@ -744,37 +754,251 @@ pub const __AnonStruct_21ead0ad67315635 = if (@sizeOf(usize) == 4) extern struct
 
 comptime {
     if (@sizeOf(usize) == 8) {
-        if (@sizeOf(__AnonStruct_21ead0ad67315635) != 32) @compileError("__AnonStruct_21ead0ad67315635 size mismatch");
-        if (@alignOf(__AnonStruct_21ead0ad67315635) != 8) @compileError("__AnonStruct_21ead0ad67315635 alignment mismatch");
+        if (@sizeOf(__AnonStruct_2466dab754f47a46) != 72) @compileError("__AnonStruct_2466dab754f47a46 size mismatch");
+        if (@alignOf(__AnonStruct_2466dab754f47a46) != 8) @compileError("__AnonStruct_2466dab754f47a46 alignment mismatch");
     }
     if (@sizeOf(usize) == 4) {
-        if (@sizeOf(__AnonStruct_21ead0ad67315635) != 32) @compileError("__AnonStruct_21ead0ad67315635 size mismatch");
-        if (@alignOf(__AnonStruct_21ead0ad67315635) != 8) @compileError("__AnonStruct_21ead0ad67315635 alignment mismatch");
+        if (@sizeOf(__AnonStruct_2466dab754f47a46) != 72) @compileError("__AnonStruct_2466dab754f47a46 size mismatch");
+        if (@alignOf(__AnonStruct_2466dab754f47a46) != 8) @compileError("__AnonStruct_2466dab754f47a46 alignment mismatch");
     }
 }
 
-/// Arguments for Fuzz.report_alloc_counts!
-/// Roc signature: Str, { allocs : U64, deallocs : U64, reallocs : U64, requested_bytes : U64 } => {}
+/// Element type for __AnonStruct_b94d4088b4417d03
+pub const __AnonStruct_b94d4088b4417d03 = if (@sizeOf(usize) == 4) extern struct {
+    stats: __AnonStruct_2466dab754f47a46,
+    value: RocBox,
+    /// Recursively decrement Roc-owned fields.
+    pub fn decref(self: @This(), roc_host: *RocHost) void {
+        const value = self;
+        value.stats.decref(roc_host);
+        decrefBox(@ptrCast(value.value), roc_host);
+    }
+
+    /// Increment Roc-owned fields.
+    pub fn incref(self: @This(), amount: isize) void {
+        const value = self;
+        value.stats.incref(amount);
+        increfBox(@ptrCast(value.value), amount);
+    }
+} else extern struct {
+    stats: __AnonStruct_2466dab754f47a46,
+    value: RocBox,
+    /// Recursively decrement Roc-owned fields.
+    pub fn decref(self: @This(), roc_host: *RocHost) void {
+        const value = self;
+        value.stats.decref(roc_host);
+        decrefBox(@ptrCast(value.value), roc_host);
+    }
+
+    /// Increment Roc-owned fields.
+    pub fn incref(self: @This(), amount: isize) void {
+        const value = self;
+        value.stats.incref(amount);
+        increfBox(@ptrCast(value.value), amount);
+    }
+};
+
+comptime {
+    if (@sizeOf(usize) == 8) {
+        if (@sizeOf(__AnonStruct_b94d4088b4417d03) != 80) @compileError("__AnonStruct_b94d4088b4417d03 size mismatch");
+        if (@alignOf(__AnonStruct_b94d4088b4417d03) != 8) @compileError("__AnonStruct_b94d4088b4417d03 alignment mismatch");
+    }
+    if (@sizeOf(usize) == 4) {
+        if (@sizeOf(__AnonStruct_b94d4088b4417d03) != 80) @compileError("__AnonStruct_b94d4088b4417d03 size mismatch");
+        if (@alignOf(__AnonStruct_b94d4088b4417d03) != 8) @compileError("__AnonStruct_b94d4088b4417d03 alignment mismatch");
+    }
+}
+
+/// Element type for __AnonStruct_fa4a9e94a9b0c16f
+pub const __AnonStruct_fa4a9e94a9b0c16f = if (@sizeOf(usize) == 4) extern struct {
+    bytes: RocListWith(u8, false),
+    name: RocStr,
+    revision: RocStr,
+    /// Recursively decrement Roc-owned fields.
+    pub fn decref(self: @This(), roc_host: *RocHost) void {
+        const value = self;
+        value.bytes.decref(roc_host);
+        value.name.decref(roc_host);
+        value.revision.decref(roc_host);
+    }
+
+    /// Increment Roc-owned fields.
+    pub fn incref(self: @This(), amount: isize) void {
+        const value = self;
+        value.bytes.incref(amount);
+        value.name.incref(amount);
+        value.revision.incref(amount);
+    }
+} else extern struct {
+    bytes: RocListWith(u8, false),
+    name: RocStr,
+    revision: RocStr,
+    /// Recursively decrement Roc-owned fields.
+    pub fn decref(self: @This(), roc_host: *RocHost) void {
+        const value = self;
+        value.bytes.decref(roc_host);
+        value.name.decref(roc_host);
+        value.revision.decref(roc_host);
+    }
+
+    /// Increment Roc-owned fields.
+    pub fn incref(self: @This(), amount: isize) void {
+        const value = self;
+        value.bytes.incref(amount);
+        value.name.incref(amount);
+        value.revision.incref(amount);
+    }
+};
+
+comptime {
+    if (@sizeOf(usize) == 8) {
+        if (@sizeOf(__AnonStruct_fa4a9e94a9b0c16f) != 72) @compileError("__AnonStruct_fa4a9e94a9b0c16f size mismatch");
+        if (@alignOf(__AnonStruct_fa4a9e94a9b0c16f) != 8) @compileError("__AnonStruct_fa4a9e94a9b0c16f alignment mismatch");
+    }
+    if (@sizeOf(usize) == 4) {
+        if (@sizeOf(__AnonStruct_fa4a9e94a9b0c16f) != 36) @compileError("__AnonStruct_fa4a9e94a9b0c16f size mismatch");
+        if (@alignOf(__AnonStruct_fa4a9e94a9b0c16f) != 4) @compileError("__AnonStruct_fa4a9e94a9b0c16f alignment mismatch");
+    }
+}
+
+/// Return type record for Fuzz.scope_finish!
+/// Fields ordered by compiler-emitted ABI offsets.
+pub const FuzzScope_finishRetRecord = if (@sizeOf(usize) == 4) extern struct {
+    allocs: u64,
+    deallocs: u64,
+    entry_live_allocs: u64,
+    entry_live_bytes: u64,
+    exit_live_allocs: u64,
+    exit_live_bytes: u64,
+    peak_live_bytes: u64,
+    reallocs: u64,
+    requested_bytes: u64,
+} else extern struct {
+    allocs: u64,
+    deallocs: u64,
+    entry_live_allocs: u64,
+    entry_live_bytes: u64,
+    exit_live_allocs: u64,
+    exit_live_bytes: u64,
+    peak_live_bytes: u64,
+    reallocs: u64,
+    requested_bytes: u64,
+};
+
+comptime {
+    if (@sizeOf(usize) == 8) {
+        if (@sizeOf(FuzzScope_finishRetRecord) != 72) @compileError("FuzzScope_finishRetRecord size mismatch");
+        if (@alignOf(FuzzScope_finishRetRecord) != 8) @compileError("FuzzScope_finishRetRecord alignment mismatch");
+    }
+    if (@sizeOf(usize) == 4) {
+        if (@sizeOf(FuzzScope_finishRetRecord) != 72) @compileError("FuzzScope_finishRetRecord size mismatch");
+        if (@alignOf(FuzzScope_finishRetRecord) != 8) @compileError("FuzzScope_finishRetRecord alignment mismatch");
+    }
+}
+
+/// Return type record for Fuzz.scope_finish_return!
+/// Fields ordered by compiler-emitted ABI offsets.
+pub const FuzzScope_finish_returnRetRecord = if (@sizeOf(usize) == 4) extern struct {
+    stats: __AnonStruct_2466dab754f47a46,
+    value: RocBox,
+} else extern struct {
+    stats: __AnonStruct_2466dab754f47a46,
+    value: RocBox,
+};
+
+comptime {
+    if (@sizeOf(usize) == 8) {
+        if (@sizeOf(FuzzScope_finish_returnRetRecord) != 80) @compileError("FuzzScope_finish_returnRetRecord size mismatch");
+        if (@alignOf(FuzzScope_finish_returnRetRecord) != 8) @compileError("FuzzScope_finish_returnRetRecord alignment mismatch");
+    }
+    if (@sizeOf(usize) == 4) {
+        if (@sizeOf(FuzzScope_finish_returnRetRecord) != 80) @compileError("FuzzScope_finish_returnRetRecord size mismatch");
+        if (@alignOf(FuzzScope_finish_returnRetRecord) != 8) @compileError("FuzzScope_finish_returnRetRecord alignment mismatch");
+    }
+}
+
+/// Arguments for Fuzz.before!
+/// Roc signature: Str, Str => {}
 /// Refcounted fields are owned by the hosted function.
-pub const FuzzReport_alloc_countsArgs = extern struct {
+pub const FuzzBeforeArgs = extern struct {
     arg0: RocStr,
-    arg1: __AnonStruct_21ead0ad67315635,
+    arg1: RocStr,
+};
+
+/// Arguments for Fuzz.count!
+/// Roc signature: Str, U64 => {}
+/// Refcounted fields are owned by the hosted function.
+pub const FuzzCountArgs = extern struct {
+    arg0: RocStr,
+    arg1: u64,
+};
+
+/// Arguments for Fuzz.forbidden!
+/// Roc signature: Str => {}
+/// Refcounted fields are owned by the hosted function.
+pub const FuzzForbiddenArgs = extern struct {
+    arg0: RocStr,
+};
+
+/// Arguments for Fuzz.mark!
+/// Roc signature: Str => {}
+/// Refcounted fields are owned by the hosted function.
+pub const FuzzMarkArgs = extern struct {
+    arg0: RocStr,
+};
+
+/// Arguments for Fuzz.scope_finish!
+/// Roc signature: U64 => { allocs : U64, deallocs : U64, entry_live_allocs : U64, entry_live_bytes : U64, exit_live_allocs : U64, exit_live_bytes : U64, peak_live_bytes : U64, reallocs : U64, requested_bytes : U64 }
+/// Refcounted fields are owned by the hosted function.
+pub const FuzzScope_finishArgs = extern struct {
+    arg0: u64,
+};
+
+/// Arguments for Fuzz.scope_finish_return!
+/// Roc signature: U64, Box(rigid) => { stats : { allocs : U64, deallocs : U64, entry_live_allocs : U64, entry_live_bytes : U64, exit_live_allocs : U64, exit_live_bytes : U64, peak_live_bytes : U64, reallocs : U64, requested_bytes : U64 }, value : Box(rigid) }
+/// Refcounted fields are owned by the hosted function.
+pub const FuzzScope_finish_returnArgs = extern struct {
+    arg0: u64,
+    arg1: RocBox,
+};
+
+/// Arguments for Fuzz.scope_start!
+/// Roc signature: Str => U64
+/// Refcounted fields are owned by the hosted function.
+pub const FuzzScope_startArgs = extern struct {
+    arg0: RocStr,
 };
 
 // Platform Type Aliases
 
-pub const FuzzReport_alloc_countsArg1 = __AnonStruct_21ead0ad67315635;
+pub const FuzzScope_finish = __AnonStruct_2466dab754f47a46;
+pub const FuzzScope_finish_return = __AnonStruct_b94d4088b4417d03;
+pub const FuzzScope_finish_returnStats = __AnonStruct_2466dab754f47a46;
+pub const Example_for_host = __AnonStruct_fa4a9e94a9b0c16f;
 
 // Generated Refcount Helpers
 
-pub const __AnonStruct_21ead0ad67315635Release = struct {
-    pub fn release(value: __AnonStruct_21ead0ad67315635, roc_host: *RocHost) void {
+pub const __AnonStruct_2466dab754f47a46Release = struct {
+    pub fn release(value: __AnonStruct_2466dab754f47a46, roc_host: *RocHost) void {
+        value.decref(roc_host);
+    }
+};
+
+pub const __AnonStruct_b94d4088b4417d03Release = struct {
+    pub fn release(value: __AnonStruct_b94d4088b4417d03, roc_host: *RocHost) void {
+        value.decref(roc_host);
+    }
+};
+
+pub const __AnonStruct_fa4a9e94a9b0c16fRelease = struct {
+    pub fn release(value: __AnonStruct_fa4a9e94a9b0c16f, roc_host: *RocHost) void {
         value.decref(roc_host);
     }
 };
 
 fn rocReleasePolicy(comptime T: type) type {
     if (T == RocStr) return RocStrRelease;
+    if (T == __AnonStruct_fa4a9e94a9b0c16f) return __AnonStruct_fa4a9e94a9b0c16fRelease;
     if (T == RocListWith(u8, false)) return RocListSpineRelease(RocListWith(u8, false));
     @compileError("generated glue has no recursive release policy for " ++ @typeName(T));
 }
@@ -805,29 +1029,72 @@ pub extern fn roc_crashed(bytes: [*]const u8, len: usize) callconv(.c) void;
 /// Roc signature: {} => U64
 pub extern fn roc_fuzz_alloc_count() callconv(.c) u64;
 
+/// Hosted symbol for Fuzz.before!
+/// Roc signature: Str, Str => {}
+/// Owned arguments. Release each exactly once before returning, unless it is
+/// moved into storage or into the result:
+///     arg0.decref(roc_host);
+///     arg1.decref(roc_host);
+pub extern fn roc_fuzz_before(arg0: RocStr, arg1: RocStr) callconv(.c) void;
+
+/// Hosted symbol for Fuzz.count!
+/// Roc signature: Str, U64 => {}
+/// Owned arguments. Release each exactly once before returning, unless it is
+/// moved into storage or into the result:
+///     arg0.decref(roc_host);
+pub extern fn roc_fuzz_count(arg0: RocStr, arg1: u64) callconv(.c) void;
+
 /// Hosted symbol for Fuzz.dealloc_count!
 /// Roc signature: {} => U64
 pub extern fn roc_fuzz_dealloc_count() callconv(.c) u64;
+
+/// Hosted symbol for Fuzz.forbidden!
+/// Roc signature: Str => {}
+/// Owned arguments. Release each exactly once before returning, unless it is
+/// moved into storage or into the result:
+///     arg0.decref(roc_host);
+pub extern fn roc_fuzz_forbidden(arg0: RocStr) callconv(.c) void;
 
 /// Hosted symbol for Fuzz.live_alloc_count!
 /// Roc signature: {} => U64
 pub extern fn roc_fuzz_live_alloc_count() callconv(.c) u64;
 
+/// Hosted symbol for Fuzz.mark!
+/// Roc signature: Str => {}
+/// Owned arguments. Release each exactly once before returning, unless it is
+/// moved into storage or into the result:
+///     arg0.decref(roc_host);
+pub extern fn roc_fuzz_mark(arg0: RocStr) callconv(.c) void;
+
+/// Hosted symbol for Fuzz.prepare_return_box!
+/// Roc signature: {} => {}
+pub extern fn roc_fuzz_prepare_return_box() callconv(.c) void;
+
 /// Hosted symbol for Fuzz.realloc_count!
 /// Roc signature: {} => U64
 pub extern fn roc_fuzz_realloc_count() callconv(.c) u64;
 
-/// Hosted symbol for Fuzz.report_alloc_counts!
-/// Roc signature: Str, { allocs : U64, deallocs : U64, reallocs : U64, requested_bytes : U64 } => {}
-/// Owned arguments. Release each exactly once before returning, unless it is
-/// moved into storage or into the result:
-///     arg0.decref(roc_host);
-///     arg1.decref(roc_host);
-pub extern fn roc_fuzz_report_alloc_counts(arg0: RocStr, arg1: __AnonStruct_21ead0ad67315635) callconv(.c) void;
-
 /// Hosted symbol for Fuzz.requested_bytes!
 /// Roc signature: {} => U64
 pub extern fn roc_fuzz_requested_bytes() callconv(.c) u64;
+
+/// Hosted symbol for Fuzz.scope_finish!
+/// Roc signature: U64 => { allocs : U64, deallocs : U64, entry_live_allocs : U64, entry_live_bytes : U64, exit_live_allocs : U64, exit_live_bytes : U64, peak_live_bytes : U64, reallocs : U64, requested_bytes : U64 }
+pub extern fn roc_fuzz_scope_finish(arg0: u64) callconv(.c) __AnonStruct_2466dab754f47a46;
+
+/// Hosted symbol for Fuzz.scope_finish_return!
+/// Roc signature: U64, Box(rigid) => { stats : { allocs : U64, deallocs : U64, entry_live_allocs : U64, entry_live_bytes : U64, exit_live_allocs : U64, exit_live_bytes : U64, peak_live_bytes : U64, reallocs : U64, requested_bytes : U64 }, value : Box(rigid) }
+/// Owned arguments. Release each exactly once before returning, unless it is
+/// moved into storage or into the result:
+///     decrefBox(@ptrCast(arg1), roc_host);
+pub extern fn roc_fuzz_scope_finish_return(arg0: u64, arg1: RocBox) callconv(.c) __AnonStruct_b94d4088b4417d03;
+
+/// Hosted symbol for Fuzz.scope_start!
+/// Roc signature: Str => U64
+/// Owned arguments. Release each exactly once before returning, unless it is
+/// moved into storage or into the result:
+///     arg0.decref(roc_host);
+pub extern fn roc_fuzz_scope_start(arg0: RocStr) callconv(.c) u64;
 
 /// Default memory management functions for Roc platforms.
 ///
@@ -967,6 +1234,12 @@ pub fn makeRocHost(env: *RocEnv) RocHost {
 // Provided Symbols
 //
 // Roc exports these symbols from the app with their natural C ABI signatures.
+
+/// Entrypoint: example_for_host
+pub extern fn roc_fuzz_example(arg0: u64) callconv(.c) __AnonStruct_fa4a9e94a9b0c16f;
+
+/// Entrypoint: example_count_for_host
+pub extern fn roc_fuzz_example_count() callconv(.c) u64;
 
 /// Entrypoint: name_for_host
 pub extern fn roc_fuzz_name() callconv(.c) RocStr;

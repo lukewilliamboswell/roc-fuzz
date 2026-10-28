@@ -20,6 +20,7 @@ test = |input| {
 }
 
 target = Fuzz.target_with({
+	examples: [],
 	name: "crashing-target",
 	generator,
 	test,

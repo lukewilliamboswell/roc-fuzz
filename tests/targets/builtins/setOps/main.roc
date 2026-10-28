@@ -17,10 +17,15 @@ generator = {
 ## model comparison within a fixed allocation budget for that bounded input.
 ## Observed fuzz inputs remain well below this conservative ceiling.
 target = Fuzz.target_with!({
+	examples: [],
 	name: "setOps",
 	generator,
 	test!: |input| {
-		Fuzz.expect_allocs_at_most!(20000, |{}| Model.run(input, |raw| raw % 32, |item| item))
+		if !Model.valid(input) {
+			return Fuzz.reject
+		}
+
+		Fuzz.expect_allocs_at_most!(20000, || Model.run(input, |raw| raw % 32, |item| item))
 		Fuzz.keep
 	},
 	show: |input| Str.inspect(input),

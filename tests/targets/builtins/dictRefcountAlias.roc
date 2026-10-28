@@ -243,7 +243,7 @@ check_alloc_invariants! = |count| {
 				alias = $ad
 				$ad = Fuzz.expect_allocs_at_least!(
 					1,
-					|{}| Dict.insert($ad, k, List.concat(v2, [0])),
+					|| Dict.insert($ad, k, List.concat(v2, [0])),
 				)
 				if Dict.get(alias, k) == Dict.get($ad, k) {
 					crash "the alias observed a write that should have been copy-on-write isolated"
@@ -292,7 +292,13 @@ main! = |data| {
 	0
 }
 
-target = Fuzz.from_bytes!({
+target = Fuzz.target_with!({
+	examples: [],
 	name: "dictRefcountAlias",
-	test!: main!,
+	generator: Fuzz.raw_bytes,
+	test!: |input| {
+		_ = main!(input)
+		Fuzz.keep
+	},
+	show: Str.inspect,
 })

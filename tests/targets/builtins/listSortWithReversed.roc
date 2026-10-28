@@ -75,8 +75,12 @@ decorate = |input| {
 ## across list lengths, never scaling with the number of elements.
 test! : Input => Fuzz.Outcome
 test! = |input| {
+	if input.modulus == 0 {
+		return Fuzz.reject
+	}
+
 	items = decorate(input)
-	sorted = Fuzz.expect_allocs_at_most!(4, |{}| List.sort_with_reversed(items, compare_keys))
+	sorted = Fuzz.expect_allocs_at_most!(4, || List.sort_with_reversed(items, compare_keys))
 
 	if List.len(sorted) != List.len(items) {
 		crash "List.sort_with_reversed changed the length of the list"
@@ -90,6 +94,7 @@ test! = |input| {
 }
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "listSortWithReversed",
 	generator: Fuzz.map2(
 		Fuzz.list(Fuzz.u64, 400),

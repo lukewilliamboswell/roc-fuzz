@@ -68,9 +68,11 @@ that can be shown, replayed, and minimized.
 real bugs.
 |===
 
-After roc-fuzz finds a bug, fix the code and keep the minimized case as a normal
-regression test. The unit test prevents that exact bug from returning. Future
-fuzzing continues searching for cases nobody has named yet.
+After roc-fuzz finds a bug, fix the code and retain its original bytes with
+`TARGET retain`. Add the printed `Fuzz.saved` declaration alongside typed source
+examples. Those regressions run independently of coverage retention, while
+exploration continues searching for new cases. Unit tests can share the same
+application invariants.
 
 [#typed-and-coverage-guided]
 == What “typed” and “coverage-guided” mean

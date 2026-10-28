@@ -38,7 +38,7 @@ test! = |input| {
 	length = List.len(items)
 	sorted = Fuzz.expect_allocs_at_most!(
 		4,
-		|{}| List.sort_with(items, |left, right| inconsistent_compare(input.seed, left, right)),
+		|| List.sort_with(items, |left, right| inconsistent_compare(input.seed, left, right)),
 	)
 
 	if List.len(sorted) != length {
@@ -79,6 +79,7 @@ test! = |input| {
 }
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "listSortInconsistentCmp",
 	generator: Fuzz.map2(
 		Fuzz.list(Fuzz.u64, 400),

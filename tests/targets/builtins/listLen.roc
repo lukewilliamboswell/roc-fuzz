@@ -8,11 +8,17 @@ import pf.Arbitrary
 main! : List(U8) => U8
 main! = |data| {
 	list = Arbitrary.new(data).arbitrary_list_u8().value
-	len = Fuzz.expect_allocs_at_most!(0, |{}| list.len())
+	len = Fuzz.expect_allocs_at_most!(0, || list.len())
 	len.to_u8_wrap()
 }
 
-target = Fuzz.from_bytes!({
+target = Fuzz.target_with!({
+	examples: [],
 	name: "listLen",
-	test!: main!,
+	generator: Fuzz.raw_bytes,
+	test!: |input| {
+		_ = main!(input)
+		Fuzz.keep
+	},
+	show: Str.inspect,
 })

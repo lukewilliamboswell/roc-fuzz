@@ -7,11 +7,11 @@ import pf.Fuzz
 main! : List(U8) => U8
 main! = |data| {
 	Fuzz.expect_no_leaks!(
-		|{}| {
+		|| {
 			limit = 40 * List.len(data) + 128
 			set = Fuzz.expect_allocs_at_most!(
 				limit,
-				|{}| List.fold(data, Set.empty(), Set.insert),
+				|| List.fold(data, Set.empty(), Set.insert),
 			)
 			for element in data {
 				if !Set.contains(set, element) {
@@ -29,7 +29,13 @@ main! = |data| {
 	0
 }
 
-target = Fuzz.from_bytes!({
+target = Fuzz.target_with!({
+	examples: [],
 	name: "setInsert",
-	test!: main!,
+	generator: Fuzz.raw_bytes,
+	test!: |input| {
+		_ = main!(input)
+		Fuzz.keep
+	},
+	show: Str.inspect,
 })

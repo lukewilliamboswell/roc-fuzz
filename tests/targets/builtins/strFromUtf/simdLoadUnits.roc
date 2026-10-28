@@ -59,7 +59,8 @@ check16! = |case| {
 	units = slice_of(parent, case.how, case.before, fresh.len())
 	len = units.len()
 	for index in indices(len, case.far) {
-		{ value: loaded, allocations } = Fuzz.measure_allocs!(|{}| U16x8.load_units(units, index))
+		{ value: loaded, stats: allocations_stats } = Fuzz.measure!("loaded", || U16x8.load_units(units, index))
+		allocations = allocations_stats.allocs + allocations_stats.reallocs
 		if allocations != 0 {
 			crash "U16x8.load_units allocated ${allocations.to_str()} times"
 		}
@@ -74,7 +75,7 @@ check16! = |case| {
 				}
 		}
 	}
-	Fuzz.expect_no_leaks!(|{}| U16x8.load_units(units, 0))
+	Fuzz.expect_no_leaks!(|| U16x8.load_units(units, 0))
 }
 
 check32! : Case => {}
@@ -84,7 +85,8 @@ check32! = |case| {
 	units = slice_of(parent, case.how, case.before, fresh.len())
 	len = units.len()
 	for index in indices(len, case.far) {
-		{ value: loaded, allocations } = Fuzz.measure_allocs!(|{}| U32x4.load_units(units, index))
+		{ value: loaded, stats: allocations_stats } = Fuzz.measure!("loaded", || U32x4.load_units(units, index))
+		allocations = allocations_stats.allocs + allocations_stats.reallocs
 		if allocations != 0 {
 			crash "U32x4.load_units allocated ${allocations.to_str()} times"
 		}
@@ -99,17 +101,22 @@ check32! = |case| {
 				}
 		}
 	}
-	Fuzz.expect_no_leaks!(|{}| U32x4.load_units(units, 0))
+	Fuzz.expect_no_leaks!(|| U32x4.load_units(units, 0))
 }
 
 test! : Case => Fuzz.Outcome
 test! = |case| {
+	if case.before > 15 or case.after > 15 or case.units.len() > 40 {
+		return Fuzz.reject
+	}
+
 	check16!(case)
 	check32!(case)
 	Fuzz.keep
 }
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "simdLoadUnits",
 	generator,
 	test!,

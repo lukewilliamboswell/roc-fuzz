@@ -1,0 +1,65 @@
+= A quality target with Blueprint
+
+Copy this directory into your project, including `witnesses/previous.bin` and
+the hidden `.github/` directory. Rename `fuzz.roc.in` to `fuzz.roc` and replace
+`@platform-url@` in its app header with the exact content-addressed platform URL
+from the roc-fuzz 0.5.0 release. Keep that URL and your compiler pin in review.
+The `.in` extension keeps this template outside the release example rewriting
+and packaging paths.
+
+Install the https://github.com/lukewilliamboswell/roc-blueprint/releases/tag/0.8.0[Blueprint 0.8.0 binary]
+for your system and verify it against that release's `blueprint.sha256`.
+The matching Blueprint platform is already pinned in `Blueprint.roc`. The
+template fetches Roc `nightly-2026-10-27-de79a0f` by a digest committed in
+`Blueprint.lock`. It declares no package provider and needs no Nix, Zig,
+Python, Git executable or separate fuzz coordinator. Blueprint and Roc use
+the host's ordinary archive and file utilities for downloaded compilers.
+
+[source,sh]
+----
+blueprint check
+blueprint requirements
+blueprint run build
+blueprint run run -- --time=10
+----
+
+`build` compiles one self-contained executable. `check` runs every declared
+example exactly once in a fresh process. `run` checks examples and their accepted
+observations, then explores for 60 seconds by default. `blueprint workflow
+verify` builds and runs the unified check/exploration command once, writing CI evidence to
+`.roc-fuzz/verify/`; use a fresh checkout or remove that old report directory
+before repeating the workflow. A failing check skips exploration and records why.
+
+The default baseline filename comes from `target.name`, so this target uses
+`my_target_baseline.json`. A missing baseline reports `unbaselined` and still
+checks assertions. After reviewing measurements, explicitly accept them:
+
+[source,sh]
+----
+blueprint run accept
+blueprint run check
+----
+
+Review and commit `my_target_baseline.json`. Both allocation increases and
+reductions, changed regions, revisions and example inputs require acceptance.
+Host targets have separate entries, so accept on Linux x86-64 and Apple Silicon
+macOS when both hosts are used. Pass `--baseline=PATH` or `--profile=NAME` after
+`--` for an explicit baseline file or a named profile. The verify workflow never
+accepts changes. Revisit the compiler pin deliberately with `blueprint update`
+after editing it, and review both the new lock and baseline changes.
+
+`previous.bin` is the original generator entropy, imported relative to the app.
+Keep original bytes when retaining a finding; rendering a logical value does
+not preserve its storage layout. To retain another witness:
+
+[source,sh]
+----
+./fuzz retain finding.bin --name regression-name --output witnesses
+----
+
+Use the printed `Fuzz.saved` declaration in `examples`, keep the witness's
+relative import path, and review its revision when changing the property.
+Typed `Fuzz.example` values become encoded corpus seeds, so exploration also
+mutates around the source-authored values. Property preconditions must validate
+both generated and decoded inputs; generator bounds alone do not establish
+validity for encoded mutations.
