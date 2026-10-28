@@ -1,5 +1,15 @@
 import Arbitrary
+import Binary
 import Target
+
+decode_input : Fuzz.Generator(a), List(U8) -> Try(a, [InvalidInput])
+	where [a.Binary.Parseable(errs)]
+decode_input = |generator, input|
+	match Binary.form(input) {
+		Ok(Entropy(bytes)) => Ok(generator(Arbitrary.new(bytes)).value)
+		Ok(Encoded) => Binary.decode(input).map_err(|_| InvalidInput)
+		Err(_) => Err(InvalidInput)
+	}
 
 ## Define typed, deterministic inputs and the pure property that roc-fuzz tests.
 ##
@@ -80,64 +90,66 @@ Fuzz := [].{
 	## wrapping. Only a difference across a region is meaningful.
 	requested_bytes! : () => U64
 
-	## What a region asked of the platform's allocator. `allocs` counts
-	## `roc_alloc` calls only, so `allocs + reallocs` is what
-	## [`measure_allocs!`](#Fuzz.measure_allocs) reports as `allocations`.
-	AllocCounts : { allocs : U64, reallocs : U64, deallocs : U64, requested_bytes : U64 }
+	## Inclusive allocator observations for one named region. Only Roc allocator
+	## hooks count; requested lengths exclude host bookkeeping. Peaks include
+	## entry-live memory and the actual old/new overlap during reallocations.
+	Stats : { allocs : U64, reallocs : U64, deallocs : U64, requested_bytes : U64, entry_live_allocs : U64, entry_live_bytes : U64, exit_live_allocs : U64, exit_live_bytes : U64, peak_live_bytes : U64 }
 
-	## Run `body!` and report how many allocations it performed.
-	##
-	## ```roc
-	## { value: dict, allocations } = Fuzz.measure_allocs!(|{}| build_dict(pairs))
-	## ```
-	measure_allocs! : ({} => a) => { value : a, allocations : U64 }
-	measure_allocs! = |body!| {
-		before = Fuzz.alloc_count!()
-		value = body!({})
-		after = Fuzz.alloc_count!()
-		{ value, allocations: after - before }
+	## Native scope engine entry point. Prefer start_measure! or measure!.
+	scope_start! : Str => U64
+
+	## Native scope engine completion. Invalid or out-of-order scopes fail.
+	scope_finish! : U64 => Stats
+
+	## An open named measurement and logical trace region. Finish exactly once.
+	Measurement := { id : U64 }.{
+
+		## Complete this measurement, retaining values alive at this boundary.
+		finish! : Measurement => Stats
+		finish! = |measurement| Fuzz.scope_finish!(measurement.id)
 	}
 
-	## Run `body!` and count its allocations, reallocations, deallocations and
-	## requested bytes separately.
-	##
-	## ```roc
-	## { value: dict, counts } = Fuzz.measure_alloc_counts!(|{}| build_dict(pairs))
-	## ```
-	measure_alloc_counts! : ({} => a) => { value : a, counts : AllocCounts }
-	measure_alloc_counts! = |body!| {
-		allocations_before = Fuzz.alloc_count!()
-		reallocs_before = Fuzz.realloc_count!()
-		deallocs_before = Fuzz.dealloc_count!()
-		bytes_before = Fuzz.requested_bytes!()
-		value = body!({})
-		allocations = Fuzz.alloc_count!() - allocations_before
-		reallocs = Fuzz.realloc_count!() - reallocs_before
-		deallocs = Fuzz.dealloc_count!() - deallocs_before
-		requested_bytes = Fuzz.requested_bytes!() - bytes_before
-		{ value, counts: { allocs: allocations - reallocs, reallocs, deallocs, requested_bytes } }
+	## Start a manual window using the same engine as measure!.
+	start_measure! : Str => Measurement
+	start_measure! = |label| Measurement.{ id: Fuzz.scope_start!(label) }
+
+	## Run body! once and automatically record its named allocation statistics.
+	## Nested windows are inclusive; the returned value is alive at the boundary.
+	measure! : Str, (() => a) => { value : a, stats : Stats }
+	measure! = |label, body!| {
+		measurement = Fuzz.start_measure!(label)
+		value = body!()
+		stats = measurement.finish!()
+		{ value, stats }
 	}
 
-	## Report counts measured some other way under `label`, as
-	## [`report_allocs!`](#Fuzz.report_allocs) does. The platform prints the
-	## line only under `TARGET measure`, and never allocates to do so.
-	report_alloc_counts! : Str, AllocCounts => {}
+	## Record a direct event in the current logical trace region.
+	mark! : Str => {}
 
-	## Measure `body!` and report its counts to a harness under `label`.
-	##
-	## Under `TARGET measure`, the platform prints one line per report on
-	## standard output. In every other mode, `run` and `replay` included, the
-	## report is discarded, so a target that reports can still be fuzzed. Only
-	## `body!` is measured: building the label and printing the line are not.
-	##
-	## ```roc
-	## _ = Fuzz.report_allocs!("100 inserts", |{}| insert(document, 100))
-	## ```
-	report_allocs! : Str, ({} => a) => a
-	report_allocs! = |label, body!| {
-		measured = Fuzz.measure_alloc_counts!(body!)
-		Fuzz.report_alloc_counts!(label, measured.counts)
-		measured.value
+	## Require both named events and every first occurrence before every second.
+	## Register before any direct event or completed child region occurs.
+	before! : Str, Str => {}
+
+	## Require exactly count occurrences in the current region. Register first.
+	count! : Str, U64 => {}
+
+	## Forbid an event in the current region. Register before events begin.
+	forbidden! : Str => {}
+
+	## A source-declared rule over direct marks and completed child regions.
+	TraceRule := [Before(Str, Str), Count(Str, U64), Forbidden(Str)]
+
+	## Register all rules before emitting events. Validation is independent of
+	## the bounded diagnostic trace, so truncation cannot hide a violation.
+	trace_rules! : List(TraceRule) => {}
+	trace_rules! = |rules| {
+		for rule in rules {
+			match rule {
+				Before(first, second) => Fuzz.before!(first, second)
+				Count(event, count) => Fuzz.count!(event, count)
+				Forbidden(event) => Fuzz.forbidden!(event)
+			}
+		}
 	}
 
 	## Crash unless `body!` performs at most `limit` allocations.
@@ -145,36 +157,40 @@ Fuzz := [].{
 	## This is the allocation analogue of a property assertion: it turns a
 	## silent performance regression, such as a builtin that stops mutating a
 	## uniquely owned value in place, into a fuzz failure.
-	expect_allocs_at_most! : U64, ({} => a) => a
+	expect_allocs_at_most! : U64, (() => a) => a
 	expect_allocs_at_most! = |limit, body!| {
-		measured = Fuzz.measure_allocs!(body!)
-		if measured.allocations > limit {
-			crash "expected at most ${limit.to_str()} allocations, but ${measured.allocations.to_str()} were performed"
+		before = Fuzz.alloc_count!()
+		value = body!()
+		allocations = Fuzz.alloc_count!() - before
+		if allocations > limit {
+			crash "expected at most ${limit.to_str()} allocations, but ${allocations.to_str()} were performed"
 		}
-		measured.value
+		value
 	}
 
 	## Crash unless `body!` performs at least `limit` allocations.
 	##
 	## This is useful for copy-on-write invariants: an operation on shared
 	## storage must allocate rather than mutate an alias in place.
-	expect_allocs_at_least! : U64, ({} => a) => a
+	expect_allocs_at_least! : U64, (() => a) => a
 	expect_allocs_at_least! = |limit, body!| {
-		measured = Fuzz.measure_allocs!(body!)
-		if measured.allocations < limit {
-			crash "expected at least ${limit.to_str()} allocations, but ${measured.allocations.to_str()} were performed"
+		before = Fuzz.alloc_count!()
+		value = body!()
+		allocations = Fuzz.alloc_count!() - before
+		if allocations < limit {
+			crash "expected at least ${limit.to_str()} allocations, but ${allocations.to_str()} were performed"
 		}
-		measured.value
+		value
 	}
 
 	## Crash unless `body!` frees everything it allocated.
 	##
 	## The result is dropped before the balance is read, so a value that is
 	## still alive does not read as a leak.
-	expect_no_leaks! : ({} => a) => {}
+	expect_no_leaks! : (() => a) => {}
 	expect_no_leaks! = |body!| {
 		before = Fuzz.live_alloc_count!()
-		_ = body!({})
+		_ = body!()
 		after = Fuzz.live_alloc_count!()
 		if after > before {
 			crash "expected no leaked allocations, but ${(after - before).to_str()} were still outstanding"
@@ -203,18 +219,42 @@ Fuzz := [].{
 	## generation policies.
 	FuzzEncoding := [Default]
 
+	## A named input that always runs during checking, regardless of coverage.
+	## Makers are called only while preparing corpus bytes; temporary typed
+	## values are released before the property executes in a fresh process.
+	Example(a) := [Typed({ name : Str, revision : Str, make : () -> a }), Saved({ name : Str, revision : Str, bytes : List(U8) })]
+
+	## Declare a source-authored typed example. Use a zero-argument maker such
+	## as `make: || Input.{ bytes: [], radix: 10 }` to avoid retaining fixtures.
+	example : { name : Str, revision : Str, make : () -> a } -> Example(a)
+	example = |config| Typed(config)
+
+	## Declare a retained witness using its original bytes and recorded form.
+	## Logical rendering never replaces entropy or storage-sensitive artifacts.
+	saved : { name : Str, revision : Str, bytes : List(U8) } -> Example(a)
+	saved = |config| Saved(config)
+
+	## Encode a logical value as a mutable corpus seed using platform format v1.
+	encode : a -> List(U8) where [a.Binary.Encodable]
+	encode = |value| Binary.encode(value)
+
+	## Frame generator entropy while preserving its storage-shape decisions.
+	entropy : List(U8) -> List(U8)
+	entropy = |bytes| Binary.entropy(bytes)
+
 	## Build a fuzz target using the input type's statically dispatched generator.
 	##
 	## The input type must define `generator_for : FuzzEncoding -> Generator(a)`.
 	## For each fuzzer input, `target` generates one value, calls `test`, and uses
 	## `show` when a person asks the runner to render that saved input.
-	target : { name : Str, test : a -> Outcome, show : a -> Str } -> Target
-		where [a.generator_for : FuzzEncoding -> Generator(a)]
+	target : { name : Str, examples : List(Example(a)), test : a -> Outcome, show : a -> Str } -> Target
+		where [a.generator_for : FuzzEncoding -> Generator(a), a.Binary.Encodable, a.Binary.Parseable(errs)]
 	target = |config| {
 		Shape : a
 		generator = Shape.generator_for(Default)
 		Fuzz.target_with({
 			name: config.name,
+			examples: config.examples,
 			generator,
 			test: config.test,
 			show: config.show,
@@ -226,71 +266,77 @@ Fuzz := [].{
 	## This is useful for a one-off structural input that does not need a nominal
 	## `generator_for` method. Prefer [`target`](#Fuzz.target) when the input type owns
 	## its generation policy.
-	target_with : { name : Str, generator : Generator(a), test : a -> Outcome, show : a -> Str } -> Target
-	target_with = |config|
-		Target.new({
-			name: config.name,
-			run!: |input| {
-				generated = (config.generator)(Arbitrary.new(input))
-				match (config.test)(generated.value) {
-					Keep => 0
-					Reject => 1
-				}
-			},
-			show: |input| {
-				generated = (config.generator)(Arbitrary.new(input))
-				(config.show)(generated.value)
-			},
-		})
+	target_with : { name : Str, examples : List(Example(a)), generator : Generator(a), test : a -> Outcome, show : a -> Str } -> Target
+		where [a.Binary.Encodable, a.Binary.Parseable(errs)]
+	target_with = |config| Fuzz.target_with!({
+		name: config.name,
+		examples: config.examples,
+		generator: config.generator,
+		test!: |value| (config.test)(value),
+		show: config.show,
+	})
 
 	## Effectful sibling of [`target_with`](#Fuzz.target_with).
 	##
 	## Use this when the property itself needs the platform's allocation
 	## counters, for example to assert that a builtin mutates a uniquely owned
 	## value in place instead of reallocating.
-	target_with! : { name : Str, generator : Generator(a), test! : a => Outcome, show : a -> Str } -> Target
+	target_with! : { name : Str, examples : List(Example(a)), generator : Generator(a), test! : a => Outcome, show : a -> Str } -> Target
+		where [a.Binary.Encodable, a.Binary.Parseable(errs)]
 	target_with! = |config|
 		Target.new({
 			name: config.name,
+			example_count: || config.examples.len(),
+			example: |index| match config.examples.get(index) {
+				Ok(Typed(declared)) => { name: declared.name, revision: declared.revision, bytes: Binary.encode((declared.make)()) }
+				Ok(Saved(declared)) => declared
+				Err(_) => crash "example index is outside the declared inventory"
+			},
 			run!: |input| {
-				generated = (config.generator)(Arbitrary.new(input))
-				match (config.test!)(generated.value) {
-					Keep => 0
-					Reject => 1
+				match decode_input(config.generator, input) {
+					Ok(value) => {
+						measured = Fuzz.measure!("$property", || (config.test!)(value))
+						match measured.value {
+							Keep => 0
+							Reject => 1
+						}
+					}
+					Err(_) => 1
 				}
 			},
 			show: |input| {
-				generated = (config.generator)(Arbitrary.new(input))
-				(config.show)(generated.value)
+				match decode_input(config.generator, input) {
+					Ok(value) => (config.show)(value)
+					Err(_) => "<rejected: malformed input or decoding budget exceeded>"
+				}
 			},
 		})
 
 	## Effectful sibling of [`from_bytes`](#Fuzz.from_bytes).
-	from_bytes! : { name : Str, test! : List(U8) => U8 } -> Target
+	from_bytes! : { name : Str, examples : List(Example(List(U8))), test! : List(U8) => U8 } -> Target
 	from_bytes! = |config|
 		Fuzz.target_with!({
 			name: config.name,
+			examples: config.examples,
 			generator: Fuzz.raw_bytes,
 			test!: |input| {
-				_ = (config.test!)(input)
-				Keep
+				if ((config.test!)(input) == 0) Keep else Reject
 			},
 			show: |input| Str.inspect(input),
 		})
 
 	## Adapt an existing `List(U8) -> U8` quality target.
 	##
-	## The returned byte is ignored; a `crash` or failed `expect` still reports a
-	## failure. This is a migration bridge for existing byte-oriented targets.
-	## New targets should prefer [`target`](#Fuzz.target) and typed generators.
-	from_bytes : { name : Str, test : List(U8) -> U8 } -> Target
+	## Zero keeps the input; a nonzero byte rejects it. A crash or failed expect
+	## remains a failure. New targets usually prefer typed inputs and examples.
+	from_bytes : { name : Str, examples : List(Example(List(U8))), test : List(U8) -> U8 } -> Target
 	from_bytes = |config|
 		Fuzz.target_with({
 			name: config.name,
+			examples: config.examples,
 			generator: Fuzz.raw_bytes,
 			test: |input| {
-				_ = (config.test)(input)
-				Keep
+				if ((config.test)(input) == 0) Keep else Reject
 			},
 			show: |input| Str.inspect(input),
 		})

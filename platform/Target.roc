@@ -4,13 +4,13 @@
 ## Applications normally construct this value with `Fuzz.target` or
 ## `Fuzz.target_with` and expose it as `target`. The methods here define the
 ## small byte-oriented ABI consumed by the embedded runner.
-Target := [Target({ name : Str, run! : List(U8) => U8, show : List(U8) -> Str })].{
+Target := [Target({ name : Str, run! : List(U8) => U8, show : List(U8) -> Str, example_count : () -> U64, example : U64 -> { name : Str, revision : Str, bytes : List(U8) } })].{
 
 	## Construct a target from low-level runner callbacks.
 	##
 	## `run!` returns zero for a kept input and a non-zero status for a rejected
 	## input. Failures should use `crash` or `expect` rather than status codes.
-	new : { name : Str, run! : List(U8) => U8, show : List(U8) -> Str } -> Target
+	new : { name : Str, run! : List(U8) => U8, show : List(U8) -> Str, example_count : () -> U64, example : U64 -> { name : Str, revision : Str, bytes : List(U8) } } -> Target
 	new = |inner| Target(inner)
 
 	## Return the human-readable target name reported by the executable.
@@ -29,4 +29,13 @@ Target := [Target({ name : Str, run! : List(U8) => U8, show : List(U8) -> Str })
 	## Decode one raw input into a human-readable typed value.
 	show : Target, List(U8) -> Str
 	show = |Target(inner), input| (inner.show)(input)
+
+	## Number of source-declared examples, independent of corpus retention.
+	example_count : Target -> U64
+	example_count = |Target(inner)| (inner.example_count)()
+
+	## Prepare one source example as corpus bytes. The native host copies the
+	## returned fields and releases all temporary Roc values before execution.
+	example : Target, U64 -> { name : Str, revision : Str, bytes : List(U8) }
+	example = |Target(inner), index| (inner.example)(index)
 }
