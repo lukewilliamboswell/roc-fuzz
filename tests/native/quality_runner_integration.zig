@@ -31,6 +31,7 @@ const Suite = struct {
             std.debug.print("{s}: unexpected termination {any}; stdout={s}; stderr={s}\n", .{ label, result.term, result.stdout, result.stderr });
             return error.UnexpectedExitStatus;
         }
+        if (arguments.len == 0 or !std.mem.eql(u8, arguments[0], "measure")) try std.testing.expectEqualStrings("", result.stdout);
         const report_path = try std.fmt.allocPrint(self.allocator, "{s}/report.json", .{label});
         const report = try std.json.parseFromSlice(std.json.Value, self.allocator, try self.read(report_path), .{});
         return report.value;
@@ -223,6 +224,6 @@ pub fn main(init: std.process.Init) !void {
     try preparation_crash_environment.put("ROCFUZZ_FIXTURE_CASE", "prepare-crash");
     const failed_listing = try std.process.run(allocator, init.io, .{ .argv = &.{ fixture, "examples" }, .cwd = .{ .path = root }, .environ_map = &preparation_crash_environment });
     try std.testing.expect(failed_listing.term == .exited and failed_listing.term.exited == 2);
-    try std.testing.expect(std.mem.indexOf(u8, failed_listing.stdout, "infrastructure_error") != null);
+    try std.testing.expect(std.mem.indexOf(u8, failed_listing.stderr, "infrastructure_error") != null);
     std.debug.print("quality runner integration: all checks passed\n", .{});
 }

@@ -860,7 +860,7 @@ fn exploration(allocator: Allocator, executable: []const u8, report_dir: []const
 
 fn printResult(allocator: Allocator, report: Report, report_dir: []const u8) !void {
     const message = try std.fmt.allocPrint(allocator, "{s}: {s}; baseline {s}; examples {d}; exploration {s} (attempted {d}, accepted {d}, rejected {d})\nReport: {s}/report.json\n", .{ report.target, report.outcome, report.baseline_status, report.examples.len, report.exploration.status, report.exploration.attempted, report.exploration.accepted, report.exploration.rejected, report_dir });
-    writeFd(1, message);
+    writeFd(2, message);
 }
 
 fn writeReportFiles(allocator: Allocator, report: Report, report_dir: []const u8) !void {
