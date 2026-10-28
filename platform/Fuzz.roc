@@ -26,12 +26,16 @@ prepare_input! = |generator, input| decode_input(generator, input)
 ##
 ## ```roc
 ## Input := { bytes : List(U8), radix : U8 }.{
+## 	parser_for : _
+## 	encoder_for : _
+##
 ## 	generator_for = |_| {
 ## 		{ bytes: Fuzz.bytes, radix: Fuzz.u8_in(2, 36) }.Fuzz
 ## 	}
 ## }
 ##
 ## target = Fuzz.target({
+## 	examples: [],
 ## 	name: "decode",
 ## 	test: |input| if input.bytes.is_empty() Fuzz.reject else Fuzz.keep,
 ## 	show: Str.inspect,
