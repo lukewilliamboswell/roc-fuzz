@@ -11,9 +11,12 @@ var engine: *observation.Engine = &local_engine;
 comptime {
     // Replace the RSS-ratcheting malloc from zig's bundled libc; see c_malloc.zig.
     _ = @import("c_malloc.zig");
+    if (!std.mem.eql(u8, observation.metric_version, quality.metric_version)) {
+        @compileError("observation and supervisor metric versions must agree");
+    }
 }
 
-const max_input_len = 1024 * 1024;
+const max_input_len = quality.max_input_len;
 const max_args = 256;
 
 var roc_host: abi.RocHost = undefined;

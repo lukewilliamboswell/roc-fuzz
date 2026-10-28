@@ -68,7 +68,8 @@ The directory contains:
   input, with capture completeness and its SHA-256 in the report; and
 * bounded original-run logical traces, including unfinished regions on failure.
 
-The report records preparation status, structured finding kinds and each
+The report records the metric version, effective execution controls (including
+leak checking), preparation status, structured finding kinds and each
 worker's exact span within the combined log. Inputs are capped at 1 MiB in the
 friendly commands; the prepared-inventory JSON transport is capped at 32 MiB.
 
