@@ -57,7 +57,13 @@ main! = |data| {
 	0
 }
 
-target = Fuzz.from_bytes!({
+target = Fuzz.target_with!({
+	examples: [],
 	name: "dictInsertOverwrite",
-	test!: main!,
+	generator: Fuzz.raw_bytes,
+	test!: |input| {
+		_ = main!(input)
+		Fuzz.keep
+	},
+	show: Str.inspect,
 })

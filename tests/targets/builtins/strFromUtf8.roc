@@ -10,7 +10,7 @@ import pf.Arbitrary
 main! : List(U8) => U8
 main! = |data| {
 	bytes = Arbitrary.new(data).arbitrary_list_u8().value
-	string = match Fuzz.expect_allocs_at_most!(1, |{}| Str.from_utf8(bytes)) {
+	string = match Fuzz.expect_allocs_at_most!(1, || Str.from_utf8(bytes)) {
 		Ok(value) => value
 		Err(BadUtf8({ index, .. })) => {
 			prefix = List.take_first(bytes, index)
@@ -30,7 +30,13 @@ main! = |data| {
 	0
 }
 
-target = Fuzz.from_bytes!({
+target = Fuzz.target_with!({
+	examples: [],
 	name: "strFromUtf8",
-	test!: main!,
+	generator: Fuzz.raw_bytes,
+	test!: |input| {
+		_ = main!(input)
+		Fuzz.keep
+	},
+	show: Str.inspect,
 })

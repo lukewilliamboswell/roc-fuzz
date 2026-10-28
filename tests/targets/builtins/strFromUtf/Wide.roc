@@ -85,8 +85,10 @@ Wide :: {}.{
 	check_order! = |ops, bytes, little| {
 		label = "Str.from_${ops.name}_${order_name(little)}"
 		expected = (ops.decode)(bytes, little)
-		{ value: strict, allocations: strict_allocs } = Fuzz.measure_allocs!(|{}| if (little) (ops.le)(bytes) else (ops.be)(bytes))
-		{ value: lossy, allocations: lossy_allocs } = Fuzz.measure_allocs!(|{}| if (little) (ops.le_lossy)(bytes) else (ops.be_lossy)(bytes))
+		{ value: strict, stats: strict_allocs_stats } = Fuzz.measure!("strict", || if (little) (ops.le)(bytes) else (ops.be)(bytes))
+		strict_allocs = strict_allocs_stats.allocs + strict_allocs_stats.reallocs
+		{ value: lossy, stats: lossy_allocs_stats } = Fuzz.measure!("lossy", || if (little) (ops.le_lossy)(bytes) else (ops.be_lossy)(bytes))
+		lossy_allocs = lossy_allocs_stats.allocs + lossy_allocs_stats.reallocs
 		got = (ops.observe)(strict)
 		if got != Utf.expected_strict(expected) {
 			crash "${label}: got ${Str.inspect(got)}, oracle ${Str.inspect(Utf.expected_strict(expected))}"
@@ -115,8 +117,10 @@ Wide :: {}.{
 	check_bom! = |ops, bytes| {
 		label = "Str.from_${ops.name}_bom"
 		expected = (ops.decode_bom)(bytes)
-		{ value: strict, allocations: strict_allocs } = Fuzz.measure_allocs!(|{}| (ops.bom)(bytes))
-		{ value: lossy, allocations: lossy_allocs } = Fuzz.measure_allocs!(|{}| (ops.bom_lossy)(bytes))
+		{ value: strict, stats: strict_allocs_stats } = Fuzz.measure!("strict", || (ops.bom)(bytes))
+		strict_allocs = strict_allocs_stats.allocs + strict_allocs_stats.reallocs
+		{ value: lossy, stats: lossy_allocs_stats } = Fuzz.measure!("lossy", || (ops.bom_lossy)(bytes))
+		lossy_allocs = lossy_allocs_stats.allocs + lossy_allocs_stats.reallocs
 		check_allocs!(label, strict_allocs, Utf.bom_allocs(expected, Bool.False))
 		check_allocs!("${label}_lossy", lossy_allocs, Utf.bom_allocs(expected, Bool.True))
 		got = (ops.observe_bom)(strict)
@@ -158,7 +162,7 @@ Wide :: {}.{
 		check_order!(ops, bytes, Bool.True)
 		check_order!(ops, bytes, Bool.False)
 		check_bom!(ops, bytes)
-		Fuzz.expect_no_leaks!(|{}| (ops.sizes)(bytes))
+		Fuzz.expect_no_leaks!(|| (ops.sizes)(bytes))
 	}
 
 	## The decoders' output sizes, called directly so each result is used and

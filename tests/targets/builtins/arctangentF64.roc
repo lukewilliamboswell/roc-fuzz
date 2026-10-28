@@ -113,9 +113,10 @@ test = |{ x, y }| {
 
 ## Numeric arctangent checks must not allocate heap memory.
 test! : Input => Fuzz.Outcome
-test! = |input| Fuzz.expect_allocs_at_most!(0, |{}| test(input))
+test! = |input| Fuzz.expect_allocs_at_most!(0, || test(input))
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "arctangentF64",
 	generator: { x: Fuzz.f64, y: Fuzz.f64 }.Fuzz,
 	test!,

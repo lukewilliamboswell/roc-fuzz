@@ -26,6 +26,7 @@ test! = |case| {
 }
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "strFromUtf16",
 	generator,
 	test!,

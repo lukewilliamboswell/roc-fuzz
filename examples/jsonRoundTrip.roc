@@ -12,7 +12,7 @@ test! : U64 => Fuzz.Outcome
 test! = |input| {
 	decoded = Fuzz.expect_allocs_at_most!(
 		1,
-		|{}| {
+		|| {
 			encoded = Json.to_str(input)
 			result : Try(U64, _)
 			result = Json.parse(encoded)
@@ -32,6 +32,10 @@ test! = |input| {
 }
 
 target = Fuzz.target_with!({
+	examples: [
+		Fuzz.example({ name: "empty-or-zero", revision: "1", make: || 0 }),
+		Fuzz.example({ name: "representative", revision: "1", make: || U64.highest }),
+	],
 	name: "json-round-trip",
 	generator: Fuzz.u64,
 	test!,

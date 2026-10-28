@@ -14,7 +14,7 @@ main! : List(U8) => U8
 main! = |data| {
 	input = Arbitrary.new(data).arbitrary_list_u8().value |> Str.from_utf8_lossy
 	limit = 4 * input.count_utf8_bytes() + 16
-	result = Fuzz.expect_allocs_at_most!(limit, |{}| parse_dec(input))
+	result = Fuzz.expect_allocs_at_most!(limit, || parse_dec(input))
 
 	match result {
 		Ok(decoded) => {
@@ -34,7 +34,13 @@ main! = |data| {
 	}
 }
 
-target = Fuzz.from_bytes!({
+target = Fuzz.target_with!({
+	examples: [],
 	name: "jsonToDec",
-	test!: main!,
+	generator: Fuzz.raw_bytes,
+	test!: |input| {
+		_ = main!(input)
+		Fuzz.keep
+	},
+	show: Str.inspect,
 })

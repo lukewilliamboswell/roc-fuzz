@@ -3,6 +3,9 @@ app [target] { pf: platform "../../../platform/main.roc" }
 import pf.Fuzz
 
 Input := { hi : U64, lo : U64, value_mode : U8, offset_mode : U8, step_raw : U64, step_exp : U8, step_mode : U8, even : Bool }.{
+	parser_for : _
+	encoder_for : _
+
 	generator_for : Fuzz.FuzzEncoding -> Fuzz.Generator(Input)
 	generator_for = |_| {
 		{
@@ -106,6 +109,10 @@ reference = |x, step, ties| {
 ## and odd-symmetric, and nothing allocates.
 test! : Input => Fuzz.Outcome
 test! = |input| {
+	if input.step_exp > 38 {
+		return Fuzz.reject
+	}
+
 	step_attos = pick_step(input)
 	x_attos = pick_value(input, step_attos)
 	x = Dec.from_attos(x_attos)
@@ -113,7 +120,7 @@ test! = |input| {
 	ties = if (input.even) ToEven else AwayFromZero
 	options = { step, ties }
 
-	result = Fuzz.expect_allocs_at_most!(0, |{}| Dec.round_to_try(x, options))
+	result = Fuzz.expect_allocs_at_most!(0, || Dec.round_to_try(x, options))
 
 	if result != reference(x_attos, step_attos, ties) {
 		crash "Dec.round_to_try disagreed with the reference"
@@ -162,6 +169,7 @@ test! = |input| {
 }
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "decRoundTo",
 	generator: Input.generator_for(Fuzz.FuzzEncoding.Default),
 	test!,

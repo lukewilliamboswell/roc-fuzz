@@ -90,11 +90,20 @@ check! = |{ items, hint }| {
 
 test! : Case => Fuzz.Outcome
 test! = |case| {
-	Fuzz.expect_no_leaks!(|{}| check!(case))
+	if case.items.len() > 80 {
+		return Fuzz.reject
+	}
+	match case.hint {
+		Known(n) if n < case.items.len() or n > case.items.len() + 127 => return Fuzz.reject
+		_ => {}
+	}
+
+	Fuzz.expect_no_leaks!(|| check!(case))
 	Fuzz.keep
 }
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "iterCustom",
 	generator: case_gen,
 	test!,

@@ -32,6 +32,7 @@ test! = |{ items, hint }| {
 }
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "streamCustomBadHint",
 	generator: case_gen,
 	test!,

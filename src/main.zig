@@ -2,7 +2,11 @@
 
 const std = @import("std");
 const abi = @import("roc_platform_abi.zig");
-const ci_report = @import("ci_report.zig");
+const observation = @import("observation.zig");
+const quality = @import("quality_runner.zig");
+
+var local_engine: observation.Engine = .{};
+var engine: *observation.Engine = &local_engine;
 
 comptime {
     // Replace the RSS-ratcheting malloc from zig's bundled libc; see c_malloc.zig.
@@ -15,7 +19,6 @@ const max_args = 256;
 var roc_host: abi.RocHost = undefined;
 var host_initialized = false;
 var translated_argv: [max_args][*:0]u8 = undefined;
-var exact_artifact_arg: [2048]u8 = undefined;
 var runs_arg: [128]u8 = undefined;
 var time_arg: [128]u8 = undefined;
 var max_input_size_arg: [128]u8 = undefined;
@@ -32,8 +35,8 @@ var current_input_len: usize = 0;
 var friendly_run_active = false;
 var leak_detection_enabled = true;
 var artifact_directory: []const u8 = ".roc-fuzz";
-/// Set by `TARGET measure`, the only mode that prints allocation reports.
-var measure_active = false;
+/// Standalone workers report a nonzero exit; libFuzzer workers save artifacts.
+var standalone_worker = false;
 
 /// The Roc ABI requires an allocation to succeed or not return. A request the
 /// allocator cannot serve ends the run the way a crash does, so the input that
@@ -44,7 +47,7 @@ fn outOfMemory() noreturn {
 }
 
 fn hostAlloc(_: *abi.RocHost, length: usize, alignment: usize) callconv(.c) *anyopaque {
-    return roc_alloc(length, alignment) orelse outOfMemory();
+    return roc_alloc(length, alignment);
 }
 
 fn hostDealloc(_: *abi.RocHost, ptr: *anyopaque, alignment: usize) callconv(.c) void {
@@ -52,7 +55,7 @@ fn hostDealloc(_: *abi.RocHost, ptr: *anyopaque, alignment: usize) callconv(.c) 
 }
 
 fn hostRealloc(_: *abi.RocHost, ptr: *anyopaque, length: usize, alignment: usize) callconv(.c) *anyopaque {
-    return roc_realloc(ptr, length, alignment) orelse outOfMemory();
+    return roc_realloc(ptr, length, alignment);
 }
 
 fn hostDbg(_: *abi.RocHost, bytes: [*]const u8, len: usize) callconv(.c) void {
@@ -107,43 +110,68 @@ fn allocImpl(length: usize, alignment: usize) ?*anyopaque {
 /// `g_realloc_count` and `g_dealloc_count` count `roc_realloc` and
 /// `roc_dealloc` calls alone, so `g_alloc_count - g_realloc_count` is the
 /// number of `roc_alloc` calls. `g_requested_bytes` adds each allocation's
-/// length and each reallocation's full new length, saturating rather than
-/// wrapping. Only served requests are counted: one that fails ends the run.
+/// length and each reallocation's full new length, failing on overflow. Only
+/// served requests are counted: one that fails ends the run.
 var g_alloc_count: u64 = 0;
 var g_live_alloc_count: u64 = 0;
 var g_realloc_count: u64 = 0;
 var g_dealloc_count: u64 = 0;
 var g_requested_bytes: u64 = 0;
 
+fn checkedAdd(value: *u64, amount: u64) void {
+    value.* = std.math.add(u64, value.*, amount) catch {
+        engine.metric_valid = false;
+        observationFailure(error.Overflow);
+    };
+}
+
+fn observationFailure(err: anyerror) noreturn {
+    writeErr("[roc-fuzz invalid observation] ");
+    writeErr(@errorName(err));
+    writeErr("\n");
+    finishRocFailure();
+}
+
+fn allocationLength(ptr: *anyopaque, alignment: usize) usize {
+    const header_len = @max(alignment, @alignOf(usize));
+    const size: *const usize = @ptrFromInt(@intFromPtr(ptr) - @sizeOf(usize));
+    return size.* - header_len;
+}
+
 fn deallocImpl(ptr: *anyopaque, alignment: usize) void {
     const header_len = @max(alignment, @alignOf(usize));
     std.c.free(@ptrFromInt(@intFromPtr(ptr) - header_len));
 }
 
-pub export fn roc_alloc(length: usize, alignment: usize) callconv(.c) ?*anyopaque {
-    const ptr = allocImpl(length, alignment);
-    if (ptr != null) {
-        g_alloc_count += 1;
-        g_live_alloc_count += 1;
-        g_requested_bytes +|= length;
+pub export fn roc_alloc(length: usize, alignment: usize) callconv(.c) *anyopaque {
+    const ptr = allocImpl(length, alignment) orelse outOfMemory();
+    {
+        checkedAdd(&g_alloc_count, 1);
+        checkedAdd(&g_live_alloc_count, 1);
+        checkedAdd(&g_requested_bytes, length);
+        engine.alloc(length) catch |err| observationFailure(err);
     }
     return ptr;
 }
 
 pub export fn roc_dealloc(ptr: *anyopaque, alignment: usize) callconv(.c) void {
-    if (g_live_alloc_count > 0) g_live_alloc_count -= 1;
-    g_dealloc_count += 1;
+    const old_length = allocationLength(ptr, alignment);
+    engine.dealloc(old_length) catch |err| observationFailure(err);
+    if (g_live_alloc_count == 0) observationFailure(error.InvalidAllocation);
+    g_live_alloc_count -= 1;
+    checkedAdd(&g_dealloc_count, 1);
     deallocImpl(ptr, alignment);
 }
 
-pub export fn roc_realloc(ptr: *anyopaque, new_length: usize, alignment: usize) callconv(.c) ?*anyopaque {
+pub export fn roc_realloc(ptr: *anyopaque, new_length: usize, alignment: usize) callconv(.c) *anyopaque {
     const header_len = @max(alignment, @alignOf(usize));
     const old_size_ptr: *const usize = @ptrFromInt(@intFromPtr(ptr) - @sizeOf(usize));
     const old_length = old_size_ptr.* - header_len;
-    const new_ptr = allocImpl(new_length, alignment) orelse return null;
-    g_alloc_count += 1;
-    g_realloc_count += 1;
-    g_requested_bytes +|= new_length;
+    const new_ptr = allocImpl(new_length, alignment) orelse outOfMemory();
+    checkedAdd(&g_alloc_count, 1);
+    checkedAdd(&g_realloc_count, 1);
+    checkedAdd(&g_requested_bytes, new_length);
+    engine.realloc(old_length, new_length) catch |err| observationFailure(err);
     const copy_len = @min(old_length, new_length);
     @memcpy(@as([*]u8, @ptrCast(new_ptr))[0..copy_len], @as([*]const u8, @ptrCast(ptr))[0..copy_len]);
     deallocImpl(ptr, alignment);
@@ -176,53 +204,53 @@ fn hostedRequestedBytes() callconv(.c) u64 {
     return g_requested_bytes;
 }
 
-/// The version a reader checks before it trusts a report line's fields.
-const alloc_report_format = "roc-fuzz-allocs/1";
-
-/// Fuzz.report_alloc_counts! (hosted): Str, AllocCounts => {}. Under
-/// `measure` it prints one JSON line; otherwise it only releases the label.
-/// Formatting uses a stack buffer, never the Roc allocator, and the label is
-/// released after the line is written.
-fn hostedReportAllocCounts(label: abi.RocStr, counts: abi.FuzzReport_alloc_countsArg1) callconv(.c) void {
-    defer label.decref(&roc_host);
-    if (!measure_active) return;
-    var buffer: [256]u8 = undefined;
-    var used: usize = 0;
-    const head = "{\"format\":\"" ++ alloc_report_format ++ "\",\"label\":\"";
-    bufferedWrite(&buffer, &used, head);
-    for (label.asSlice()) |byte| {
-        switch (byte) {
-            '"' => bufferedWrite(&buffer, &used, "\\\""),
-            '\\' => bufferedWrite(&buffer, &used, "\\\\"),
-            0...0x1f, 0x7f => {
-                const hex = "0123456789abcdef";
-                const escaped = [_]u8{ '\\', 'u', '0', '0', hex[byte >> 4], hex[byte & 0xf] };
-                bufferedWrite(&buffer, &used, &escaped);
-            },
-            else => bufferedWrite(&buffer, &used, &.{byte}),
-        }
-    }
-    var fields: [160]u8 = undefined;
-    const rest = std.fmt.bufPrint(
-        &fields,
-        "\",\"allocs\":{d},\"reallocs\":{d},\"deallocs\":{d},\"requested_bytes\":{d}}}\n",
-        .{ counts.allocs, counts.reallocs, counts.deallocs, counts.requested_bytes },
-    ) catch unreachable;
-    bufferedWrite(&buffer, &used, rest);
-    writeOut(buffer[0..used]);
+fn hostedScopeStart(label: abi.RocStr) callconv(.c) u64 {
+    var copy: [observation.max_name_bytes]u8 = undefined;
+    const bytes = label.asSlice();
+    if (bytes.len > copy.len) observationFailure(error.NameTooLong);
+    const len = bytes.len;
+    @memcpy(copy[0..len], bytes);
+    label.decref(&roc_host);
+    return engine.start(copy[0..len]) catch |err| observationFailure(err);
 }
 
-/// Append `bytes` to a line being built in `buffer`, writing the buffer out
-/// whenever it fills, so a label of any length needs no allocation.
-fn bufferedWrite(buffer: []u8, used: *usize, bytes: []const u8) void {
-    for (bytes) |byte| {
-        if (used.* == buffer.len) {
-            writeOut(buffer[0..used.*]);
-            used.* = 0;
-        }
-        buffer[used.*] = byte;
-        used.* += 1;
+fn hostedScopeFinish(id: u64) callconv(.c) abi.FuzzScope_finish {
+    const stats = engine.finish(id) catch |err| observationFailure(err);
+    var result: abi.FuzzScope_finish = undefined;
+    inline for (@typeInfo(observation.Stats).@"struct".fields) |field| {
+        @field(result, field.name) = @field(stats, field.name);
     }
+    return result;
+}
+
+fn hostedMark(label: abi.RocStr) callconv(.c) void {
+    defer label.decref(&roc_host);
+    engine.mark(label.asSlice()) catch |err| observationFailure(err);
+}
+
+fn hostedBefore(first: abi.RocStr, second: abi.RocStr) callconv(.c) void {
+    defer first.decref(&roc_host);
+    defer second.decref(&roc_host);
+    engine.before(first.asSlice(), second.asSlice()) catch |err| observationFailure(err);
+}
+
+fn hostedCount(label: abi.RocStr, expected: u64) callconv(.c) void {
+    defer label.decref(&roc_host);
+    engine.count(label.asSlice(), expected) catch |err| observationFailure(err);
+}
+
+fn hostedForbidden(label: abi.RocStr) callconv(.c) void {
+    defer label.decref(&roc_host);
+    engine.forbidden(label.asSlice()) catch |err| observationFailure(err);
+}
+
+comptime {
+    @export(&hostedScopeStart, .{ .name = "roc_fuzz_scope_start", .visibility = .hidden });
+    @export(&hostedScopeFinish, .{ .name = "roc_fuzz_scope_finish", .visibility = .hidden });
+    @export(&hostedMark, .{ .name = "roc_fuzz_mark", .visibility = .hidden });
+    @export(&hostedBefore, .{ .name = "roc_fuzz_before", .visibility = .hidden });
+    @export(&hostedCount, .{ .name = "roc_fuzz_count", .visibility = .hidden });
+    @export(&hostedForbidden, .{ .name = "roc_fuzz_forbidden", .visibility = .hidden });
 }
 
 comptime {
@@ -231,7 +259,6 @@ comptime {
     @export(&hostedReallocCount, .{ .name = "roc_fuzz_realloc_count", .visibility = .hidden });
     @export(&hostedDeallocCount, .{ .name = "roc_fuzz_dealloc_count", .visibility = .hidden });
     @export(&hostedRequestedBytes, .{ .name = "roc_fuzz_requested_bytes", .visibility = .hidden });
-    @export(&hostedReportAllocCounts, .{ .name = "roc_fuzz_report_alloc_counts", .visibility = .hidden });
 }
 
 pub export fn roc_dbg(bytes: [*]const u8, len: usize) callconv(.c) void {
@@ -295,9 +322,9 @@ fn printFailureSuggestions() void {
 }
 
 fn finishRocFailure() noreturn {
-    // `measure` runs outside libFuzzer's driver, so a failure there is a plain
-    // non-zero exit for the harness to read.
-    if (measure_active) std.c._exit(1);
+    // A single-input worker runs outside libFuzzer. The supervisor owns its
+    // original bytes and observation storage, including on a fatal exit.
+    if (standalone_worker) std.c._exit(1);
     if (friendly_run_active) {
         if (sanitizer_death_callback) |callback| {
             // libFuzzer owns artifact formatting and persistence. Its death
@@ -321,79 +348,127 @@ fn printName() void {
     name.decref(&roc_host);
 }
 
-fn readFile(path: [*:0]const u8, buffer: []u8) ?[]u8 {
-    const file = std.c.fopen(path, "rb") orelse return null;
-    defer _ = std.c.fclose(file);
-    const len = std.c.fread(buffer.ptr, 1, buffer.len, file);
-    return buffer[0..len];
+fn prepareExamples(allocator: std.mem.Allocator) ![]const quality.Example {
+    const count = abi.roc_fuzz_example_count();
+    if (count > 4096) return error.TooManyExamples;
+    const examples = try allocator.alloc(quality.Example, @intCast(count));
+    for (examples, 0..) |*example, index| {
+        const prepared = abi.roc_fuzz_example(@intCast(index));
+        defer prepared.decref(&roc_host);
+        if (prepared.bytes.items().len > max_input_len) return error.ExampleTooLarge;
+        example.* = .{
+            .name = try allocator.dupe(u8, prepared.name.asSlice()),
+            .revision = try allocator.dupe(u8, prepared.revision.asSlice()),
+            .bytes = try allocator.dupe(u8, prepared.bytes.items()),
+        };
+    }
+    return examples;
 }
 
-fn showCommand(path: [*:0]const u8) noreturn {
-    var buffer: [max_input_len]u8 = undefined;
-    const input = readFile(path, &buffer) orelse {
-        writeErr("could not read input\n");
-        std.c._exit(2);
-    };
-    const rendered = abi.roc_fuzz_show(makeInput(input));
-    writeOut(rendered.asSlice());
-    writeOut("\n");
-    rendered.decref(&roc_host);
-    std.c._exit(0);
+fn showInput(allocator: std.mem.Allocator, input: []const u8) ![]const u8 {
+    const shown = abi.roc_fuzz_show(makeInput(input));
+    defer shown.decref(&roc_host);
+    return allocator.dupe(u8, shown.asSlice());
 }
 
-/// Run the target once on INPUT, or on an empty input, outside libFuzzer's
-/// driver, so `Fuzz.report_allocs!` can print its lines. It creates no files.
-/// A crash, a failed `expect` or a leak exits 1.
-fn measureCommand(path: ?[*:0]const u8) noreturn {
-    var buffer: [max_input_len]u8 = undefined;
-    const input: []const u8 = if (path) |input_path| readFile(input_path, &buffer) orelse {
-        writeErr("could not read input\n");
-        std.c._exit(2);
-    } else &.{};
-    measure_active = true;
-    current_input_ptr = if (input.len == 0) null else input.ptr;
+fn bindSharedEngine() void {
+    if (quality.sharedObservation(observation.Engine)) |shared| {
+        const live_allocs = engine.live_allocs;
+        const live_bytes = engine.live_bytes;
+        shared.* = .{};
+        shared.reset(live_allocs, live_bytes);
+        engine = shared;
+    }
+}
+
+fn originalSnapshot(allocator: std.mem.Allocator, storage: []align(64) const u8) ![]const u8 {
+    if (storage.len < @sizeOf(observation.Engine)) return error.InvalidObservationStorage;
+    const original: *const observation.Engine = @ptrCast(@alignCast(storage.ptr));
+    return original.traceJson(allocator);
+}
+
+fn runOne(allocator: std.mem.Allocator, input: []const u8, capture: quality.Capture) !quality.WorkerResult {
+    bindSharedEngine();
+    standalone_worker = true;
+    current_input_ptr = if (input.len > 0) input.ptr else null;
     current_input_len = input.len;
+    quality.healthAttempt(input);
+    engine.reset(engine.live_allocs, engine.live_bytes);
+    quality.healthObservationReady();
     const live_before = g_live_alloc_count;
-    _ = abi.roc_fuzz_run(makeInput(input));
-    if (g_live_alloc_count > live_before) reportLeak(g_live_alloc_count - live_before);
-    std.c._exit(0);
+    const bytes_before = engine.live_bytes;
+    const status = abi.roc_fuzz_run(makeInput(input));
+    if (quality.workerLeakDetection() and (g_live_alloc_count > live_before or engine.live_bytes > bytes_before)) {
+        reportLeak(g_live_alloc_count -| live_before);
+    }
+    quality.healthFinish(status == 0);
+    return .{
+        .accepted = status == 0,
+        .metric_valid = engine.complete() and (status != 0 or engine.region_count > 0),
+        .trace_rules_passed = engine.trace_rules_passed,
+        .capture_complete = engine.capture_complete,
+        .observations_json = try engine.observationsJson(allocator),
+        .diagnostics_json = if (capture == .detailed) try engine.traceJson(allocator) else null,
+    };
+}
+
+fn dispatchQuality(argc: *c_int, argv: *[*][*:0]u8) void {
+    const name = abi.roc_fuzz_name();
+    var buffer: [1024]u8 = undefined;
+    const len = name.asSlice().len;
+    if (len > buffer.len) {
+        name.decref(&roc_host);
+        writeErr("target name is too long\n");
+        std.c._exit(2);
+    }
+    @memcpy(buffer[0..len], name.asSlice());
+    name.decref(&roc_host);
+    _ = quality.dispatch(@intCast(argc.*), argv.*, buffer[0..len], .{
+        .prepare_examples = &prepareExamples,
+        .show = &showInput,
+        .run_one = &runOne,
+        .original_snapshot = &originalSnapshot,
+    });
+    if (argc.* >= 3 and std.mem.eql(u8, std.mem.span(argv.*[1]), "__quality-explore")) {
+        bindSharedEngine();
+        argv.*[1] = mutableLiteral("explore");
+        var i: usize = 2;
+        const count: usize = @intCast(argc.*);
+        while (i + 1 < count) : (i += 1) argv.*[i] = argv.*[i + 1];
+        argc.* -= 1;
+    }
 }
 
 fn printHelp() void {
-    writeOut("roc-fuzz: self-contained typed fuzz runner for ");
+    writeOut("roc-fuzz: pure quality checks for ");
     printName();
     writeOut(
         \\
-        \\USAGE:
-        \\  TARGET run [CORPUS] [OPTION...]       fuzz with libFuzzer
-        \\  TARGET ci REPORT_DIR [CORPUS] [OPTION...] supervise a run and write CI evidence
-        \\  TARGET show INPUT                    render the generated typed value
-        \\  TARGET replay INPUT                  run one saved input
-        \\  TARGET measure [INPUT]               run one input (empty if omitted) and print its allocation reports
-        \\  TARGET minimize INPUT OUTPUT         minimize a reproducing failure
-        \\  TARGET reduce-corpus INPUT OUTPUT    merge useful inputs into OUTPUT
-        \\  TARGET raw [LIBFUZZER_ARG...]         use the native libFuzzer CLI
-        \\  TARGET --help                        show this help
+        \\  TARGET [run] [CORPUS] [OPTION...]  check examples and baseline, then explore
+        \\  TARGET check [OPTION...]           check each declared example once
+        \\  TARGET accept [OPTION...]          explicitly accept exact allocation observations
+        \\  TARGET explore [CORPUS] [OPTION...] explore with coverage feedback
+        \\  TARGET examples                    list declared examples
+        \\  TARGET show INPUT                  render a decoded representative
+        \\  TARGET replay INPUT [--detailed]    reproduce with optional logical trace
+        \\  TARGET measure INPUT               collect named allocation observations
+        \\  TARGET retain INPUT --name NAME --output DIR  preserve original witness
+        \\  TARGET minimize INPUT OUTPUT       minimize a finding
+        \\  TARGET reduce-corpus INPUT OUTPUT  retain a coverage corpus
+        \\  TARGET raw [LIBFUZZER_ARG...]       advanced native controls
         \\
-        \\Friendly run options:
-        \\  --time=SECONDS          total run time; defaults to 60 (0 is unbounded)
-        \\  --runs=COUNT            stop after this many inputs
-        \\  --max-input-size=BYTES  bound the raw bytes passed to the generator
-        \\  --memory-limit=MB       bound process memory
-        \\  --timeout=SECONDS       bound one target call
-        \\  --dictionary=FILE       load useful input tokens
-        \\  --seed=NUMBER           make a bounded run reproducible
-        \\  --artifact-dir=DIR      save failures under DIR
-        \\  --no-detect-leaks       allow an input to leave allocations unfreed
-        \\  --print-final-stats     print libFuzzer's final counters
-        \\
-        \\CI provenance options:
-        \\  --source-revision=VALUE identify the downstream source revision
-        \\  --roc-version=VALUE     identify the Roc compiler
-        \\  --platform-release=VALUE identify the roc-fuzz release
-        \\  --platform-sha256=HEX   identify the release bundle digest
-        \\
-        \\Use TARGET raw -help=1 for native libFuzzer flags.
+        \\  --baseline=PATH     override <target-name>_baseline.json in the working directory
+        \\  --profile=NAME      select the named allocation profile (default: default)
+        \\  --report-dir=DIR    write one report and original-run evidence to an empty directory
+        \\  --time=SECONDS      exploration budget (default: 60; 0: unbounded)
+        \\  --runs=COUNT        bound exploration by executions
+        \\  --timeout=SECONDS   invocation deadline (default: 10)
+        \\  --max-input-size=BYTES  input size bound
+        \\  --memory-limit=MB   process memory limit
+        \\  --dictionary=FILE   mutation tokens
+        \\  --seed=NUMBER       exploration seed
+        \\  --no-detect-leaks   disable the invocation leak check
+        \\  --detailed          record bounded logical traces
         \\
     );
 }
@@ -439,20 +514,6 @@ fn pushCommonFuzzArgs(count: *usize, directory: []const u8) void {
     pushArg(count, mutableLiteral("-create_missing_dirs=1"));
 }
 
-fn ciCommand(original_count: usize, original: [*][*:0]u8) noreturn {
-    const name = abi.roc_fuzz_name();
-    var name_buffer: [1024]u8 = undefined;
-    const bytes = name.asSlice();
-    if (bytes.len > name_buffer.len) {
-        name.decref(&roc_host);
-        writeErr("target name is too long for CI reporting\n");
-        std.c._exit(2);
-    }
-    @memcpy(name_buffer[0..bytes.len], bytes);
-    name.decref(&roc_host);
-    ci_report.run(original_count, original, name_buffer[0..bytes.len]);
-}
-
 fn translateFriendlyArgs(argc: *c_int, argv_ptr: *[*][*:0]u8) void {
     const original_count: usize = @intCast(argc.*);
     const original = argv_ptr.*;
@@ -466,26 +527,11 @@ fn translateFriendlyArgs(argc: *c_int, argv_ptr: *[*][*:0]u8) void {
         printHelp();
         std.c._exit(0);
     }
-    if (std.mem.eql(u8, command, "show")) {
-        if (original_count != 3) {
-            writeErr("show requires exactly one input file\n");
-            std.c._exit(2);
-        }
-        showCommand(original[2]);
-    }
-    if (std.mem.eql(u8, command, "measure")) {
-        if (original_count > 3) {
-            writeErr("measure takes at most one input file\n");
-            std.c._exit(2);
-        }
-        measureCommand(if (original_count == 3) original[2] else null);
-    }
-    if (std.mem.eql(u8, command, "ci")) ciCommand(original_count, original);
 
     var count: usize = 0;
     pushArg(&count, original[0]);
 
-    if (std.mem.eql(u8, command, "run")) {
+    if (std.mem.eql(u8, command, "explore")) {
         var next: usize = 2;
         var has_bound = false;
         var using_default_corpus = false;
@@ -545,49 +591,6 @@ fn translateFriendlyArgs(argc: *c_int, argv_ptr: *[*][*:0]u8) void {
         return;
     }
 
-    if (std.mem.eql(u8, command, "replay")) {
-        if (original_count != 3) {
-            writeErr("replay requires exactly one input file\n");
-            std.c._exit(2);
-        }
-        pushArg(&count, mutableLiteral("-runs=1"));
-        pushCommonFuzzArgs(&count, ".roc-fuzz");
-        pushArg(&count, original[2]);
-        setTranslatedArgs(argc, argv_ptr, count);
-        return;
-    }
-
-    if (std.mem.eql(u8, command, "minimize")) {
-        if (original_count != 4) {
-            writeErr("minimize requires INPUT and OUTPUT files\n");
-            std.c._exit(2);
-        }
-        const exact = std.fmt.bufPrintZ(&exact_artifact_arg, "-exact_artifact_path={s}", .{std.mem.span(original[3])}) catch {
-            writeErr("output path is too long\n");
-            std.c._exit(2);
-        };
-        pushArg(&count, mutableLiteral("-minimize_crash=1"));
-        pushArg(&count, exact.ptr);
-        pushCommonFuzzArgs(&count, ".roc-fuzz");
-        pushArg(&count, original[2]);
-        setTranslatedArgs(argc, argv_ptr, count);
-        return;
-    }
-
-    if (std.mem.eql(u8, command, "reduce-corpus")) {
-        if (original_count != 4) {
-            writeErr("reduce-corpus requires INPUT and OUTPUT directories\n");
-            std.c._exit(2);
-        }
-        _ = std.c.mkdir(original[3], 0o755);
-        pushArg(&count, mutableLiteral("-merge=1"));
-        pushArg(&count, mutableLiteral("-create_missing_dirs=1"));
-        pushArg(&count, original[3]);
-        pushArg(&count, original[2]);
-        setTranslatedArgs(argc, argv_ptr, count);
-        return;
-    }
-
     if (std.mem.eql(u8, command, "raw")) {
         var index: usize = 2;
         while (index < original_count) : (index += 1) pushArg(&count, original[index]);
@@ -603,6 +606,7 @@ fn translateFriendlyArgs(argc: *c_int, argv_ptr: *[*][*:0]u8) void {
 pub export fn LLVMFuzzerInitialize(argc: *c_int, argv: *[*][*:0]u8) callconv(.c) c_int {
     if (argc.* > 0) executable_name = std.mem.span(argv.*[0]);
     initHost();
+    dispatchQuality(argc, argv);
     translateFriendlyArgs(argc, argv);
     return 0;
 }
@@ -616,14 +620,23 @@ pub export fn LLVMFuzzerTestOneInput(data: ?[*]const u8, size: usize) callconv(.
     // input list built below. Sampling the balance here rather than inside the
     // target keeps this honest for every target, pure ones included, without
     // any target having to opt in.
+    quality.healthAttempt(input);
+    engine.reset(engine.live_allocs, engine.live_bytes);
+    quality.healthObservationReady();
     const live_before = g_live_alloc_count;
-    _ = abi.roc_fuzz_run(makeInput(input));
-    if (leak_detection_enabled and g_live_alloc_count > live_before) {
-        reportLeak(g_live_alloc_count - live_before);
+    const bytes_before = engine.live_bytes;
+    const status = abi.roc_fuzz_run(makeInput(input));
+    if (leak_detection_enabled and (g_live_alloc_count > live_before or engine.live_bytes > bytes_before)) {
+        reportLeak(g_live_alloc_count -| live_before);
+    }
+    quality.healthFinish(status == 0);
+    if (!engine.complete() or !engine.trace_rules_passed or (status == 0 and engine.region_count == 0)) {
+        writeErr("[roc-fuzz observation failure] invalid metrics, unfinished region or trace rule violation\n");
+        finishRocFailure();
     }
     current_input_ptr = null;
     current_input_len = 0;
-    return 0;
+    return if (status == 0) 0 else -1;
 }
 
 fn reportLeak(leaked: u64) void {

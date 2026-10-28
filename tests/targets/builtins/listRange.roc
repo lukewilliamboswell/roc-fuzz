@@ -16,7 +16,7 @@ main! = |data| {
 			values : List(U8)
 			values = Fuzz.expect_allocs_at_most!(
 				1,
-				|{}| List.from_iter(range.iter()),
+				|| List.from_iter(range.iter()),
 			)
 			if (List.is_empty(values)) 0 else 1
 		}
@@ -24,7 +24,13 @@ main! = |data| {
 	}
 }
 
-target = Fuzz.from_bytes!({
+target = Fuzz.target_with!({
+	examples: [],
 	name: "listRange",
-	test!: main!,
+	generator: Fuzz.raw_bytes,
+	test!: |input| {
+		_ = main!(input)
+		Fuzz.keep
+	},
+	show: Str.inspect,
 })

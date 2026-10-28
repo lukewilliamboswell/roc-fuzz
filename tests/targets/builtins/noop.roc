@@ -5,11 +5,17 @@ import pf.Fuzz
 ## Allocation invariant: doing nothing must allocate nothing.
 main! : List(U8) => U8
 main! = |_data| {
-	Fuzz.expect_allocs_at_most!(0, |{}| {})
+	Fuzz.expect_allocs_at_most!(0, || {})
 	0
 }
 
-target = Fuzz.from_bytes!({
+target = Fuzz.target_with!({
+	examples: [],
 	name: "noop",
-	test!: main!,
+	generator: Fuzz.raw_bytes,
+	test!: |input| {
+		_ = main!(input)
+		Fuzz.keep
+	},
+	show: Str.inspect,
 })

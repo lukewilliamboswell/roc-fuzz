@@ -30,11 +30,12 @@ check! = |case| {
 
 test! : Prefix.Case => Fuzz.Outcome
 test! = |case| {
-	Fuzz.expect_no_leaks!(|{}| check!(case))
+	Fuzz.expect_no_leaks!(|| check!(case))
 	Fuzz.keep
 }
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "numPrefixFloat",
 	generator,
 	test!,

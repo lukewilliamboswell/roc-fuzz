@@ -20,4 +20,4 @@ main! = |_data| {
 	crash "len=${List.len($l).to_str()}"
 }
 
-target = Fuzz.from_bytes!({ name: "postcheckPanic", test!: main! })
+target = Fuzz.from_bytes!({ examples: [], name: "postcheckPanic", test!: main! })

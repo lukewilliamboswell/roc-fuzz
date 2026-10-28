@@ -2,8 +2,12 @@ app [target] { fuzz: platform "../../platform/main.roc" }
 
 import fuzz.Fuzz
 import Stack
+import "regressions/nonempty.bin" as regression_bytes : List(U8)
 
 Input := { initial : List(U8), pushed : U8 }.{
+	parser_for : _
+	encoder_for : _
+
 	generator_for : Fuzz.FuzzEncoding -> Fuzz.Generator(Input)
 	generator_for = |_| {
 		{
@@ -21,9 +25,9 @@ Input := { initial : List(U8), pushed : U8 }.{
 ## `pop` allocates 0 times, regardless of `input.initial`'s length.
 test! : Input => Fuzz.Outcome
 test! = |input| {
-	stack = Fuzz.expect_allocs_at_most!(1, |{}| Stack.push(input.initial, input.pushed))
+	stack = Fuzz.expect_allocs_at_most!(1, || Stack.push(input.initial, input.pushed))
 
-	popped = Fuzz.expect_allocs_at_most!(0, |{}| Stack.pop(stack))
+	popped = Fuzz.expect_allocs_at_most!(0, || Stack.pop(stack))
 
 	match popped {
 		Ok({ value, rest }) if value == input.pushed and rest == input.initial => Fuzz.keep
@@ -37,6 +41,11 @@ test! = |input| {
 }
 
 target = Fuzz.target_with!({
+	examples: [
+		Fuzz.saved({ name: "nonempty-entropy", revision: "1", bytes: regression_bytes }),
+		Fuzz.example({ name: "empty-or-zero", revision: "1", make: || Input.{ initial: [], pushed: 7 } }),
+		Fuzz.example({ name: "representative", revision: "1", make: || Input.{ initial: [1, 2, 3], pushed: 9 } }),
+	],
 	name: "stack-model",
 	generator: Input.generator_for(Default),
 	test!,

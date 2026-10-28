@@ -4,6 +4,18 @@ Model :: {}.{
 	Op : [Insert(U8), Remove(U8), Reserve(U64), Release, Clear, Keep(U8), Drop(U8), Union(List(U8)), Intersection(List(U8)), Difference(List(U8)), Map(U8), JoinMap(U8), FromIter(List(U8), U8)]
 	Input : { initial : List(U8), capacity : U64, stop : U64, shared : Bool, ops : List(Op) }
 
+	## Resource domain shared by encoded source values and entropy generation.
+	valid : Input -> Bool
+	valid = |input| {
+		input.initial.len() <= 64 and input.capacity <= 100 and input.stop <= 35 and input.ops.len() <= 32 and input.ops.all(
+			|op| match op {
+				Reserve(capacity) => capacity <= 100
+				Union(items) | Intersection(items) | Difference(items) | FromIter(items, _) => items.len() <= 32
+				_ => Bool.True
+			},
+		)
+	}
+
 	operation : U8, U8, U64, List(U8) -> Op
 	operation = |kind, value, capacity, items| match kind {
 		0 => Insert(value)

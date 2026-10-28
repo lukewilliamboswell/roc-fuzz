@@ -32,12 +32,17 @@ generator = {
 ## verification. The generator bounds the operation sequence and all nested
 ## lists, so the complete model comparison has a fixed conservative ceiling.
 target = Fuzz.target_with!({
+	examples: [],
 	name: "setCollisions",
 	generator,
 	test!: |input| {
+		if !Model.valid(input) {
+			return Fuzz.reject
+		}
+
 		Fuzz.expect_allocs_at_most!(
 			100000,
-			|{}|
+			||
 				Model.run(
 					input,
 					make,

@@ -100,7 +100,8 @@ Prefix :: {}.{
 	## by `T.from_str`.
 	check_bytes! : Str, Ops(a), List(U8), U64, Obs => {}
 	check_bytes! = |label, ops, bytes, token_len, expected| {
-		{ value: list_result, allocations: list_allocs } = Fuzz.measure_allocs!(|{}| (ops.utf8_prefix)(bytes))
+		{ value: list_result, stats: list_allocs_stats } = Fuzz.measure!("list_result", || (ops.utf8_prefix)(bytes))
+		list_allocs = list_allocs_stats.allocs + list_allocs_stats.reallocs
 		if list_allocs != 0 {
 			crash "${label}.from_utf8_prefix allocated ${list_allocs.to_str()} times on ${NumText.show_bytes(bytes)}"
 		}
@@ -110,7 +111,8 @@ Prefix :: {}.{
 		}
 		match Str.from_utf8(bytes) {
 			Ok(s) => {
-				{ value: str_result, allocations: str_allocs } = Fuzz.measure_allocs!(|{}| (ops.str_prefix)(s))
+				{ value: str_result, stats: str_allocs_stats } = Fuzz.measure!("str_result", || (ops.str_prefix)(s))
+				str_allocs = str_allocs_stats.allocs + str_allocs_stats.reallocs
 				if str_allocs != 0 {
 					crash "${label}.from_str_prefix allocated ${str_allocs.to_str()} times on ${Str.inspect(s)}"
 				}

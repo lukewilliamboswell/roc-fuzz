@@ -14,12 +14,18 @@ main! = |data| {
 	{ value: retain2, .. } = after_str2.ratio(1, 2)
 	tmp1 = if (retain1) str1 else ""
 	tmp2 = if (retain2) str2 else ""
-	starts = Fuzz.expect_allocs_at_most!(0, |{}| str1.starts_with(str2))
+	starts = Fuzz.expect_allocs_at_most!(0, || str1.starts_with(str2))
 	result = if (starts) 1 else 0
 	(tmp1.count_utf8_bytes() + tmp2.count_utf8_bytes() + result).to_u8_wrap()
 }
 
-target = Fuzz.from_bytes!({
+target = Fuzz.target_with!({
+	examples: [],
 	name: "strStartsWith",
-	test!: main!,
+	generator: Fuzz.raw_bytes,
+	test!: |input| {
+		_ = main!(input)
+		Fuzz.keep
+	},
+	show: Str.inspect,
 })

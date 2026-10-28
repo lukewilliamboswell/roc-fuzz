@@ -98,6 +98,7 @@ test! = |{ items, layers, pulls, known }| {
 }
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "streamCustomLazyMap",
 	generator: case_gen,
 	test!,

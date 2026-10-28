@@ -3,6 +3,9 @@ app [target] { pf: platform "../../../platform/main.roc" }
 import pf.Fuzz
 
 Input := { a_hi : U64, a_lo : U64, a_mode : U8, b_hi : U64, b_lo : U64, b_mode : U8, delta : U64, rel_raw : U64, rel_mode : U8, abs_raw : U64, abs_mode : U8 }.{
+	parser_for : _
+	encoder_for : _
+
 	generator_for : Fuzz.FuzzEncoding -> Fuzz.Generator(Input)
 	generator_for = |_| {
 		{
@@ -107,7 +110,7 @@ test! = |input| {
 	abs = pick_abs(input)
 	tol = { rel, abs }
 
-	result = Fuzz.expect_allocs_at_most!(0, |{}| Dec.is_approx_eq(a, b, tol))
+	result = Fuzz.expect_allocs_at_most!(0, || Dec.is_approx_eq(a, b, tol))
 
 	if result != reference(a, b, rel, abs) {
 		crash "Dec.is_approx_eq disagreed with the reference definition"
@@ -134,6 +137,7 @@ test! = |input| {
 }
 
 target = Fuzz.target_with!({
+	examples: [],
 	name: "decIsApproxEq",
 	generator: Input.generator_for(Fuzz.FuzzEncoding.Default),
 	test!,

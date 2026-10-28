@@ -44,6 +44,7 @@ main! = |data| {
 }
 
 target = Fuzz.from_bytes!({
+	examples: [],
 	name: "lateDropThroughFunctionValue",
 	test!: main!,
 })
