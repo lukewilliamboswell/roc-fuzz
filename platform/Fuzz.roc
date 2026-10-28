@@ -235,6 +235,12 @@ Fuzz := [].{
 	saved = |config| Saved(config)
 
 	## Encode a logical value as a mutable corpus seed using platform format v1.
+	## Float encoding preserves signed zero, infinities and NaN equivalence; Roc
+	## canonicalizes NaN payloads. Use integer bit inputs for payload assertions.
+	## On nightly-2026-10-27-de79a0f, derived Dict keys containing records or
+	## tuples require `--specialize=no` because the default compiler backend
+	## crashes while specializing those codecs. Scalar and tag keys work with
+	## the default backend.
 	encode : a -> List(U8) where [a.Binary.Encodable]
 	encode = |value| Binary.encode(value)
 
