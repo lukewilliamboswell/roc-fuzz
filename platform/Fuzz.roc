@@ -3,7 +3,7 @@ import Binary
 import Target
 
 decode_input : Fuzz.Generator(a), List(U8) -> Try(a, [InvalidInput])
-	where [a.Binary.Parseable(errs)]
+	where [a.Fuzz.Parseable(errs)]
 decode_input = |generator, input|
 	match Binary.form(input) {
 		Ok(Entropy(bytes)) => Ok(generator(Arbitrary.new(bytes)).value)
@@ -14,7 +14,7 @@ decode_input = |generator, input|
 # Sequence decoder ownership cleanup before the first scope effect. A pure
 # decoder's cursor drops may otherwise move past scope_start! into the region.
 prepare_input! : Fuzz.Generator(a), List(U8) => Try(a, [InvalidInput])
-	where [a.Binary.Parseable(errs)]
+	where [a.Fuzz.Parseable(errs)]
 prepare_input! = |generator, input| decode_input(generator, input)
 
 ## Define typed, deterministic inputs and the pure property that roc-fuzz tests.
@@ -222,6 +222,20 @@ Fuzz := [].{
 	## not need to inspect `Arbitrary` directly.
 	Generator(a) : Arbitrary -> { value : a, state : Arbitrary }
 
+	## Type-only name for the platform's binary codec marker. Roc resolves this
+	## through encoder_for/parser_for derivation; applications need no codec value.
+	InputFormat : Binary.Format
+
+	## Type-only name for the bounded binary parser cursor. Normal inputs opt
+	## in with parser_for : _ rather than constructing or manipulating a cursor.
+	InputState : Binary.State
+
+	## Requirement for types that can become source-authored corpus seeds.
+	a.Encodable : where [a.encoder_for : Binary.Format -> (a, List(U8) -> Try(List(U8), []))]
+
+	## Requirement for types that can decode mutated source-authored seeds.
+	a.Parseable(errs) : where [a.parser_for : Binary.Format -> (Binary.State -> Try({ value : a, rest : Binary.State }, [MalformedInput, BudgetExceeded, ..errs]))]
+
 	## Selects the generator used by a nominal type's `generator_for` method.
 	##
 	## `Default` is currently the only encoding. The marker gives static dispatch
@@ -251,7 +265,7 @@ Fuzz := [].{
 	## tuples require `--specialize=no` because the default compiler backend
 	## crashes while specializing those codecs. Scalar and tag keys work with
 	## the default backend.
-	encode : a -> List(U8) where [a.Binary.Encodable]
+	encode : a -> List(U8) where [a.Fuzz.Encodable]
 	encode = |value| Binary.encode(value)
 
 	## Frame generator entropy while preserving its storage-shape decisions.
@@ -264,7 +278,7 @@ Fuzz := [].{
 	## For each fuzzer input, `target` generates one value, calls `test`, and uses
 	## `show` when a person asks the runner to render that saved input.
 	target : { name : Str, examples : List(Example(a)), test : a -> Outcome, show : a -> Str } -> Target
-		where [a.generator_for : FuzzEncoding -> Generator(a), a.Binary.Encodable, a.Binary.Parseable(errs)]
+		where [a.generator_for : FuzzEncoding -> Generator(a), a.Fuzz.Encodable, a.Fuzz.Parseable(errs)]
 	target = |config| {
 		Shape : a
 		generator = Shape.generator_for(Default)
@@ -283,7 +297,7 @@ Fuzz := [].{
 	## `generator_for` method. Prefer [`target`](#Fuzz.target) when the input type owns
 	## its generation policy.
 	target_with : { name : Str, examples : List(Example(a)), generator : Generator(a), test : a -> Outcome, show : a -> Str } -> Target
-		where [a.Binary.Encodable, a.Binary.Parseable(errs)]
+		where [a.Fuzz.Encodable, a.Fuzz.Parseable(errs)]
 	target_with = |config| {
 		property = config.test
 		Fuzz.target_with!({
@@ -301,7 +315,7 @@ Fuzz := [].{
 	## counters, for example to assert that a builtin mutates a uniquely owned
 	## value in place instead of reallocating.
 	target_with! : { name : Str, examples : List(Example(a)), generator : Generator(a), test! : a => Outcome, show : a -> Str } -> Target
-		where [a.Binary.Encodable, a.Binary.Parseable(errs)]
+		where [a.Fuzz.Encodable, a.Fuzz.Parseable(errs)]
 	target_with! = |config| {
 		# Capture only the values each callback needs. Capturing config itself
 		# would retain saved fixture bytes in the property closure after decode.
