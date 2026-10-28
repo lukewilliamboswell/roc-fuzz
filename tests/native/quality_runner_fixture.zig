@@ -4,6 +4,7 @@ const quality = @import("quality_runner");
 const Allocator = std.mem.Allocator;
 
 var call_count: usize = 0;
+var worker_output_directory: ?[]const u8 = null;
 
 fn env(name: [*:0]const u8) []const u8 {
     return if (std.c.getenv(name)) |value| std.mem.span(value) else "";
@@ -33,14 +34,21 @@ fn runOne(allocator: Allocator, input: []const u8, capture: quality.Capture) !qu
         const line = try std.fmt.allocPrint(allocator, "{d}:{s}\n", .{ std.c.getpid(), input });
         if (std.c.fwrite(line.ptr, 1, line.len, file) != line.len) return error.CannotWriteCountFile;
     }
+    quality.healthAttempt(input);
     const storage = quality.sharedObservation(u64) orelse return error.MissingSharedObservationStorage;
     storage.* = 17;
+    quality.healthObservationReady();
+    if (modeIs("report-write-failure")) {
+        const summary_path = try std.fs.path.join(allocator, &.{ worker_output_directory.?, "summary.md" });
+        try std.Io.Dir.createDirPath(.cwd(), std.Io.Threaded.global_single_threaded.io(), summary_path);
+    }
     if (modeIs("crash") and std.mem.eql(u8, input, "one")) std.c.abort();
     if (modeIs("timeout") and std.mem.eql(u8, input, "one")) {
         const delay = std.c.timespec{ .sec = 20, .nsec = 0 };
         _ = std.c.nanosleep(&delay, null);
     }
     const cost: usize = if (modeIs("increase")) 3 else if (modeIs("reduction")) 1 else 2;
+    quality.healthFinish(!modeIs("reject"));
     return .{
         .accepted = !modeIs("reject"),
         .metric_valid = !modeIs("invalid"),
@@ -68,6 +76,7 @@ fn runOne(allocator: Allocator, input: []const u8, capture: quality.Capture) !qu
 }
 
 fn show(allocator: Allocator, input: []const u8) ![]const u8 {
+    if (modeIs("show-crash")) std.c.abort();
     return std.fmt.allocPrint(allocator, "representative({s})", .{input});
 }
 
@@ -79,6 +88,7 @@ fn snapshot(allocator: Allocator, storage: []align(64) const u8) ![]const u8 {
 pub fn main(init: std.process.Init) !void {
     const allocator = init.arena.allocator();
     const args = try init.minimal.args.toSlice(allocator);
+    if (args.len >= 4 and std.mem.eql(u8, args[1], "__quality-worker")) worker_output_directory = std.fs.path.dirname(args[3]);
     const argv = try allocator.alloc([*:0]u8, args.len);
     for (args, argv) |argument, *slot| slot.* = (try allocator.dupeZ(u8, argument)).ptr;
     const adapter = quality.Adapter{ .prepare_examples = examples, .run_one = runOne, .show = show, .original_snapshot = snapshot };
@@ -87,6 +97,7 @@ pub fn main(init: std.process.Init) !void {
         const storage = quality.sharedObservation(u64).?;
         storage.* = 31;
         quality.healthAttempt("original entropy");
+        quality.healthObservationReady();
         quality.healthFinish(!modeIs("all-rejected"));
         quality.breadcrumb("{\"mark\":\"original-run\"}");
         if (modeIs("explore-crash")) std.c.abort();

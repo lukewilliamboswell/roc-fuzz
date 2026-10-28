@@ -85,6 +85,9 @@ pub fn main(init: std.process.Init) !void {
     const matched = try suite.run("matched", &.{"check"}, "", 0);
     try expectString(matched, "baseline_status", "matched");
     try assertFreshCalls(try suite.read("calls.txt"), 6);
+    const write_failure = try suite.run("report-write-failure", &.{"accept"}, "report-write-failure", 2);
+    try expectString(write_failure, "baseline_status", "write_failed");
+    try suite.expectBaselineUnchanged(baseline);
 
     for ([_][]const u8{ "increase", "reduction", "revision", "input" }) |mode| {
         const label = try std.fmt.allocPrint(allocator, "drift-{s}", .{mode});
@@ -145,6 +148,7 @@ pub fn main(init: std.process.Init) !void {
     try std.testing.expectEqual(@as(i64, 1), (try field(rejected_campaign, "rejected")).integer);
     const crashed = try suite.run("explore-crash", &.{ "explore", "--runs=5" }, "explore-crash", 1);
     try expectString(crashed, "outcome", "finding");
+    try std.testing.expect((try field(try field(crashed, "exploration"), "original_trace_input_matches")).bool);
     try std.testing.expectEqualStrings("original entropy", try suite.read("explore-crash/original-input.bin"));
     try std.testing.expectEqualStrings("{\"original\":31}", try suite.read("explore-crash/original-trace.json"));
     try std.testing.expectEqualStrings("{\"mark\":\"original-run\"}", try suite.read("explore-crash/original-breadcrumbs.json"));
@@ -160,6 +164,16 @@ pub fn main(init: std.process.Init) !void {
     try std.testing.expect(std.mem.indexOf(u8, retained.stdout, "Fuzz.saved({") != null);
     try std.testing.expect(std.mem.indexOf(u8, retained.stdout, "representative(one)") != null);
     try std.testing.expectEqualStrings("one", try suite.read("witnesses/previous-crash.bin"));
+    var render_crash_environment = try init.environ_map.clone(allocator);
+    try render_crash_environment.put("ROCFUZZ_FIXTURE_CASE", "show-crash");
+    const rendering_crash = try std.process.run(allocator, init.io, .{
+        .argv = &.{ fixture, "retain", "run/example-0.bin", "--name", "render-crash", "--output", "witnesses" },
+        .cwd = .{ .path = root },
+        .environ_map = &render_crash_environment,
+    });
+    try std.testing.expect(rendering_crash.term == .exited and rendering_crash.term.exited == 1);
+    try std.testing.expectEqualStrings("one", try suite.read("witnesses/render-crash.bin"));
+    try std.testing.expect(std.mem.indexOf(u8, rendering_crash.stdout, "Fuzz.saved({") != null);
     const conflicting_witness = try std.process.run(allocator, init.io, .{
         .argv = &.{ fixture, "retain", "run/example-1.bin", "--name", "previous-crash", "--output", "witnesses" },
         .cwd = .{ .path = root },

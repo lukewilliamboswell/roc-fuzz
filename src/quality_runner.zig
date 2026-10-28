@@ -51,11 +51,11 @@ pub const BaselineExample = struct {
 pub const BaselineEntry = struct {
     host_target: []const u8,
     profile: []const u8,
-    metric_version: []const u8 = metric_version,
+    metric_version: []const u8,
     examples: []const BaselineExample,
 };
 pub const Baseline = struct {
-    format: []const u8 = baseline_format,
+    format: []const u8,
     target: []const u8,
     entries: []const BaselineEntry,
 };
@@ -75,6 +75,7 @@ pub const Health = extern struct {
     breadcrumb_truncated: u64 = 0,
     breadcrumb: [max_breadcrumb_len]u8 = @splat(0),
     observation_initialized: u64 = 0,
+    observation_input_sequence: u64 = 0,
     observation_storage: [1024 * 1024]u8 align(64) = @splat(0),
 };
 var worker_health: ?*Health = null;
@@ -93,6 +94,14 @@ pub fn sharedObservation(comptime T: type) ?*T {
     const health = worker_health orelse return null;
     health.observation_initialized = 1;
     return @ptrCast(@alignCast(&health.observation_storage));
+}
+
+/// Call immediately after resetting shared observation state for this input.
+/// A timeout before reset must not associate the previous input's trace with
+/// the newly captured bytes.
+pub fn healthObservationReady() void {
+    const health = worker_health orelse return;
+    health.observation_input_sequence = @atomicLoad(u64, &health.input_sequence, .acquire);
 }
 
 extern "c" fn fileno(*std.c.FILE) c_int;
@@ -276,7 +285,7 @@ pub fn replaceEntry(allocator: Allocator, prior: ?Baseline, target: []const u8, 
         } else try entries.append(allocator, old);
     };
     if (!found) try entries.append(allocator, entry);
-    return .{ .target = target, .entries = try entries.toOwnedSlice(allocator) };
+    return .{ .format = baseline_format, .target = target, .entries = try entries.toOwnedSlice(allocator) };
 }
 
 fn mapHealth(allocator: Allocator, path: []const u8, create: bool) !*Health {
@@ -300,8 +309,8 @@ pub fn attachHealth(path: []const u8) !void {
 
 pub fn healthAttempt(input: []const u8) void {
     const health = worker_health orelse return;
-    _ = @atomicRmw(u64, &health.attempted, .Add, 1, .monotonic);
     _ = @atomicRmw(u64, &health.input_sequence, .Add, 1, .acq_rel);
+    _ = @atomicRmw(u64, &health.attempted, .Add, 1, .monotonic);
     const captured = @min(input.len, health.input.len);
     health.input_length = input.len;
     health.input_captured = captured;
@@ -415,6 +424,7 @@ const ExplorationReport = struct {
     original_input_sha256: ?[]const u8 = null,
     original_input_complete: bool = false,
     original_trace: ?[]const u8 = null,
+    original_trace_input_matches: bool = false,
     breadcrumbs: ?[]const u8 = null,
     breadcrumb_complete: bool = true,
 };
@@ -527,6 +537,14 @@ fn parseOptions(allocator: Allocator, argc: usize, argv: [*][*:0]u8) !Options {
 
 fn commandIs(command: []const u8, expected: []const u8) bool {
     return std.mem.eql(u8, command, expected);
+}
+
+fn pathsOverlap(allocator: Allocator, left: []const u8, right: []const u8) !bool {
+    const a = try std.fs.path.resolve(allocator, &.{left});
+    const b = try std.fs.path.resolve(allocator, &.{right});
+    return std.mem.eql(u8, a, b) or
+        (std.mem.startsWith(u8, a, b) and a.len > b.len and a[b.len] == std.fs.path.sep) or
+        (std.mem.startsWith(u8, b, a) and b.len > a.len and b[a.len] == std.fs.path.sep);
 }
 
 fn createReportDirectory(allocator: Allocator, override: ?[]const u8) ![]const u8 {
@@ -694,6 +712,7 @@ fn exploration(allocator: Allocator, executable: []const u8, report_dir: []const
         const original_path = try std.fs.path.join(allocator, &.{ report_dir, "original-trace.json" });
         try atomicWrite(allocator, original_path, try snapshot(allocator, &health.observation_storage));
         report.original_trace = original_path;
+        report.original_trace_input_matches = health.observation_input_sequence == health.input_sequence and health.input_sequence % 2 == 0;
     };
     // The child is terminated before reads, so no concurrent writer remains.
     // A killed writer can leave an odd sequence: mark that capture incomplete.
@@ -721,12 +740,16 @@ fn printResult(allocator: Allocator, report: Report, report_dir: []const u8) !vo
     writeFd(1, message);
 }
 
-fn saveReport(allocator: Allocator, report: Report, report_dir: []const u8) !void {
+fn writeReportFiles(allocator: Allocator, report: Report, report_dir: []const u8) !void {
     const path = try std.fs.path.join(allocator, &.{ report_dir, "report.json" });
     try atomicWrite(allocator, path, try json(allocator, report));
     const summary_path = try std.fs.path.join(allocator, &.{ report_dir, "summary.md" });
     const summary = try std.fmt.allocPrint(allocator, "# roc-fuzz: {s}\n\nOutcome: **{s}**. Baseline: **{s}**.\n\nDeclared examples: {d}. Exploration: **{s}**.\n\nAttempted: {d}; accepted: {d}; rejected: {d}.\n", .{ report.target, report.outcome, report.baseline_status, report.examples.len, report.exploration.status, report.exploration.attempted, report.exploration.accepted, report.exploration.rejected });
     try atomicWrite(allocator, summary_path, summary);
+}
+
+fn saveReport(allocator: Allocator, report: Report, report_dir: []const u8) !void {
+    try writeReportFiles(allocator, report, report_dir);
     if (!commandIs(report.command, "measure")) try printResult(allocator, report, report_dir);
 }
 
@@ -736,6 +759,8 @@ fn checkAndExplore(allocator: Allocator, executable: []const u8, target: []const
     const log_path = try std.fs.path.join(allocator, &.{ report_dir, "run.log" });
     try writeFile(allocator, log_path, "");
     const baseline_path = try baselinePath(allocator, target, options.baseline);
+    if (try pathsOverlap(allocator, report_dir, baseline_path)) return error.BaselineOverlapsReportDirectory;
+    if ((commandIs(options.command, "run") or commandIs(options.command, "explore")) and try pathsOverlap(allocator, report_dir, options.corpus)) return error.CorpusOverlapsReportDirectory;
     var report = Report{ .target = target, .host_target = hostTarget(), .profile = options.profile, .command = options.command, .baseline_path = baseline_path, .provenance = options.provenance };
     const examples = adapter.prepare_examples(allocator) catch |err| {
         report.outcome = "infrastructure_error";
@@ -769,7 +794,7 @@ fn checkAndExplore(allocator: Allocator, executable: []const u8, target: []const
             try saveReport(allocator, report, report_dir);
             return 1;
         }
-        const current = BaselineEntry{ .host_target = hostTarget(), .profile = options.profile, .examples = accepted.items };
+        const current = BaselineEntry{ .host_target = hostTarget(), .profile = options.profile, .metric_version = metric_version, .examples = accepted.items };
         if (commandIs(options.command, "accept") and examples.len == 0) {
             report.outcome = "infrastructure_error";
             report.baseline_status = "not_checked";
@@ -787,14 +812,30 @@ fn checkAndExplore(allocator: Allocator, executable: []const u8, target: []const
         };
         if (commandIs(options.command, "accept")) {
             const updated = try replaceEntry(allocator, prior, target, current);
-            atomicWrite(allocator, baseline_path, try json(allocator, updated)) catch |err| {
+            const updated_bytes = try json(allocator, updated);
+            report.baseline_status = "accepted";
+            // Complete every fallible evidence write before committing the
+            // baseline. There are no required filesystem writes after commit.
+            writeReportFiles(allocator, report, report_dir) catch |err| {
+                report.outcome = "infrastructure_error";
+                report.baseline_status = "write_failed";
+                report.error_message = @errorName(err);
+                const failed_report_path = try std.fs.path.join(allocator, &.{ report_dir, "report.json" });
+                atomicWrite(allocator, failed_report_path, try json(allocator, report)) catch {};
+                printResult(allocator, report, report_dir) catch {};
+                return 2;
+            };
+            atomicWrite(allocator, baseline_path, updated_bytes) catch |err| {
                 report.outcome = "infrastructure_error";
                 report.baseline_status = "write_failed";
                 report.error_message = @errorName(err);
                 try saveReport(allocator, report, report_dir);
                 return 2;
             };
-            report.baseline_status = "accepted";
+            // A console allocation failure cannot turn a committed acceptance
+            // into a failed transaction. All durable outputs already exist.
+            printResult(allocator, report, report_dir) catch {};
+            return 0;
         } else {
             report.baseline_status = "unbaselined";
             if (prior) |baseline| for (baseline.entries) |entry| {
@@ -855,7 +896,7 @@ fn runInputCommand(allocator: Allocator, executable: []const u8, target: []const
     return if (passed) 0 else 1;
 }
 
-fn retain(allocator: Allocator, argc: usize, argv: [*][*:0]u8, adapter: Adapter) !u8 {
+fn retain(allocator: Allocator, argc: usize, argv: [*][*:0]u8, executable: []const u8) !u8 {
     if (argc != 7) return error.RetainRequiresInputNameOutput;
     const input = std.mem.span(argv[2]);
     var name: ?[]const u8 = null;
@@ -870,7 +911,6 @@ fn retain(allocator: Allocator, argc: usize, argv: [*][*:0]u8, adapter: Adapter)
     if (retained_name.len == 0 or directory.len == 0 or commandIs(retained_name, ".") or commandIs(retained_name, "..")) return error.InvalidRetainName;
     for (retained_name) |byte| if (!std.ascii.isAlphanumeric(byte) and byte != '-' and byte != '_' and byte != '.') return error.InvalidRetainName;
     const bytes = try readFile(allocator, input, max_input_len);
-    const shown = try adapter.show(allocator, bytes);
     try std.Io.Dir.createDirPath(.cwd(), io(), directory);
     const path = try std.fmt.allocPrint(allocator, "{s}/{s}.bin", .{ directory, retained_name });
     // Retention must not silently replace a witness with a different input.
@@ -880,6 +920,13 @@ fn retain(allocator: Allocator, argc: usize, argv: [*][*:0]u8, adapter: Adapter)
     };
     if (existing) |old| if (!std.mem.eql(u8, old, bytes)) return error.RetainedWitnessAlreadyExists;
     try atomicWrite(allocator, path, bytes);
+    // Save the original before attempting arbitrary target rendering. Rendering
+    // has the same fresh-process isolation and deadline as replay and checking.
+    const report_dir = try createReportDirectory(allocator, null);
+    const shown_path = try std.fs.path.join(allocator, &.{ report_dir, "shown.txt" });
+    const log_path = try std.fs.path.join(allocator, &.{ report_dir, "run.log" });
+    const child_arguments = [_][]const u8{ executable, "__quality-worker", path, shown_path, "show" };
+    const rendering = try runChild(allocator, &child_arguments, log_path, 10_000);
     writeFd(1, "Fuzz.saved({\n    name: ");
     writeFd(1, try json(allocator, retained_name));
     writeFd(1, ",\n    revision: \"1\",\n    bytes: [");
@@ -888,11 +935,11 @@ fn retain(allocator: Allocator, argc: usize, argv: [*][*:0]u8, adapter: Adapter)
         writeFd(1, try std.fmt.allocPrint(allocator, "{d}", .{byte}));
     }
     writeFd(1, "],\n})\n\nDecoded representative:\n");
-    writeFd(1, shown);
+    if (rendering.passed()) writeFd(1, try readFile(allocator, shown_path, max_json_len)) else writeFd(1, "unavailable: rendering failed or exceeded its deadline; original bytes are retained");
     writeFd(1, "\nOriginal witness: ");
     writeFd(1, path);
     writeFd(1, "\n");
-    return 0;
+    return if (rendering.passed()) 0 else 1;
 }
 
 /// Returns false for help, advanced libFuzzer modes, and the exploration worker.
@@ -910,7 +957,7 @@ pub fn dispatch(argc: usize, argv: [*][*:0]u8, target_name: []const u8, adapter:
     const allocator = arena.allocator();
     if (commandIs(command, "__quality-worker")) worker(allocator, argc, argv, adapter);
     const executable = std.process.executablePathAlloc(io(), allocator) catch |err| failError(err);
-    if (commandIs(command, "retain")) std.c._exit(retain(allocator, argc, argv, adapter) catch |err| failError(err));
+    if (commandIs(command, "retain")) std.c._exit(retain(allocator, argc, argv, executable) catch |err| failError(err));
     if (commandIs(command, "examples")) {
         if (argc != 2) fail("examples takes no arguments");
         const examples = adapter.prepare_examples(allocator) catch |err| failError(err);
@@ -971,7 +1018,7 @@ test "exact ratchets reject both cost directions and complete inventory drift" {
     const reduction = try std.json.parseFromSlice(std.json.Value, allocator, "[{\"complete\":true,\"stats\":{\"allocs\":1,\"peak_live_bytes\":32}}]", .{});
     const reordered = try std.json.parseFromSlice(std.json.Value, allocator, "[{\"stats\":{\"peak_live_bytes\":32,\"allocs\":2},\"complete\":true}]", .{});
     const example = BaselineExample{ .name = "empty", .revision = "1", .input_sha256 = "abc", .observations = original.value };
-    const entry = BaselineEntry{ .host_target = "arm64mac", .profile = "default", .examples = &.{example} };
+    const entry = BaselineEntry{ .host_target = "arm64mac", .profile = "default", .metric_version = metric_version, .examples = &.{example} };
     try std.testing.expect(entryEqual(entry, entry));
     var changed_examples = [_]BaselineExample{example};
     const changed_example = &changed_examples[0];
@@ -1000,10 +1047,10 @@ test "accept replaces only the relevant host and profile" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
-    const a = BaselineEntry{ .host_target = "arm64mac", .profile = "default", .examples = &.{} };
-    const b = BaselineEntry{ .host_target = "x64musl", .profile = "default", .examples = &.{} };
-    const c = BaselineEntry{ .host_target = "arm64mac", .profile = "optimised", .examples = &.{} };
-    const prior = Baseline{ .target = "test", .entries = &.{ a, b, c } };
+    const a = BaselineEntry{ .host_target = "arm64mac", .profile = "default", .metric_version = metric_version, .examples = &.{} };
+    const b = BaselineEntry{ .host_target = "x64musl", .profile = "default", .metric_version = metric_version, .examples = &.{} };
+    const c = BaselineEntry{ .host_target = "arm64mac", .profile = "optimised", .metric_version = metric_version, .examples = &.{} };
+    const prior = Baseline{ .format = baseline_format, .target = "test", .entries = &.{ a, b, c } };
     const replacement = BaselineEntry{ .host_target = "arm64mac", .profile = "default", .metric_version = "new", .examples = &.{} };
     const result = try replaceEntry(allocator, prior, "test", replacement);
     try std.testing.expectEqual(@as(usize, 3), result.entries.len);
@@ -1039,4 +1086,14 @@ test "atomic rename failure leaves an existing destination intact" {
     defer directory.close(io());
     var iterator = directory.iterate();
     while (try iterator.next(io())) |entry| try std.testing.expect(std.mem.indexOf(u8, entry.name, ".tmp-") == null);
+}
+
+test "missing transport versions and incomplete statistics never pass acceptance" {
+    const allocator = std.testing.allocator;
+    try std.testing.expectError(error.MissingField, std.json.parseFromSlice(Baseline, allocator, "{\"target\":\"test\",\"entries\":[]}", .{}));
+    try std.testing.expectError(error.MissingField, std.json.parseFromSlice(WorkerWire, allocator, "{\"accepted\":true,\"metric_valid\":true,\"trace_rules_passed\":true,\"capture_complete\":true,\"observations\":[]}", .{}));
+    const incomplete = try std.json.parseFromSlice(std.json.Value, allocator, "[{\"complete\":true}]", .{});
+    defer incomplete.deinit();
+    const wire = WorkerWire{ .format = worker_format, .metric_version = metric_version, .accepted = true, .metric_valid = true, .trace_rules_passed = true, .capture_complete = true, .observations = incomplete.value };
+    try std.testing.expect(!wireValid(wire));
 }

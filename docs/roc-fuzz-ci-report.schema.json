@@ -295,6 +295,7 @@
         "original_input_sha256",
         "original_input_complete",
         "original_trace",
+        "original_trace_input_matches",
         "breadcrumbs",
         "breadcrumb_complete"
       ],
@@ -364,6 +365,9 @@
             "string",
             "null"
           ]
+        },
+        "original_trace_input_matches": {
+          "type": "boolean"
         },
         "breadcrumbs": {
           "type": [
