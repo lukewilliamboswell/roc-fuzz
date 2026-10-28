@@ -3,7 +3,8 @@
 ## types opt in with both declarations. This encodes logical values, not storage.
 Binary := [].{
 
-	## Parser cursor. Budgets bound nodes and container nesting conservatively.
+	## Parser cursor. Decoding permits at most 4,096 value nodes and 128 total
+	## containers, conservatively bounding recursion as well as aggregate work.
 	State := { bytes : List(U8), nodes : U64, containers : U64 }
 
 	## Compiler-dispatched codec marker; applications never construct codec objects.
@@ -482,7 +483,11 @@ skip_value = |state| {
 	start = take_node(state, tag)?
 	match tag {
 		0 => Ok(read_string(start)?.rest)
-		1 | 2 | 3 => Ok(read_unsigned(start, 1)?.rest)
+		1 => {
+			read = read_unsigned(start, 1)?
+			if (read.value <= 1) Ok(read.rest) else Err(MalformedInput)
+		}
+		2 | 3 => Ok(read_unsigned(start, 1)?.rest)
 		4 | 5 => Ok(read_unsigned(start, 2)?.rest)
 		6 | 7 | 12 => Ok(read_unsigned(start, 4)?.rest)
 		8 | 9 | 13 => Ok(read_unsigned(start, 8)?.rest)
@@ -602,6 +607,14 @@ expect Binary.form([82, 70, 90, 2, 1]) == Err(MalformedInput)
 expect Binary.form([82, 70, 90, 1, 2]) == Err(MalformedInput)
 expect Binary.form([3, 2, 1]) == Ok(Entropy([3, 2, 1]))
 expect Binary.form(Binary.entropy([3, 2, 1])) == Ok(Entropy([3, 2, 1]))
+
+expect {
+	Ok(known) = Binary.Format.encode_u64(7, write_string(write_count([82, 70, 90, 1, 1, 21], 2), "known"))
+	encoded = write_string(known, "unknown").concat([1, 2])
+	decoded : Try({ known : U64 }, _)
+	decoded = Binary.decode(encoded)
+	decoded == Err(MalformedInput)
+}
 
 expect {
 	value = (F32.from_bits(0x80000000), F64.from_bits(0x8000000000000000), F64.infinity, F64.nan)
