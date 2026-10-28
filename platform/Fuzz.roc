@@ -111,6 +111,14 @@ Fuzz := [].{
 	## Native scope engine completion. Invalid or out-of-order scopes fail.
 	scope_finish! : U64 => Stats
 
+	## Internal ownership fence preparation. The following return container is
+	## platform bookkeeping and is excluded from every allocation observation.
+	prepare_return_box! : () => {}
+
+	## Complete a region while the opaque return container owns every returned
+	## value. Transfers that container back unchanged; applications use measure!.
+	scope_finish_return! : U64, Box(a) => { value : Box(a), stats : Stats }
+
 	## An open named measurement and logical trace region. Finish exactly once.
 	Measurement := { id : U64 }.{
 
@@ -129,8 +137,12 @@ Fuzz := [].{
 	measure! = |label, body!| {
 		measurement = Fuzz.start_measure!(label)
 		value = body!()
-		stats = measurement.finish!()
-		{ value, stats }
+		# Opaque host ownership keeps every part of the return alive through
+		# finish, including fields the caller discards. The container is marked
+		# bookkeeping in every enclosing scope and in the allocator counters.
+		Fuzz.prepare_return_box!()
+		finished = Fuzz.scope_finish_return!(measurement.id, Box.box(value))
+		{ value: Box.unbox(finished.value), stats: finished.stats }
 	}
 
 	## Record a direct event in the current logical trace region.
