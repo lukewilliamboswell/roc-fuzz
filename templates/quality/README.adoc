@@ -20,14 +20,13 @@ the host's ordinary archive and file utilities for downloaded compilers.
 blueprint check
 blueprint requirements
 blueprint run build
-blueprint run check
 blueprint run run -- --time=10
 ----
 
 `build` compiles one self-contained executable. `check` runs every declared
 example exactly once in a fresh process. `run` checks examples and their accepted
 observations, then explores for 60 seconds by default. `blueprint workflow
-verify` runs build, check and run in order and writes CI evidence to
+verify` builds and runs the unified check/exploration command once, writing CI evidence to
 `.roc-fuzz/verify/`; use a fresh checkout or remove that old report directory
 before repeating the workflow. A failing check skips exploration and records why.
 

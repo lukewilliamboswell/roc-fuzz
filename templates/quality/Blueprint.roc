@@ -21,7 +21,6 @@ config = [
 		"verify",
 		[
 			RunTask("build", []),
-			RunTask("check", []),
 			RunTask("run", ["--report-dir=.roc-fuzz/verify"]),
 		],
 	),

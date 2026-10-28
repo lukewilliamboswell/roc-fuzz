@@ -174,7 +174,7 @@ CI.
 |`TARGET replay INPUT [--detailed]` |Reproduce one input under the supervisor.
 |`TARGET measure INPUT` |Print one input's named allocation observations as JSON.
 |`TARGET retain INPUT --name NAME --output DIR` |Keep original bytes and print a source declaration.
-|`TARGET minimize INPUT OUTPUT` |Minimize a reproducing finding.
+|`TARGET minimize INPUT OUTPUT [OPTIONS]` |Minimize a reproducing finding within the campaign budget.
 |`TARGET reduce-corpus INPUT OUTPUT` |Retain coverage-relevant inputs in OUTPUT.
 |`TARGET raw ...` |Advanced libFuzzer controls.
 |===
