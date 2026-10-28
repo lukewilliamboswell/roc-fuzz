@@ -88,6 +88,13 @@ pub fn main(init: std.process.Init) !void {
     const write_failure = try suite.run("report-write-failure", &.{"accept"}, "report-write-failure", 2);
     try expectString(write_failure, "baseline_status", "write_failed");
     try suite.expectBaselineUnchanged(baseline);
+    for ([_][]const u8{ "prepare-crash", "prepare-timeout" }) |mode| {
+        const prepared_failure = try suite.run(mode, &.{ "accept", "--timeout=1" }, mode, 2);
+        try expectString(prepared_failure, "outcome", "infrastructure_error");
+        try expectString(try field(prepared_failure, "exploration"), "skipped_reason", "example_preparation_failed");
+        try std.testing.expectEqual(@as(usize, 0), (try field(prepared_failure, "examples")).array.items.len);
+        try suite.expectBaselineUnchanged(baseline);
+    }
 
     for ([_][]const u8{ "increase", "reduction", "revision", "input" }) |mode| {
         const label = try std.fmt.allocPrint(allocator, "drift-{s}", .{mode});
@@ -99,18 +106,27 @@ pub fn main(init: std.process.Init) !void {
         try suite.expectBaselineUnchanged(baseline);
     }
 
-    for ([_][]const u8{ "reject", "invalid", "trace", "unfinished", "crash", "timeout" }) |mode| {
+    for ([_][]const u8{ "reject", "invalid", "trace", "unfinished", "crash", "timeout", "assertion", "roc-crash", "leak", "oom" }) |mode| {
         const label = try std.fmt.allocPrint(allocator, "failed-accept-{s}", .{mode});
         const rejected = try suite.run(label, &.{ "accept", "--timeout=1" }, mode, 1);
         try expectString(rejected, "baseline_status", "not_checked");
         const examples = try field(rejected, "examples");
         try std.testing.expectEqual(@as(usize, 2), examples.array.items.len);
+        const kind: ?[]const u8 = if (std.mem.eql(u8, mode, "reject")) null else if (std.mem.eql(u8, mode, "invalid") or std.mem.eql(u8, mode, "unfinished")) "invalid_observation" else if (std.mem.eql(u8, mode, "trace")) "trace_violation" else if (std.mem.eql(u8, mode, "crash")) "native_crash" else if (std.mem.eql(u8, mode, "roc-crash")) "roc_crash" else mode;
+        if (kind) |expected| try expectString(examples.array.items[0], "finding_kind", expected) else try std.testing.expect((try field(examples.array.items[0], "finding_kind")) == .null);
         if (std.mem.eql(u8, mode, "timeout") or std.mem.eql(u8, mode, "crash")) {
             const original = try suite.read(try std.fmt.allocPrint(allocator, "{s}/example-0-original-trace.json", .{label}));
             try std.testing.expectEqualStrings("{\"original\":17}", original);
         }
         try suite.expectBaselineUnchanged(baseline);
     }
+    const mixed = try suite.run("mixed-failures", &.{"check"}, "mixed-failures", 1);
+    const mixed_examples = try field(mixed, "examples");
+    try expectString(mixed_examples.array.items[0], "finding_kind", "leak");
+    try expectString(mixed_examples.array.items[1], "finding_kind", "assertion");
+    const first_log = try field(mixed_examples.array.items[0], "log");
+    const second_log = try field(mixed_examples.array.items[1], "log");
+    try std.testing.expect((try field(second_log, "offset")).integer >= (try field(first_log, "offset")).integer + (try field(first_log, "length")).integer);
 
     // Diagnostic truncation is independent of metric and trace-rule validity.
     const truncated = try suite.run("truncated", &.{"check"}, "truncated", 0);
@@ -157,7 +173,7 @@ pub fn main(init: std.process.Init) !void {
     _ = try suite.read("replay/trace.json");
     _ = try suite.run("measure", &.{ "measure", "run/example-0.bin" }, "", 0);
     const retained = try std.process.run(allocator, init.io, .{
-        .argv = &.{ fixture, "retain", "run/example-0.bin", "--name", "previous-crash", "--output", "witnesses" },
+        .argv = &.{ fixture, "retain", "run/example-0.bin", "--name", "previous-crash", "--output=witnesses" },
         .cwd = .{ .path = root },
     });
     try std.testing.expect(retained.term == .exited and retained.term.exited == 0);
@@ -189,5 +205,16 @@ pub fn main(init: std.process.Init) !void {
     try expectString(invalid_baseline, "baseline_status", "invalid");
     const empty = try suite.run("empty-accept", &.{"accept"}, "empty", 2);
     try expectString(empty, "error_message", "CannotAcceptEmptyExampleInventory");
+    const listed = try std.process.run(allocator, init.io, .{ .argv = &.{ fixture, "examples" }, .cwd = .{ .path = root } });
+    try std.testing.expect(listed.term == .exited and listed.term.exited == 0);
+    try std.testing.expect(std.mem.indexOf(u8, listed.stdout, "first\trevision 1\tSHA-256") != null);
+    const missing_measure_input = try std.process.run(allocator, init.io, .{ .argv = &.{ fixture, "measure" }, .cwd = .{ .path = root } });
+    try std.testing.expect(missing_measure_input.term == .exited and missing_measure_input.term.exited == 2);
+    try std.testing.expect(std.mem.indexOf(u8, missing_measure_input.stderr, "ExpectedOneInput") != null);
+    var preparation_crash_environment = try init.environ_map.clone(allocator);
+    try preparation_crash_environment.put("ROCFUZZ_FIXTURE_CASE", "prepare-crash");
+    const failed_listing = try std.process.run(allocator, init.io, .{ .argv = &.{ fixture, "examples" }, .cwd = .{ .path = root }, .environ_map = &preparation_crash_environment });
+    try std.testing.expect(failed_listing.term == .exited and failed_listing.term.exited == 2);
+    try std.testing.expect(std.mem.indexOf(u8, failed_listing.stdout, "infrastructure_error") != null);
     std.debug.print("quality runner integration: all checks passed\n", .{});
 }

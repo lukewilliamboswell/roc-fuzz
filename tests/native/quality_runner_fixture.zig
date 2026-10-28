@@ -15,6 +15,11 @@ fn modeIs(expected: []const u8) bool {
 }
 
 fn examples(allocator: Allocator) ![]const quality.Example {
+    if (modeIs("prepare-crash")) std.c.abort();
+    if (modeIs("prepare-timeout")) {
+        const delay = std.c.timespec{ .sec = 20, .nsec = 0 };
+        _ = std.c.nanosleep(&delay, null);
+    }
     const output = try allocator.alloc(quality.Example, if (modeIs("empty")) 0 else 2);
     if (output.len == 0) return output;
     output[0] = .{ .name = "first", .revision = if (modeIs("revision")) "2" else "1", .bytes = if (modeIs("input")) "changed" else "one" };
@@ -38,6 +43,12 @@ fn runOne(allocator: Allocator, input: []const u8, capture: quality.Capture) !qu
     const storage = quality.sharedObservation(u64) orelse return error.MissingSharedObservationStorage;
     storage.* = 17;
     quality.healthObservationReady();
+    const first = std.mem.eql(u8, input, "one");
+    if (modeIs("mixed-failures") or (first and (modeIs("assertion") or modeIs("roc-crash") or modeIs("leak") or modeIs("oom")))) {
+        const message: []const u8 = if (modeIs("assertion") or (modeIs("mixed-failures") and !first)) "[roc expect failed] fixture assertion\n" else if (modeIs("roc-crash")) "[roc crashed] fixture panic\n" else if (modeIs("oom")) "[roc crashed] out of memory\n" else "[roc-fuzz leak] fixture leak\n";
+        _ = std.c.write(2, message.ptr, message.len);
+        std.c._exit(1);
+    }
     if (modeIs("report-write-failure")) {
         const summary_path = try std.fs.path.join(allocator, &.{ worker_output_directory.?, "summary.md" });
         try std.Io.Dir.createDirPath(.cwd(), std.Io.Threaded.global_single_threaded.io(), summary_path);

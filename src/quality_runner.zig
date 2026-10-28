@@ -9,6 +9,7 @@ const Allocator = std.mem.Allocator;
 pub const worker_format = "roc-fuzz-worker/1";
 pub const baseline_format = "roc-fuzz-baseline/1";
 pub const report_format = "roc-fuzz-quality/1";
+pub const preparation_format = "roc-fuzz-examples/1";
 pub const metric_version = "roc-fuzz-allocations/1";
 pub const max_input_len = 1024 * 1024;
 const max_json_len = 32 * 1024 * 1024;
@@ -41,6 +42,8 @@ const WorkerWire = struct {
     observations: std.json.Value,
     diagnostics: ?std.json.Value = null,
 };
+
+const PreparationWire = struct { format: []const u8, examples: []const Example };
 
 pub const BaselineExample = struct {
     name: []const u8,
@@ -250,6 +253,7 @@ pub fn entryEqual(a: BaselineEntry, b: BaselineEntry) bool {
 }
 
 fn validateExamples(examples: []const Example) !void {
+    if (examples.len > 4096) return error.TooManyExamples;
     for (examples, 0..) |example, index| {
         if (example.name.len == 0 or example.revision.len == 0 or example.bytes.len > max_input_len) return error.InvalidExample;
         for (examples[0..index]) |other| if (std.mem.eql(u8, example.name, other.name)) return error.DuplicateExampleName;
@@ -344,6 +348,65 @@ const ChildResult = struct {
     }
 };
 
+const LogSpan = struct {
+    path: []const u8 = "run.log",
+    offset: u64 = 0,
+    length: u64 = 0,
+};
+
+fn logSize(path: []const u8) !u64 {
+    return (std.Io.Dir.cwd().statFile(io(), path, .{}) catch |err| switch (err) {
+        error.FileNotFound => return 0,
+        else => return err,
+    }).size;
+}
+
+/// Stream only this child's span; marker overlap survives chunk boundaries.
+/// Diagnostic classification never changes the preserved original log.
+fn classifyFinding(allocator: Allocator, path: []const u8, span: LogSpan, termination: ChildResult) !?[]const u8 {
+    if (termination.timed_out) return "timeout";
+    if (termination.passed()) return null;
+    const path_z = try allocator.dupeZ(u8, path);
+    defer allocator.free(path_z);
+    const file = std.c.fopen(path_z.ptr, "rb") orelse return error.CannotReadLog;
+    defer _ = std.c.fclose(file);
+    const fd = fileno(file);
+    var buffer: [64 * 1024 + 128]u8 = undefined;
+    var kept: usize = 0;
+    var consumed: u64 = 0;
+    var kind: ?[]const u8 = null;
+    var strongest: usize = 0;
+    while (consumed < span.length) {
+        const wanted: usize = @intCast(@min(64 * 1024, span.length - consumed));
+        const got = std.c.pread(fd, buffer[kept..].ptr, wanted, @intCast(span.offset + consumed));
+        if (got <= 0) return error.CannotReadLog;
+        const count: usize = @intCast(got);
+        const bytes = buffer[0 .. kept + count];
+        const markers = .{
+            .{ "[roc-fuzz invalid observation]", "invalid_observation" },
+            .{ "[roc-fuzz observation failure]", "invalid_observation" },
+            .{ "[roc crashed]", "roc_crash" },
+            .{ "[roc expect failed]", "assertion" },
+            .{ "[roc-fuzz leak]", "leak" },
+            .{ "out-of-memory", "oom" },
+            .{ "out of memory", "oom" },
+            .{ "rss_limit", "oom" },
+            .{ "libFuzzer: timeout", "timeout" },
+            .{ "timeout after", "timeout" },
+        };
+        inline for (markers, 1..) |marker, priority| {
+            if (priority > strongest and std.mem.indexOf(u8, bytes, marker[0]) != null) {
+                kind = marker[1];
+                strongest = priority;
+            }
+        }
+        consumed += count;
+        kept = @min(128, bytes.len);
+        std.mem.copyForwards(u8, buffer[0..kept], bytes[bytes.len - kept ..]);
+    }
+    return kind orelse if (termination.signal != null) "native_crash" else if (termination.exit_code == 2) "infrastructure_error" else "unknown";
+}
+
 fn monotonicMilliseconds() u64 {
     var now: std.c.timespec = undefined;
     if (std.c.clock_gettime(.MONOTONIC, &now) != 0) fail("could not read monotonic clock");
@@ -406,6 +469,8 @@ const ExampleReport = struct {
     input_path: []const u8,
     outcome: []const u8,
     termination: ChildResult,
+    finding_kind: ?[]const u8 = null,
+    log: LogSpan = .{},
     metric_valid: bool = false,
     trace_rules_passed: bool = false,
     capture_complete: bool = false,
@@ -419,6 +484,8 @@ const ExplorationReport = struct {
     accepted: u64 = 0,
     rejected: u64 = 0,
     termination: ?ChildResult = null,
+    finding_kind: ?[]const u8 = null,
+    log: ?LogSpan = null,
     original_input: ?[]const u8 = null,
     original_input_length: ?u64 = null,
     original_input_sha256: ?[]const u8 = null,
@@ -441,7 +508,17 @@ const Report = struct {
     exploration: ExplorationReport = .{},
     error_message: ?[]const u8 = null,
     provenance: Provenance = .{},
+    preparation: PreparationReport = .{},
 };
+
+const PreparationReport = struct {
+    status: []const u8 = "not_requested",
+    termination: ?ChildResult = null,
+    finding_kind: ?[]const u8 = null,
+    log: ?LogSpan = null,
+    error_message: ?[]const u8 = null,
+};
+const PreparedInventory = struct { examples: []const Example = &.{}, evidence: PreparationReport };
 
 const Provenance = struct {
     source_revision: ?[]const u8 = null,
@@ -504,6 +581,10 @@ fn parseOptions(allocator: Allocator, argc: usize, argv: [*][*:0]u8) !Options {
         } else if (std.mem.eql(u8, arg, "--no-detect-leaks")) {
             options.no_detect_leaks = true;
             try exploration_args.append(allocator, arg);
+        } else if (valueAfter(arg, "--max-input-size=")) |value| {
+            const length = try std.fmt.parseUnsigned(usize, value, 10);
+            if (length == 0 or length > max_input_len) return error.InvalidMaximumInputSize;
+            try exploration_args.append(allocator, arg);
         } else if (valueAfter(arg, "--source-revision=")) |v| {
             if (v.len == 0 or options.provenance.source_revision != null) return error.InvalidProvenance;
             options.provenance.source_revision = v;
@@ -517,7 +598,7 @@ fn parseOptions(allocator: Allocator, argc: usize, argv: [*][*:0]u8) !Options {
             if (v.len != 64 or options.provenance.platform_sha256 != null) return error.InvalidProvenance;
             for (v) |byte| if (!std.ascii.isHex(byte)) return error.InvalidProvenance;
             options.provenance.platform_sha256 = v;
-        } else if (std.mem.startsWith(u8, arg, "--max-input-size=") or std.mem.startsWith(u8, arg, "--memory-limit=") or std.mem.startsWith(u8, arg, "--dictionary=") or std.mem.startsWith(u8, arg, "--seed=")) {
+        } else if (std.mem.startsWith(u8, arg, "--memory-limit=") or std.mem.startsWith(u8, arg, "--dictionary=") or std.mem.startsWith(u8, arg, "--seed=")) {
             try exploration_args.append(allocator, arg);
         } else if (std.mem.eql(u8, arg, "--print-final-stats")) {
             // The exploration worker always records final counters.
@@ -525,7 +606,7 @@ fn parseOptions(allocator: Allocator, argc: usize, argv: [*][*:0]u8) !Options {
     }
     if (time) |seconds| {
         options.campaign_deadline_ms = if (seconds == 0) null else try std.math.add(u64, try std.math.mul(u64, seconds, 1000), try std.math.add(u64, options.timeout_ms, 5000));
-    } else if (has_runs) options.campaign_deadline_ms = null;
+    } else if (has_runs) options.campaign_deadline_ms = null else options.campaign_deadline_ms = try std.math.add(u64, 65_000, options.timeout_ms);
     options.arguments = try positional.toOwnedSlice(allocator);
     options.exploration_options = try exploration_args.toOwnedSlice(allocator);
     if (std.mem.eql(u8, options.command, "run") or std.mem.eql(u8, options.command, "explore")) {
@@ -597,6 +678,31 @@ fn worker(allocator: Allocator, argc: usize, argv: [*][*:0]u8, adapter: Adapter)
     std.c._exit(0);
 }
 
+fn prepareWorker(allocator: Allocator, argc: usize, argv: [*][*:0]u8, adapter: Adapter) noreturn {
+    if (argc != 3) fail("invalid preparation protocol");
+    const examples = adapter.prepare_examples(allocator) catch |err| failError(err);
+    validateExamples(examples) catch |err| failError(err);
+    const encoded = json(allocator, PreparationWire{ .format = preparation_format, .examples = examples }) catch |err| failError(err);
+    if (encoded.len > max_json_len) fail("prepared example inventory exceeds transport budget");
+    atomicWrite(allocator, std.mem.span(argv[2]), encoded) catch |err| failError(err);
+    std.c._exit(0);
+}
+
+fn prepareSupervised(allocator: Allocator, executable: []const u8, report_dir: []const u8, log_path: []const u8, timeout_ms: u64) !PreparedInventory {
+    const output = try std.fs.path.join(allocator, &.{ report_dir, "prepared-examples.json" });
+    const arguments = [_][]const u8{ executable, "__quality-prepare", output };
+    const log_start = try logSize(log_path);
+    const termination = try runChild(allocator, &arguments, log_path, timeout_ms);
+    const span = LogSpan{ .offset = log_start, .length = (try logSize(log_path)) - log_start };
+    const evidence = PreparationReport{ .status = if (termination.passed()) "passed" else "failed", .termination = termination, .finding_kind = try classifyFinding(allocator, log_path, span, termination), .log = span, .error_message = if (termination.timed_out) "ExamplePreparationTimeout" else if (termination.signal != null) "ExamplePreparationCrash" else if (!termination.passed()) "ExamplePreparationFailed" else null };
+    if (!termination.passed()) return .{ .evidence = evidence };
+    const bytes = try readFile(allocator, output, max_json_len);
+    const prepared = try std.json.parseFromSlice(PreparationWire, allocator, bytes, .{ .allocate = .alloc_always });
+    if (!std.mem.eql(u8, prepared.value.format, preparation_format)) return error.UnsupportedPreparationFormat;
+    try validateExamples(prepared.value.examples);
+    return .{ .examples = prepared.value.examples, .evidence = evidence };
+}
+
 fn unsigned(value: std.json.Value) ?u64 {
     return switch (value) {
         .integer => |number| if (number >= 0) @intCast(number) else null,
@@ -654,8 +760,10 @@ fn runExample(allocator: Allocator, executable: []const u8, example: Example, in
     const health = try mapHealth(allocator, shared_path, true);
     defer _ = std.c.munmap(@ptrCast(@alignCast(health)), @sizeOf(Health));
     const argv = [_][]const u8{ executable, "__quality-worker", input_path, result_path, "run", if (options.detailed) "detailed" else "normal", if (options.no_detect_leaks) "no-leaks" else "leaks", shared_path };
+    const log_start = try logSize(log_path);
     const termination = try runChild(allocator, &argv, log_path, options.timeout_ms);
-    var report = ExampleReport{ .name = example.name, .revision = example.revision, .input_sha256 = try hash(allocator, example.bytes), .input_path = input_path, .outcome = if (termination.timed_out) "timeout" else if (termination.signal != null) "crash" else "failed", .termination = termination };
+    const log_span = LogSpan{ .offset = log_start, .length = (try logSize(log_path)) - log_start };
+    var report = ExampleReport{ .name = example.name, .revision = example.revision, .input_sha256 = try hash(allocator, example.bytes), .input_path = input_path, .outcome = if (termination.timed_out) "timeout" else if (termination.signal != null) "crash" else "failed", .termination = termination, .finding_kind = try classifyFinding(allocator, log_path, log_span, termination), .log = log_span };
     if (health.observation_initialized != 0) if (adapter.original_snapshot) |snapshot| {
         const snapshot_json = try snapshot(allocator, &health.observation_storage);
         const trace_path = try std.fmt.allocPrint(allocator, "{s}/example-{d}-original-trace.json", .{ report_dir, index });
@@ -665,10 +773,12 @@ fn runExample(allocator: Allocator, executable: []const u8, example: Example, in
     if (!termination.passed()) return report;
     const bytes = readFile(allocator, result_path, max_json_len) catch {
         report.outcome = "incomplete_observations";
+        report.finding_kind = "invalid_observation";
         return report;
     };
     const parsed = std.json.parseFromSlice(WorkerWire, allocator, bytes, .{ .allocate = .alloc_always }) catch {
         report.outcome = "invalid_observations";
+        report.finding_kind = "invalid_observation";
         return report;
     };
     const wire = parsed.value;
@@ -678,6 +788,7 @@ fn runExample(allocator: Allocator, executable: []const u8, example: Example, in
     report.observations = wire.observations;
     if (wire.diagnostics != null) report.diagnostics = wire.diagnostics;
     report.outcome = if (!wire.accepted) "rejected" else if (!wire.metric_valid) "invalid_metrics" else if (!wire.trace_rules_passed) "trace_violation" else if (!wireValid(wire)) "incomplete_observations" else "passed";
+    report.finding_kind = if (!wire.accepted) null else if (!wire.metric_valid) "invalid_observation" else if (!wire.trace_rules_passed) "trace_violation" else if (!wireValid(wire)) "invalid_observation" else null;
     return report;
 }
 
@@ -700,12 +811,16 @@ fn exploration(allocator: Allocator, executable: []const u8, report_dir: []const
     const failures = try std.fs.path.join(allocator, &.{ report_dir, "failures" });
     try argv.append(allocator, try std.fmt.allocPrint(allocator, "--artifact-dir={s}", .{failures}));
     try argv.append(allocator, "--print-final-stats");
+    const log_start = try logSize(log_path);
     const termination = try runChild(allocator, argv.items, log_path, options.campaign_deadline_ms);
+    const log_span = LogSpan{ .offset = log_start, .length = (try logSize(log_path)) - log_start };
     var report = ExplorationReport{
         .attempted = @atomicLoad(u64, &health.attempted, .acquire),
         .accepted = @atomicLoad(u64, &health.accepted, .acquire),
         .rejected = @atomicLoad(u64, &health.rejected, .acquire),
         .termination = termination,
+        .finding_kind = try classifyFinding(allocator, log_path, log_span, termination),
+        .log = log_span,
     };
     report.status = if (!termination.passed()) "finding" else if (report.accepted == 0) "inconclusive" else "passed";
     if (health.observation_initialized != 0) if (adapter.original_snapshot) |snapshot| {
@@ -713,6 +828,12 @@ fn exploration(allocator: Allocator, executable: []const u8, report_dir: []const
         try atomicWrite(allocator, original_path, try snapshot(allocator, &health.observation_storage));
         report.original_trace = original_path;
         report.original_trace_input_matches = health.observation_input_sequence == health.input_sequence and health.input_sequence % 2 == 0;
+        if (!termination.passed() and report.original_trace_input_matches and report.finding_kind != null and std.mem.eql(u8, report.finding_kind.?, "invalid_observation")) {
+            const snapshot_value = (try std.json.parseFromSlice(std.json.Value, allocator, try snapshot(allocator, &health.observation_storage), .{})).value;
+            if (snapshot_value == .object) if (snapshot_value.object.get("trace_rules_passed")) |passed| {
+                if (passed == .bool and !passed.bool) report.finding_kind = "trace_violation";
+            };
+        }
     };
     // The child is terminated before reads, so no concurrent writer remains.
     // A killed writer can leave an odd sequence: mark that capture incomplete.
@@ -762,13 +883,22 @@ fn checkAndExplore(allocator: Allocator, executable: []const u8, target: []const
     if (try pathsOverlap(allocator, report_dir, baseline_path)) return error.BaselineOverlapsReportDirectory;
     if ((commandIs(options.command, "run") or commandIs(options.command, "explore")) and try pathsOverlap(allocator, report_dir, options.corpus)) return error.CorpusOverlapsReportDirectory;
     var report = Report{ .target = target, .host_target = hostTarget(), .profile = options.profile, .command = options.command, .baseline_path = baseline_path, .provenance = options.provenance };
-    const examples = adapter.prepare_examples(allocator) catch |err| {
+    const prepared = prepareSupervised(allocator, executable, report_dir, log_path, options.timeout_ms) catch |err| {
         report.outcome = "infrastructure_error";
         report.error_message = @errorName(err);
         report.exploration = .{ .status = "skipped", .skipped_reason = "example_preparation_failed" };
         try saveReport(allocator, report, report_dir);
         return 2;
     };
+    report.preparation = prepared.evidence;
+    if (commandIs(prepared.evidence.status, "failed")) {
+        report.outcome = "infrastructure_error";
+        report.error_message = prepared.evidence.error_message;
+        report.exploration = .{ .status = "skipped", .skipped_reason = "example_preparation_failed" };
+        try saveReport(allocator, report, report_dir);
+        return 2;
+    }
+    const examples = prepared.examples;
     validateExamples(examples) catch |err| {
         report.outcome = "infrastructure_error";
         report.error_message = @errorName(err);
@@ -861,11 +991,11 @@ fn checkAndExplore(allocator: Allocator, executable: []const u8, target: []const
 }
 
 fn runInputCommand(allocator: Allocator, executable: []const u8, target: []const u8, options: Options, adapter: Adapter) !u8 {
-    if (options.arguments.len != 1 and !(commandIs(options.command, "measure") and options.arguments.len == 0)) return error.ExpectedOneInput;
+    if (options.arguments.len != 1) return error.ExpectedOneInput;
     const report_dir = try createReportDirectory(allocator, options.report_dir);
     const log_path = try std.fs.path.join(allocator, &.{ report_dir, "run.log" });
-    const bytes = if (options.arguments.len == 1) try readFile(allocator, options.arguments[0], max_input_len) else &.{};
-    const example = Example{ .name = if (options.arguments.len == 1) options.arguments[0] else "empty", .revision = "replay", .bytes = bytes };
+    const bytes = try readFile(allocator, options.arguments[0], max_input_len);
+    const example = Example{ .name = options.arguments[0], .revision = "replay", .bytes = bytes };
     if (commandIs(options.command, "show")) {
         const input_path = try std.fs.path.join(allocator, &.{ report_dir, "input.bin" });
         const shown_path = try std.fs.path.join(allocator, &.{ report_dir, "shown.txt" });
@@ -897,14 +1027,26 @@ fn runInputCommand(allocator: Allocator, executable: []const u8, target: []const
 }
 
 fn retain(allocator: Allocator, argc: usize, argv: [*][*:0]u8, executable: []const u8) !u8 {
-    if (argc != 7) return error.RetainRequiresInputNameOutput;
+    if (argc < 5 or argc > 7) return error.RetainRequiresInputNameOutput;
     const input = std.mem.span(argv[2]);
     var name: ?[]const u8 = null;
     var output: ?[]const u8 = null;
     var i: usize = 3;
-    while (i < argc) : (i += 2) {
+    while (i < argc) : (i += 1) {
         const flag = std.mem.span(argv[i]);
-        if (commandIs(flag, "--name") and name == null) name = std.mem.span(argv[i + 1]) else if (commandIs(flag, "--output") and output == null) output = std.mem.span(argv[i + 1]) else return error.InvalidRetainOption;
+        if (valueAfter(flag, "--name=")) |value| {
+            if (name != null) return error.InvalidRetainOption;
+            name = value;
+        } else if (valueAfter(flag, "--output=")) |value| {
+            if (output != null) return error.InvalidRetainOption;
+            output = value;
+        } else if (commandIs(flag, "--name") and name == null and i + 1 < argc) {
+            i += 1;
+            name = std.mem.span(argv[i]);
+        } else if (commandIs(flag, "--output") and output == null and i + 1 < argc) {
+            i += 1;
+            output = std.mem.span(argv[i]);
+        } else return error.InvalidRetainOption;
     }
     const retained_name = name orelse return error.MissingRetainName;
     const directory = output orelse return error.MissingRetainOutput;
@@ -956,12 +1098,24 @@ pub fn dispatch(argc: usize, argv: [*][*:0]u8, target_name: []const u8, adapter:
     defer arena.deinit();
     const allocator = arena.allocator();
     if (commandIs(command, "__quality-worker")) worker(allocator, argc, argv, adapter);
+    if (commandIs(command, "__quality-prepare")) prepareWorker(allocator, argc, argv, adapter);
     const executable = std.process.executablePathAlloc(io(), allocator) catch |err| failError(err);
     if (commandIs(command, "retain")) std.c._exit(retain(allocator, argc, argv, executable) catch |err| failError(err));
     if (commandIs(command, "examples")) {
         if (argc != 2) fail("examples takes no arguments");
-        const examples = adapter.prepare_examples(allocator) catch |err| failError(err);
-        validateExamples(examples) catch |err| failError(err);
+        const report_dir = createReportDirectory(allocator, null) catch |err| failError(err);
+        const log_path = std.fs.path.join(allocator, &.{ report_dir, "run.log" }) catch |err| failError(err);
+        const prepared = prepareSupervised(allocator, executable, report_dir, log_path, 10_000) catch |err| {
+            const report = Report{ .target = target_name, .host_target = hostTarget(), .profile = "default", .command = "examples", .outcome = "infrastructure_error", .baseline_path = baselinePath(allocator, target_name, null) catch "", .error_message = @errorName(err) };
+            saveReport(allocator, report, report_dir) catch {};
+            failError(err);
+        };
+        if (commandIs(prepared.evidence.status, "failed")) {
+            const report = Report{ .target = target_name, .host_target = hostTarget(), .profile = "default", .command = "examples", .outcome = "infrastructure_error", .baseline_path = baselinePath(allocator, target_name, null) catch "", .error_message = prepared.evidence.error_message, .preparation = prepared.evidence };
+            saveReport(allocator, report, report_dir) catch {};
+            std.c._exit(2);
+        }
+        const examples = prepared.examples;
         for (examples) |example| {
             writeFd(1, example.name);
             writeFd(1, "\trevision ");
@@ -1096,4 +1250,13 @@ test "missing transport versions and incomplete statistics never pass acceptance
     defer incomplete.deinit();
     const wire = WorkerWire{ .format = worker_format, .metric_version = metric_version, .accepted = true, .metric_valid = true, .trace_rules_passed = true, .capture_complete = true, .observations = incomplete.value };
     try std.testing.expect(!wireValid(wire));
+}
+
+test "campaign grace respects an explicitly increased invocation deadline" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var arguments = [_][*:0]u8{ @constCast("TARGET".ptr), @constCast("run".ptr), @constCast("--timeout=30".ptr) };
+    const options = try parseOptions(arena.allocator(), arguments.len, &arguments);
+    try std.testing.expectEqual(@as(u64, 30_000), options.timeout_ms);
+    try std.testing.expectEqual(@as(?u64, 95_000), options.campaign_deadline_ms);
 }

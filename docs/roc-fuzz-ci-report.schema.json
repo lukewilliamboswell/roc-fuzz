@@ -16,7 +16,8 @@
     "examples",
     "exploration",
     "error_message",
-    "provenance"
+    "provenance",
+    "preparation"
   ],
   "properties": {
     "format": {
@@ -41,7 +42,8 @@
         "explore",
         "show",
         "replay",
-        "measure"
+        "measure",
+        "examples"
       ]
     },
     "outcome": {
@@ -84,6 +86,9 @@
     },
     "provenance": {
       "$ref": "#/$defs/provenance"
+    },
+    "preparation": {
+      "$ref": "#/$defs/preparation"
     }
   },
   "$defs": {
@@ -218,7 +223,9 @@
         "trace_rules_passed",
         "capture_complete",
         "observations",
-        "diagnostics"
+        "diagnostics",
+        "finding_kind",
+        "log"
       ],
       "properties": {
         "name": {
@@ -277,6 +284,12 @@
             "object",
             "null"
           ]
+        },
+        "finding_kind": {
+          "$ref": "#/$defs/findingKind"
+        },
+        "log": {
+          "$ref": "#/$defs/logSpan"
         }
       }
     },
@@ -297,7 +310,9 @@
         "original_trace",
         "original_trace_input_matches",
         "breadcrumbs",
-        "breadcrumb_complete"
+        "breadcrumb_complete",
+        "finding_kind",
+        "log"
       ],
       "properties": {
         "status": {
@@ -377,6 +392,19 @@
         },
         "breadcrumb_complete": {
           "type": "boolean"
+        },
+        "finding_kind": {
+          "$ref": "#/$defs/findingKind"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/logSpan"
+            }
+          ]
         }
       }
     },
@@ -414,6 +442,96 @@
             "null"
           ],
           "pattern": "^[0-9A-Fa-f]{64}$"
+        }
+      }
+    },
+    "findingKind": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        null,
+        "assertion",
+        "roc_crash",
+        "native_crash",
+        "leak",
+        "timeout",
+        "oom",
+        "invalid_observation",
+        "trace_violation",
+        "infrastructure_error",
+        "unknown"
+      ]
+    },
+    "logSpan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "offset",
+        "length"
+      ],
+      "properties": {
+        "path": {
+          "const": "run.log"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "preparation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "termination",
+        "finding_kind",
+        "log",
+        "error_message"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "not_requested",
+            "passed",
+            "failed"
+          ]
+        },
+        "termination": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/termination"
+            }
+          ]
+        },
+        "finding_kind": {
+          "$ref": "#/$defs/findingKind"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/logSpan"
+            }
+          ]
+        },
+        "error_message": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     }
