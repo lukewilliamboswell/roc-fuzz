@@ -76,6 +76,9 @@ Use the report's outcome, baseline status, metric validity, trace-rule result
 and capture completeness independently. Missing diagnostic events do not make
 allocation statistics invalid; online trace rules continue past capture limits.
 A killed writer can leave an incomplete capture, which is explicitly identified.
+When a worker returns no result, `metric_valid`, `trace_rules_passed` and
+`capture_complete` are `null` (unknown). Fatal outcomes remain separate from
+partial evidence in the original snapshot.
 A detailed replay is separate evidence rather than a reconstruction of the
 original run:
 
