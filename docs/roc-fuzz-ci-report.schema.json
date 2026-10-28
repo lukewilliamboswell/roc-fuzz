@@ -258,13 +258,22 @@
           "$ref": "#/$defs/termination"
         },
         "metric_valid": {
-          "type": "boolean"
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "trace_rules_passed": {
-          "type": "boolean"
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "capture_complete": {
-          "type": "boolean"
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "observations": {
           "anyOf": [

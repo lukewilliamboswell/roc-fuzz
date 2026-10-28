@@ -115,8 +115,16 @@ pub fn main(init: std.process.Init) !void {
         const kind: ?[]const u8 = if (std.mem.eql(u8, mode, "reject")) null else if (std.mem.eql(u8, mode, "invalid") or std.mem.eql(u8, mode, "unfinished")) "invalid_observation" else if (std.mem.eql(u8, mode, "trace")) "trace_violation" else if (std.mem.eql(u8, mode, "crash")) "native_crash" else if (std.mem.eql(u8, mode, "roc-crash")) "roc_crash" else mode;
         if (kind) |expected| try expectString(examples.array.items[0], "finding_kind", expected) else try std.testing.expect((try field(examples.array.items[0], "finding_kind")) == .null);
         if (std.mem.eql(u8, mode, "timeout") or std.mem.eql(u8, mode, "crash")) {
+            try std.testing.expect((try field(examples.array.items[0], "metric_valid")) == .null);
+            try std.testing.expect((try field(examples.array.items[0], "trace_rules_passed")) == .null);
+            try std.testing.expect((try field(examples.array.items[0], "capture_complete")) == .null);
             const original = try suite.read(try std.fmt.allocPrint(allocator, "{s}/example-0-original-trace.json", .{label}));
             try std.testing.expectEqualStrings("{\"original\":17}", original);
+        }
+        if (std.mem.eql(u8, mode, "trace")) {
+            try std.testing.expect((try field(examples.array.items[0], "metric_valid")).bool);
+            try std.testing.expect(!(try field(examples.array.items[0], "trace_rules_passed")).bool);
+            try std.testing.expect((try field(examples.array.items[0], "capture_complete")).bool);
         }
         try suite.expectBaselineUnchanged(baseline);
     }

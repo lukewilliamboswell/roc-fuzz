@@ -471,9 +471,11 @@ const ExampleReport = struct {
     termination: ChildResult,
     finding_kind: ?[]const u8 = null,
     log: LogSpan = .{},
-    metric_valid: bool = false,
-    trace_rules_passed: bool = false,
-    capture_complete: bool = false,
+    // A missing worker result leaves these unknown. Fatal outcomes remain
+    // separate from the partial evidence preserved in the original snapshot.
+    metric_valid: ?bool = null,
+    trace_rules_passed: ?bool = null,
+    capture_complete: ?bool = null,
     observations: ?std.json.Value = null,
     diagnostics: ?std.json.Value = null,
 };
