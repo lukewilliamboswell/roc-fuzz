@@ -86,8 +86,8 @@ Fuzz := [].{
 	## allocator traffic: it is not the heap still in use, the process's
 	## resident memory, or the bytes a reallocation copies. A request the
 	## allocator cannot serve ends the process, so every request a completed
-	## region made is counted. The total stops at the largest `U64` rather than
-	## wrapping. Only a difference across a region is meaningful.
+	## region made is counted. Arithmetic overflow fails explicitly rather than
+	## wrapping or saturating. Only a difference across a region is meaningful.
 	requested_bytes! : () => U64
 
 	## Inclusive allocator observations for one named region. Only Roc allocator
