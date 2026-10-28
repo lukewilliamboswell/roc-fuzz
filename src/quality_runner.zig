@@ -500,6 +500,7 @@ const ExplorationReport = struct {
 };
 const Report = struct {
     format: []const u8 = report_format,
+    metric_version: []const u8 = metric_version,
     target: []const u8,
     host_target: []const u8,
     profile: []const u8,
@@ -512,6 +513,16 @@ const Report = struct {
     error_message: ?[]const u8 = null,
     provenance: Provenance = .{},
     preparation: PreparationReport = .{},
+    configuration: Configuration = .{},
+};
+
+const Configuration = struct {
+    invocation_deadline_ms: u64 = 10_000,
+    campaign_deadline_ms: ?u64 = null,
+    leak_detection: bool = true,
+    detailed_capture: bool = false,
+    corpus: ?[]const u8 = null,
+    exploration_options: []const []const u8 = &.{},
 };
 
 const PreparationReport = struct {
@@ -619,6 +630,41 @@ fn parseOptions(allocator: Allocator, argc: usize, argv: [*][*:0]u8) !Options {
         if (options.arguments.len == 1) options.corpus = options.arguments[0];
     }
     return options;
+}
+
+fn configuration(allocator: Allocator, options: Options) !Configuration {
+    const exploring = commandIs(options.command, "run") or commandIs(options.command, "explore");
+    var native_options: std.ArrayList([]const u8) = .empty;
+    var bounded = false;
+    if (exploring) {
+        for (options.exploration_options) |argument| {
+            const translations = .{
+                .{ "--time=", "-max_total_time=" },
+                .{ "--runs=", "-runs=" },
+                .{ "--timeout=", "-timeout=" },
+                .{ "--max-input-size=", "-max_len=" },
+                .{ "--memory-limit=", "-rss_limit_mb=" },
+                .{ "--dictionary=", "-dict=" },
+                .{ "--seed=", "-seed=" },
+            };
+            inline for (translations) |translation| {
+                if (valueAfter(argument, translation[0])) |value| {
+                    try native_options.append(allocator, try std.fmt.allocPrint(allocator, "{s}{s}", .{ translation[1], value }));
+                    if (comptime std.mem.eql(u8, translation[0], "--time=") or std.mem.eql(u8, translation[0], "--runs=")) bounded = true;
+                }
+            }
+        }
+        if (options.timeout_ms == 10_000) try native_options.append(allocator, "-timeout=10");
+        if (!bounded) try native_options.append(allocator, "-max_total_time=60");
+    }
+    return .{
+        .invocation_deadline_ms = options.timeout_ms,
+        .campaign_deadline_ms = if (exploring) options.campaign_deadline_ms else null,
+        .leak_detection = !options.no_detect_leaks,
+        .detailed_capture = options.detailed,
+        .corpus = if (exploring) options.corpus else null,
+        .exploration_options = try native_options.toOwnedSlice(allocator),
+    };
 }
 
 fn commandIs(command: []const u8, expected: []const u8) bool {
@@ -887,7 +933,7 @@ fn checkAndExplore(allocator: Allocator, executable: []const u8, target: []const
     const baseline_path = try baselinePath(allocator, target, options.baseline);
     if (try pathsOverlap(allocator, report_dir, baseline_path)) return error.BaselineOverlapsReportDirectory;
     if ((commandIs(options.command, "run") or commandIs(options.command, "explore")) and try pathsOverlap(allocator, report_dir, options.corpus)) return error.CorpusOverlapsReportDirectory;
-    var report = Report{ .target = target, .host_target = hostTarget(), .profile = options.profile, .command = options.command, .baseline_path = baseline_path, .provenance = options.provenance };
+    var report = Report{ .target = target, .host_target = hostTarget(), .profile = options.profile, .command = options.command, .baseline_path = baseline_path, .provenance = options.provenance, .configuration = try configuration(allocator, options) };
     const prepared = prepareSupervised(allocator, executable, report_dir, log_path, options.timeout_ms) catch |err| {
         report.outcome = "infrastructure_error";
         report.error_message = @errorName(err);
@@ -1026,7 +1072,7 @@ fn runInputCommand(allocator: Allocator, executable: []const u8, target: []const
     const passed = commandIs(result.outcome, "passed");
     const reports = try allocator.alloc(ExampleReport, 1);
     reports[0] = result;
-    const report = Report{ .target = target, .host_target = hostTarget(), .profile = options.profile, .command = options.command, .outcome = if (passed) "passed" else "finding", .baseline_path = try baselinePath(allocator, target, options.baseline), .examples = reports, .provenance = options.provenance };
+    const report = Report{ .target = target, .host_target = hostTarget(), .profile = options.profile, .command = options.command, .outcome = if (passed) "passed" else "finding", .baseline_path = try baselinePath(allocator, target, options.baseline), .examples = reports, .provenance = options.provenance, .configuration = try configuration(allocator, options) };
     try saveReport(allocator, report, report_dir);
     return if (passed) 0 else 1;
 }

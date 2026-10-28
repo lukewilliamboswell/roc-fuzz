@@ -17,7 +17,9 @@
     "exploration",
     "error_message",
     "provenance",
-    "preparation"
+    "preparation",
+    "metric_version",
+    "configuration"
   ],
   "properties": {
     "format": {
@@ -89,6 +91,12 @@
     },
     "preparation": {
       "$ref": "#/$defs/preparation"
+    },
+    "metric_version": {
+      "const": "roc-fuzz-allocations/1"
+    },
+    "configuration": {
+      "$ref": "#/$defs/configuration"
     }
   },
   "$defs": {
@@ -541,6 +549,49 @@
             "string",
             "null"
           ]
+        }
+      }
+    },
+    "configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "invocation_deadline_ms",
+        "campaign_deadline_ms",
+        "leak_detection",
+        "detailed_capture",
+        "corpus",
+        "exploration_options"
+      ],
+      "properties": {
+        "invocation_deadline_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "campaign_deadline_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "leak_detection": {
+          "type": "boolean"
+        },
+        "detailed_capture": {
+          "type": "boolean"
+        },
+        "corpus": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "exploration_options": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     }

@@ -91,6 +91,11 @@ pub fn main(init: std.process.Init) !void {
     const suite = Suite{ .allocator = allocator, .io = init.io, .fixture = fixture, .root = root, .environ = init.environ_map };
 
     const unbaselined = try suite.run("unbaselined", &.{"check"}, "", 0);
+    try expectString(unbaselined, "metric_version", "roc-fuzz-allocations/1");
+    const default_configuration = try field(unbaselined, "configuration");
+    try std.testing.expect((try field(default_configuration, "leak_detection")).bool);
+    try std.testing.expectEqual(@as(i64, 10_000), (try field(default_configuration, "invocation_deadline_ms")).integer);
+    try std.testing.expect((try field(default_configuration, "campaign_deadline_ms")) == .null);
     try expectString(unbaselined, "baseline_status", "unbaselined");
     try assertFreshCalls(try suite.read("calls.txt"), 2);
     const accepted = try suite.run("accepted", &.{"accept"}, "", 0);
@@ -179,6 +184,21 @@ pub fn main(init: std.process.Init) !void {
     const default_run = try suite.run("default-run", &.{"--runs=5"}, "", 0);
     try expectString(default_run, "command", "run");
     try expectString(default_run, "baseline_status", "matched");
+    const configured = try suite.run("configured", &.{ "run", "--time=2", "--timeout=3", "--seed=7", "--max-input-size=128", "--memory-limit=64", "--no-detect-leaks", "--detailed" }, "", 0);
+    const controls = try field(configured, "configuration");
+    try std.testing.expect(!(try field(controls, "leak_detection")).bool);
+    try std.testing.expect((try field(controls, "detailed_capture")).bool);
+    try std.testing.expectEqual(@as(i64, 3000), (try field(controls, "invocation_deadline_ms")).integer);
+    try std.testing.expectEqual(@as(i64, 10_000), (try field(controls, "campaign_deadline_ms")).integer);
+    try expectString(controls, "corpus", ".roc-fuzz/corpus");
+    const native_controls = try field(controls, "exploration_options");
+    for ([_][]const u8{ "-max_total_time=2", "-timeout=3", "-seed=7", "-max_len=128", "-rss_limit_mb=64" }) |expected| {
+        var found = false;
+        for (native_controls.array.items) |argument| if (std.mem.eql(u8, argument.string, expected)) {
+            found = true;
+        };
+        try std.testing.expect(found);
+    }
     const rejection = try suite.run("all-rejected", &.{ "run", "--runs=5" }, "all-rejected", 1);
     try expectString(rejection, "outcome", "inconclusive");
     const rejected_campaign = try field(rejection, "exploration");
