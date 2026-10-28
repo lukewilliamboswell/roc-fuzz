@@ -1,173 +1,25 @@
 name: Nightly compatibility
-
-# Answers one question each day: does the release people download today still
-# work with today's compiler?
-#
-# It runs the examples archive attached to the latest platform release, exactly
-# as published, on the latest Roc nightly, on every target the release supports.
-# Nothing from the default branch is tested except the scripts that drive the
-# run. A failure means the platform needs a patch release; this workflow never
-# commits, merges or publishes.
 on:
   schedule:
-    # Once daily, about four hours after the upstream 09:00 UTC build.
-    - cron: "28 13 * * *"
+    - cron: '28 13 * * *'
   workflow_dispatch:
     inputs:
       nightly-tag:
-        description: Roc nightly to test with; empty uses the latest
-        required: false
-        default: ""
+        description: Exact diagnostic nightly; empty resolves latest
         type: string
+        default: ''
       release-version:
-        description: Platform release to test; empty uses the latest that is not a prerelease
-        required: false
-        default: ""
+        description: Exact diagnostic release; empty resolves latest final release
         type: string
-
+        default: ''
 permissions: {}
-
-concurrency:
-  group: nightly-compatibility
-  cancel-in-progress: false
-
 jobs:
-  # One run tests one compiler against one release: both are chosen here.
-  select:
-    name: Select the compiler and the release
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
+  compatibility:
     permissions:
       contents: read
-    outputs:
-      nightly-tag: ${{ steps.nightly.outputs.tag }}
-      release-version: ${{ steps.release.outputs.version }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - id: nightly
-        name: Resolve the Roc nightly
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REQUESTED: ${{ inputs.nightly-tag }}
-        run: |
-          tag="$REQUESTED"
-          if [ -z "$tag" ]; then
-            tag=$(gh api repos/roc-lang/nightlies/releases/latest --jq .tag_name)
-          fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-
-      - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
-        with:
-          install-nix: 'true'
-
-      # Linker-input releases share this repository; the script skips them and
-      # every prerelease.
-      - id: release
-        name: Select the platform release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          NIGHTLY_TAG: ${{ steps.nightly.outputs.tag }}
-          RELEASE_VERSION: ${{ inputs.release-version }}
-        run: |
-          blueprint run release-examples -- --operation resolve --repository "$GITHUB_REPOSITORY" \
-            --compiler "$NIGHTLY_TAG" --release-version "$RELEASE_VERSION" \
-            --output .release/published-selection.json
-          echo "version=$(jq -er .version .release/published-selection.json)" >> "$GITHUB_OUTPUT"
-          jq . .release/published-selection.json >> "$GITHUB_STEP_SUMMARY"
-
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: published-selection
-          path: .release/published-selection.json
-          if-no-files-found: error
-
-  test:
-    name: Published release on ${{ matrix.os }}
-    needs: select
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-22.04, macos-26]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
-    permissions:
-      contents: read
-    outputs:
-      # Set by whichever target reaches its examples, so the report can tell a
-      # compatibility failure from a setup failure.
-      ran: ${{ steps.ran.outputs.ran }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
-        with:
-          install-nix: 'true'
-
-      - name: Install the Roc nightly this run selected
-        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
-        with:
-          version: nightly-new-compiler
-          nightly-tag: ${{ needs.select.outputs.nightly-tag }}
-
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
-        with:
-          name: published-selection
-          path: .release
-
-      - name: Fetch the release's examples archive
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: blueprint run release-examples -- --operation fetch --selection .release/published-selection.json --output .release/published-suite
-
-      - id: ran
-        name: Record that the examples are about to run
-        run: echo "ran=true" >> "$GITHUB_OUTPUT"
-
-      # An empty package cache, so the published bundle is downloaded and
-      # verified and not found from an earlier run.
-      - name: Build and run the archived examples, unchanged
-        env:
-          XDG_CACHE_HOME: ${{ runner.temp }}/roc-published-cache
-        run: >-
-          blueprint run test-targets -- --suite-root .release/published-suite
-          --operation all --max-total-time 1 --verbose
-
-      - name: Preserve compatibility evidence
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: compatibility-${{ matrix.os }}
-          path: .release/published-suite/compatibility.json
-          if-no-files-found: ignore
-
-  # Keeps one tracking issue: opened on the first failure, commented on by each
-  # later failure, closed by the next pass. roc-automation's nightly-report
-  # does this from its own checkout, so this job checks out nothing and runs no
-  # code from this repository or from a release. A run in which no example ran
-  # is a setup failure and leaves the issue alone.
-  #
-  # roc-automation's shared nightly-compatibility workflow would replace this
-  # whole file, but it cannot yet build an example with `roc build --fuzz`:
-  # https://github.com/lukewilliamboswell/roc-automation/issues/80
-  report:
-    name: Track the result in an issue
-    needs: [select, test]
-    if: ${{ !cancelled() }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
       issues: write
-    steps:
-      - name: Open, update or close the tracking issue
-        uses: lukewilliamboswell/roc-automation/actions/nightly-report@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
-        with:
-          outcome: ${{ needs.test.result == 'success' && 'success' || (needs.test.outputs.ran == 'true' && 'failure' || 'setup-failure') }}
-          nightly-tag: ${{ needs.select.outputs.nightly-tag }}
-          release-tag: ${{ needs.select.outputs.release-version }}
+    uses: lukewilliamboswell/roc-automation/.github/workflows/nightly-compatibility.yml@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
+    with:
+      nightly-tag: ${{ inputs.nightly-tag || '' }}
+      release-tag: ${{ inputs.release-version || '' }}
+      runners: '["ubuntu-22.04", "macos-26"]'
