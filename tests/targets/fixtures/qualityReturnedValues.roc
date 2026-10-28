@@ -16,6 +16,52 @@ assert_live_return! = |stats, allocations| {
 		}
 }
 
+assert_parent_and_counters! : U8 => {}
+assert_parent_and_counters! = |n| {
+	before = {
+		allocs: Fuzz.alloc_count!(),
+		reallocs: Fuzz.realloc_count!(),
+		deallocs: Fuzz.dealloc_count!(),
+		requested_bytes: Fuzz.requested_bytes!(),
+		live: Fuzz.live_alloc_count!(),
+	}
+	parent = Fuzz.measure!(
+		"parent visibility",
+		|| {
+			# The user Box and list both count. Their child and parent ownership
+			# wrappers are bookkeeping, including wrappers that remain live here.
+			child = Fuzz.measure!("nested user box", || Box.box(List.with_capacity(8).append(n)))
+			assert_live_return!(child.stats, 2)
+			if Box.unbox(child.value).first() != Ok(n) {
+				crash "nested measurement changed its returned user box"
+			}
+			child.stats.requested_bytes
+		},
+	)
+	after = {
+		allocs: Fuzz.alloc_count!(),
+		reallocs: Fuzz.realloc_count!(),
+		deallocs: Fuzz.dealloc_count!(),
+		requested_bytes: Fuzz.requested_bytes!(),
+		live: Fuzz.live_alloc_count!(),
+	}
+	if parent.stats.allocs != 2 or parent.stats.reallocs != 0 or parent.stats.deallocs != 2
+		or parent.stats.requested_bytes != parent.value
+		or parent.stats.entry_live_allocs != parent.stats.exit_live_allocs
+		or parent.stats.entry_live_bytes != parent.stats.exit_live_bytes
+		or parent.stats.peak_live_bytes != parent.stats.entry_live_bytes + parent.value
+		{
+			crash "parent measurement counted ownership bookkeeping: ${Str.inspect(parent.stats)}"
+		}
+	if after.allocs != before.allocs + 2 or after.reallocs != before.reallocs
+		or after.deallocs != before.deallocs + 2
+		or after.requested_bytes != before.requested_bytes + parent.value
+		or after.live != before.live
+		{
+			crash "allocator counters counted ownership bookkeeping: ${Str.inspect(before)} -> ${Str.inspect(after)}"
+		}
+}
+
 test! : U8 => Fuzz.Outcome
 test! = |n| {
 	# Projecting only Stats must not move the returned list's drop before finish.
@@ -83,6 +129,7 @@ test! = |n| {
 
 	# Native report checks inspect this boundary when the entire result is unused.
 	_ = Fuzz.measure!("unused observation", || List.with_capacity(8).append(n))
+	assert_parent_and_counters!(n)
 	Fuzz.keep
 }
 
