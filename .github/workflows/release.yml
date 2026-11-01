@@ -250,7 +250,7 @@ jobs:
       # from a locked supplier file, so there is no supplier SBOM to fetch.
       - id: sbom
         name: Bind the bundle's SBOM sidecars
-        uses: lukewilliamboswell/roc-automation/actions/sbom-sidecars@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
+        uses: lukewilliamboswell/roc-automation/actions/sbom-sidecars@728a31a8eed21a219ebc1f88944f833622e07f5d # a25b512
         with:
           files: ${{ steps.bundle.outputs.file }}
           version: ${{ needs.validate.outputs.release_version }}
