@@ -73,7 +73,7 @@ jobs:
           install-nix: 'true'
 
       - name: Install the Roc nightly this run resolved
-        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
+        uses: roc-lang/setup-roc@dd81390553b0a1236aedb61cdd4c0ed7cf7eaec4 # f5a74bf
         with:
           version: nightly-new-compiler
           nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
@@ -104,7 +104,7 @@ jobs:
           install-nix: 'true'
 
       - name: Install the Roc nightly this run resolved
-        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
+        uses: roc-lang/setup-roc@dd81390553b0a1236aedb61cdd4c0ed7cf7eaec4 # f5a74bf
         with:
           version: nightly-new-compiler
           nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
@@ -201,7 +201,7 @@ jobs:
           install-nix: 'true'
 
       - name: Install the Roc nightly this run resolved
-        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
+        uses: roc-lang/setup-roc@dd81390553b0a1236aedb61cdd4c0ed7cf7eaec4 # f5a74bf
         with:
           version: nightly-new-compiler
           nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
@@ -261,7 +261,7 @@ jobs:
           install-nix: 'true'
 
       - name: Install the Roc nightly this run resolved
-        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697 # f5a74bf
+        uses: roc-lang/setup-roc@dd81390553b0a1236aedb61cdd4c0ed7cf7eaec4 # f5a74bf
         with:
           version: nightly-new-compiler
           nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
