@@ -560,7 +560,7 @@ jobs:
       # publishes. It refuses a tag that already exists.
       - id: publish
         name: Stage a draft, verify every asset, then publish
-        uses: lukewilliamboswell/roc-automation/actions/publish-release@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
+        uses: lukewilliamboswell/roc-automation/actions/publish-release@728a31a8eed21a219ebc1f88944f833622e07f5d # a25b512
         with:
           version: ${{ needs.validate.outputs.release_version }}
           prerelease: ${{ needs.validate.outputs.is_prerelease }}
