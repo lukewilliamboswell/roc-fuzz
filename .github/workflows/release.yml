@@ -320,7 +320,7 @@ jobs:
 
       - id: renderer
         name: Locate the roc-docs renderer Blueprint.lock pins
-        uses: lukewilliamboswell/roc-automation/actions/blueprint-tool@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
+        uses: lukewilliamboswell/roc-automation/actions/blueprint-tool@728a31a8eed21a219ebc1f88944f833622e07f5d # a25b512
         with:
           task: docs-path
           label: roc-docs tools-0.4.0
