@@ -46,7 +46,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@a25b5129340b9b2ad1744d20330b8ee4d38a1849 # a25b512
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@728a31a8eed21a219ebc1f88944f833622e07f5d # a25b512
         with:
           install-nix: 'true'
 
