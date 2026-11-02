@@ -12,6 +12,16 @@ translates the friendly runner commands.
 
 `src/roc_platform_abi.zig` is generated from Roc's `ZigGlue.roc`.
 
+== Documentation policy
+
+Every paragraph should help someone use, maintain or assess the current project.
+Delete superseded instructions and duplicate explanations. Keep implementation
+history in Git, unresolved work in issues, and release-specific changes on the
+published release; do not include release notes in the manual. Preserve current
+compatibility guidance, security boundaries, API contracts and required notices.
+
+Use the https://lukewilliamboswell.github.io/roc-automation/documentation.html#write-project-documentation[shared documentation guide] for structure and publishing.
+
 == Toolchain
 
 roc-fuzz follows the
@@ -433,18 +443,6 @@ Fuzz smoke tests pass corpus directories to libFuzzer; passing an individual see
 file would only replay it. Repository formatting is checked separately, not against
 an older release's frozen source.
 
-Nightly compatibility selects the highest stable semantic-version platform
-release, ignoring linker-input releases and release candidates. Both targets
-consume the same selection and verify asset hashes. Releases through 0.4.1 use
-examples from the exact tag commit, rebound to that release's own bundle (the old
-manual URL follow-up could occur after tagging). Newer releases must include the
-examples archive. The compatibility artifact records the release, source commit,
-compiler and asset identities used; a missing archive or failed download cannot
-become a passing test. Archives up to 0.4.3 pin every example to the compiler of
-their day, and the driver treats Roc's version-mismatch warning as a failure, so
-those archives pass only with the compiler they name. Later archives carry no
-pin.
-
 Every property callback has an automatic allocation observation. Source examples
 run independently of the coverage corpus and can be accepted into an exact
 baseline. Explicit named regions use `Fuzz.measure!` or manual measurement
@@ -530,8 +528,8 @@ One immutable GitHub release per version holds:
 === Write the release notes
 
 Before dispatching a release, commit a non-empty `docs/releases/X.Y.Z.adoc`, or
-`docs/releases/X.Y.Z-rcN.adoc` for a release candidate, and add an `include`
-for it at the top of `docs/releases.adoc`. The first heading
+`docs/releases/X.Y.Z-rcN.adoc` for a release candidate. Keep these publisher
+inputs out of the manual's reading path. The first heading
 must be `= roc-fuzz VERSION`. Release notes are reviewed as documentation and
 should explain the release to users: lead with the theme, show notable features
 and compatibility changes, name the supported hosts, link to
@@ -625,14 +623,14 @@ the bindings check and by compilation.
 
 == Shared examples archive
 
-Starting with 0.4.5, the examples ZIP has one root named
+The examples ZIP has one root named
 `roc-fuzz-examples-VERSION`, containing `README.md`, `spec.json`, and `examples/`.
 The specification derives from the published examples in `tests/targets.json`.
 Each app requests `build_args: ["--fuzz"]` and records replay and one-second
 seeded smoke cases. Cases keep exact stdout and exit expectations while
 `stderr_match: "ignore"` allows libFuzzer statistics to vary; raw stderr remains
 available for diagnosis. Seeds and local harness metadata live under
-`examples/.roc-fuzz/`. Historical flat archives remain readable.
+`examples/.roc-fuzz/`. The local driver also accepts flat archives.
 
 The release test jobs run the exact ZIP and bundle through the reviewed shared
 `release-package test-archive` utility before publication. Its loopback bundle
