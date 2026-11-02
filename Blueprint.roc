@@ -38,7 +38,7 @@ config = [
 			# zig-overlay; scripts/native-deps.json names the same version.
 			Tools(["nix#coreutils", "nix#gh", "nix#git", "nix#jq", "nix#unzip", "nix#zip", "nix#zigpkgs.\"0.16.0\""]),
 			# The shared documentation renderer, as actions/build-docs runs it.
-			Programs([Fetch("roc-docs", Recipes.file("https://github.com/lukewilliamboswell/roc-automation/releases/download/tools-0.4.0/roc-docs-{system}"))]),
+			Programs([Fetch("roc-docs", Recipes.file("https://github.com/lukewilliamboswell/roc-automation/releases/download/tools-0.9.0/roc-docs-{system}"))]),
 			Expect(["sh"]),
 		],
 	),

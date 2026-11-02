@@ -365,12 +365,11 @@ under `.docs-out/`. `site` assembles what GitHub Pages serves: the latest
 release's documentation, restored from the archive that release published, with
 the working tree's under `unreleased/`.
 
-The renderer does not run Mermaid. Each diagram's PNG is prepared once, checked
-in under `docs/images/` with a provenance note saying how it was made, and
-registered with its source's digest in `docs/prepared-diagrams.json`. Editing a
-diagram's source fails the build until its image is prepared again. The final API audit fails if an exposed module or public entry
-has no rendered documentation. The documentation and release workflows run the
-same build and audit.
+Keep Mermaid source in the manual. The renderer generates diagrams for the
+site and PDF during the ordinary documentation build; no prepared diagram
+registrations or generated images need to be checked in. The final API audit
+fails if an exposed module or public entry has no rendered documentation. The
+documentation and release workflows run the same build and audit.
 
 Every case runs the `check`, `test`, `build`, `seed`, and `fuzz`
 stages by default. To switch off a case's seed replay or fuzz run, set its
