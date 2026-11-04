@@ -387,7 +387,10 @@ stages by default. To switch off a case's seed replay or fuzz run, set its
 `tests/targets.json` with the case name, the operation, a concrete reason and a
 full issue URL. The supply-chain check rejects a skip without exactly one such
 note, and a note left behind once the case runs again. The driver names every
-skip and its reason at the start of each run. No case is skipped today.
+skip and its reason at the start of each run. A seed skip also switches off
+the case's `measure` and `quality` stages; the `check`, `test` and `build`
+stages always run. The `skips` list is the record
+of what is switched off now.
 
 A file under `trophy-case/repros/` that can run is a case in
 `tests/targets.json`. The one kept there is a deliberate type error that the
