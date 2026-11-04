@@ -17,6 +17,5 @@ Build the manual and generated API reference locally with:
 blueprint run docs
 ```
 
-The command requires Docker, the `blueprint` command for the repository's
-tooling environment, and a current Roc nightly installed as `roc` for the
-platform sources.
+Use the Blueprint release declared by the repository and a current Roc nightly
+as `roc`. Blueprint provisions the reviewed documentation renderer and tooling.

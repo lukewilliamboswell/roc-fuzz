@@ -52,11 +52,8 @@ target = Fuzz.target_with({
 })
 ```
 
-The default baseline is `<declared-target-name>_baseline.json` in the working
-directory. Use `--baseline=PATH` and `--profile=NAME` when needed. Default runs
-check examples and the baseline, then explore for 60 seconds with a 10-second
-invocation deadline and leak checks. See the provider-free
-[consumer template](templates/quality/README.adoc) for Blueprint tasks and CI.
+See the [consumer template](templates/quality/README.adoc) for Blueprint tasks
+and CI integration.
 
 The [roc-fuzz manual](https://lukewilliamboswell.github.io/roc-fuzz/) covers
 target design, failure investigation, campaign tuning, corpora, CI evidence,
@@ -74,13 +71,6 @@ robustness, collection invariants, structured inputs, and multi-file targets.
 The focused compiler and builtin regression targets are tests, not examples,
 and live under [`tests/targets/`](tests/targets/). The
 [trophy case](trophy-case/README.md) records bugs found through fuzzing.
-
-Content-addressed linker inputs, `libhost.a`, and platform bundles have distinct
-invalidation boundaries. Linker-input releases are admitted from exact PR
-producer commits with hashes and attestations, while routine builds reuse their
-verified caches instead of rebuilding or repeatedly downloading them. See the
-[releases](https://github.com/lukewilliamboswell/roc-fuzz/releases) for immutable
-bundles and versioned PDF/HTML documentation archives.
 
 Repository development begins in [the contributor guide](CONTRIBUTING.md).
 Security reports follow [the private reporting policy](SECURITY.md).
