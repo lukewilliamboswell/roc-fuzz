@@ -9,6 +9,9 @@ updates:
       timezone: Australia/Melbourne
     open-pull-requests-limit: 10
     groups:
+      roc-automation:
+        patterns:
+          - "lukewilliamboswell/roc-automation/*"
       codeql-action:
         patterns:
           - "github/codeql-action/*"
