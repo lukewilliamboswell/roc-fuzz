@@ -97,6 +97,12 @@ fn snapshot(allocator: Allocator, storage: []align(64) const u8) ![]const u8 {
 }
 
 pub fn main(init: std.process.Init) !void {
+    // Exercise signal classification, without waiting for a host's piped core
+    // collector (which can outlive the fixture's one-second deadline).
+    if (@import("builtin").os.tag == .linux) {
+        if (std.os.linux.prctl(@intFromEnum(std.os.linux.PR.SET_DUMPABLE), 0, 0, 0, 0) != 0)
+            return error.CannotDisableFixtureCoreDump;
+    }
     const allocator = init.arena.allocator();
     const args = try init.minimal.args.toSlice(allocator);
     if (args.len >= 4 and std.mem.eql(u8, args[1], "__quality-worker")) worker_output_directory = std.fs.path.dirname(args[3]);
