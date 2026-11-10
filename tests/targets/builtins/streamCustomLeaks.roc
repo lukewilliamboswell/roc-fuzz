@@ -6,7 +6,7 @@ import pf.Fuzz
 ## heap-backed state and items. Each scenario must release everything it
 ## allocated once its result is dropped:
 ## - `collect!` of a finite source,
-## - an infinite `Unknown` source abandoned after `pulls` steps,
+## - an infinite `Err(Unknown)` source abandoned after `pulls` steps,
 ## - a source that yields an error item paired with a terminal state
 ##   (the PR's documented way to release a resource early), then is drained.
 Case : { items : List(Str), pulls : U8, fail_at : U8, known : Bool }
@@ -26,7 +26,7 @@ finite : List(Str), Bool -> Stream(Str)
 finite = |items, known|
 	Stream.custom(
 		{ items, index: 0 },
-		if (known) Known(items.len()) else Unknown,
+		if (known) Ok(items.len()) else Err(Unknown),
 		|{ items: xs, index }| match xs.get(index) {
 			Ok(value) => Ok((value, { items: xs, index: index + 1 }))
 			Err(_) => Err(NoMore)
@@ -37,7 +37,7 @@ infinite : List(Str) -> Stream(Str)
 infinite = |items|
 	Stream.custom(
 		items,
-		Unknown,
+		Err(Unknown),
 		|xs| {
 			next = xs.append(Str.concat("x", xs.len().to_str()))
 			Ok((Str.join_with(xs.take_last(2), ","), next))
@@ -48,7 +48,7 @@ failing : List(Str), U64 -> Stream(Try(Str, [SourceFailed(U64)]))
 failing = |items, fail_at|
 	Stream.custom(
 		Open({ items, index: 0 }),
-		Unknown,
+		Err(Unknown),
 		|src| match src {
 			Closed => Err(NoMore)
 			Open({ items: xs, index }) =>

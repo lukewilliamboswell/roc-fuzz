@@ -1,0 +1,19 @@
+= roc-fuzz 0.6.0
+
+This release restores compatibility with Roc `nightly-2026-11-10-f7d1f19` on
+Linux x86-64 and Apple Silicon macOS. Update Roc and use the platform bundle
+attached to this release:
+
+[source,roc]
+----
+app [target] { fuzz: platform "{platform-url}" }
+----
+
+The platform now uses Roc's format-owned parser errors. Custom binary parsers
+for fuzz inputs must use the platform's `[MalformedInput, BudgetExceeded]`
+error type throughout. Nominal inputs using `parser_for : _` still derive
+their parser. Existing version-one corpus bytes retain their encoding.
+
+The release includes updated examples, {manual-url}[the manual], and the
+bundle's SBOM and provenance. Rebuild your fuzz targets after updating the
+compiler and platform URL.

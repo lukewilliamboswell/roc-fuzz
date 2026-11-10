@@ -41,16 +41,16 @@ suffix = |layers, effectful|
 
 test! : Case => Fuzz.Outcome
 test! = |{ items, layers, pulls, known }| {
-	probe_hint = if (known) Known(items.len()) else Unknown
+	probe_hint = if (known) Ok(items.len()) else Err(Unknown)
 	probe : Stream(Str)
 	probe = Stream.custom({}, probe_hint, |_| crash "advance! ran before the stream was pulled")
-	if Stream.size_hint(probe) != probe_hint {
-		crash "size_hint changed the probe hint"
+	if Stream.len_if_known(probe) != probe_hint {
+		crash "len_if_known changed the probe hint"
 	}
 	_ = wrap(probe, layers, known)
 	_ = Stream.map(probe, |s| Str.concat(s, "#"))
 
-	hint = if (known) Known(items.len()) else Unknown
+	hint = if (known) Ok(items.len()) else Err(Unknown)
 	indexed = Stream.custom(
 		0,
 		hint,
@@ -60,7 +60,7 @@ test! = |{ items, layers, pulls, known }| {
 		},
 	)
 	mapped = wrap(indexed, layers, known)
-	if Stream.size_hint(mapped) != hint {
+	if Stream.len_if_known(mapped) != hint {
 		crash "map changed the size hint"
 	}
 	tail = suffix(layers, known)

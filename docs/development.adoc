@@ -601,9 +601,11 @@ the first failure, commented on by each later one, and closed by the next pass.
 A run in which setup failed before any example ran fails without touching the
 issue.
 
-A release is immutable, so the fix is always a patch release that works with
-the new compiler. Reproduce a past combination by dispatching the workflow with
-a `nightly-tag` and a `release-version`.
+A release is immutable. Publish a new version that works with the latest
+compiler. Use a patch when the public API permits it. If the latest compiler
+cannot check the previous release, compare both APIs with a nightly that can
+check both. Reproduce a past combination by dispatching the compatibility
+workflow with a `nightly-tag` and a `release-version`.
 
 === Recover an interrupted publication
 
