@@ -2,13 +2,13 @@ app [target] { pf: platform "../../../platform/main.roc" }
 
 import pf.Fuzz
 
-## `Stream.collect!` pre-sizes from `Known(n)` and uses the unchecked
+## `Stream.collect!` pre-sizes from `Ok(n)` and uses the unchecked
 ## `list_append_unsafe` while that reservation lasts. `Stream.custom` takes the
 ## hint from the caller, so this target passes hints that under- and
 ## over-count the real items and checks `collect!` still returns exactly the
 ## produced items without crashing or corrupting memory (roc-lang/roc#11695).
 ## An undercount used to crash with "Integer subtraction overflowed" from the
-## `Known(l - 1)` countdown; it now degrades to `Unknown`.
+## `Ok(l - 1)` countdown; it now degrades to `Err(Unknown)`.
 Case : { items : List(Str), hint : U8 }
 
 case_gen : Fuzz.Generator(Case)
@@ -18,7 +18,7 @@ test! : Case => Fuzz.Outcome
 test! = |{ items, hint }| {
 	stream = Stream.custom(
 		0,
-		Known(hint.to_u64()),
+		Ok(hint.to_u64()),
 		|index| match items.get(index) {
 			Ok(value) => Ok((value, index + 1))
 			Err(_) => Err(NoMore)
@@ -26,7 +26,7 @@ test! = |{ items, hint }| {
 	)
 	collected = Stream.collect!(stream)
 	if collected != items {
-		crash "collect! with Known(${hint.to_str()}) over ${items.len().to_str()} items did not return the source"
+		crash "collect! with Ok(${hint.to_str()}) over ${items.len().to_str()} items did not return the source"
 	}
 	Fuzz.keep
 }

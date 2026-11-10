@@ -3,11 +3,11 @@ app [target] { pf: platform "../../../platform/main.roc" }
 import pf.Fuzz
 
 ## Differential check for `Stream.custom` (roc-lang/roc#11695). A list-backed
-## source is wrapped with a `Known(len)` or `Unknown` hint and driven two ways:
+## source is wrapped with an `Ok(len)` or `Err(Unknown)` hint and driven two ways:
 ## by `collect!` and by a manual `next!` loop. Both must reproduce the list.
 ## Each item carries the source index it was produced from, so an `advance!`
 ## that ran more (or less) than once per pull shows up as a skipped index.
-## The manual loop also checks the `Known` hint counts down per item and that
+## The manual loop also checks the known length counts down per item and that
 ## a finished stream stays `Done`.
 Case : { items : List(Str), known : Bool }
 
@@ -16,7 +16,7 @@ case_gen = Fuzz.map2(Fuzz.list(Fuzz.str, 80), Fuzz.u8, |items, flag| { items, kn
 
 source : List(Str), Bool -> Stream({ index : U64, value : Str })
 source = |items, known| {
-	hint = if (known) Known(items.len()) else Unknown
+	hint = if (known) Ok(items.len()) else Err(Unknown)
 	Stream.custom(
 		0,
 		hint,
@@ -52,9 +52,9 @@ test! = |{ items, known }| {
 	var $pulled = 0
 	var $done = Bool.False
 	while !$done {
-		expected_hint = if (known) Known(items.len() - $pulled) else Unknown
-		if Stream.size_hint($rest) != expected_hint {
-			crash "size_hint did not count down after ${$pulled.to_str()} pulls"
+		expected_hint = if (known) Ok(items.len() - $pulled) else Err(Unknown)
+		if Stream.len_if_known($rest) != expected_hint {
+			crash "len_if_known did not count down after ${$pulled.to_str()} pulls"
 		}
 		match Stream.next!($rest) {
 			One({ item, rest }) => {

@@ -78,7 +78,7 @@ Model :: {}.{
 		if List.from_iter(set.iter_rev().map(token)) != List.fold(expected, [], |acc, x| acc.prepend(x)) {
 			crash "Set.iter_rev changed order"
 		}
-		if set.iter().size_hint() != Known(set.len()) {
+		if set.iter().len_if_known() != Ok(set.len()) {
 			crash "Set iterator length hint is not exact"
 		}
 		if set.fold([], |acc, item| acc.append(token(item))) != expected {

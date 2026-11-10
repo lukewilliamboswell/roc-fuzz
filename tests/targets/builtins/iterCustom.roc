@@ -4,12 +4,12 @@ import pf.Fuzz
 
 ## Differential check for `Iter.custom` with caller-supplied size hints. A
 ## list-backed source is driven three ways -- `List.from_iter` (which
-## pre-sizes from `Known(n)` and appends unchecked), `List.from_iter` through
+## pre-sizes from `Ok(n)` and appends unchecked), `List.from_iter` through
 ## a `map`, and a manual `Iter.next` walk -- and each must reproduce the list.
 ## The walk also checks the hint counts down per item and that a finished
 ## iterator stays `Done`. Everything must release its allocations.
 ##
-## Hints are exact, over-counted, or `Unknown`. `Known(n)` is a promise: a
+## Hints are exact, over-counted, or `Err(Unknown)`. `Ok(n)` is a promise: a
 ## source that yields more than n items deliberately crashes on the countdown
 ## before the extra item reaches the unchecked append, so under-counts are
 ## not generated.
@@ -25,7 +25,7 @@ case_gen = Fuzz.map2(
 	},
 )
 
-source : List(Str), [Known(U64), Unknown] -> Iter({ index : U64, value : Str })
+source : List(Str), Try(U64, [Unknown]) -> Iter({ index : U64, value : Str })
 source = |items, hint|
 	Iter.custom(
 		0,
@@ -36,15 +36,13 @@ source = |items, hint|
 		},
 	)
 
-expected_hint : [Known(U64), Unknown], U64 -> [Known(U64), Unknown]
-expected_hint = |hint, pulled|
-	match hint {
-		Known(n) => Known(n - pulled)
-		Unknown => Unknown
-	}
-
 check! : Case => {}
-check! = |{ items, hint }| {
+check! = |case| {
+	items = case.items
+	hint = match case.hint {
+		Known(n) => Ok(n)
+		Unknown => Err(Unknown)
+	}
 	values = List.from_iter(source(items, hint)).map(|item| item.value)
 	if values != items {
 		crash "List.from_iter over Iter.custom with ${Str.inspect(hint)} did not return the source"
@@ -58,8 +56,8 @@ check! = |{ items, hint }| {
 	var $pulled = 0
 	var $done = Bool.False
 	while !$done {
-		if Iter.size_hint($rest) != expected_hint(hint, $pulled) {
-			crash "size_hint was ${Str.inspect(Iter.size_hint($rest))} after ${$pulled.to_str()} pulls from ${Str.inspect(hint)}"
+		if Iter.len_if_known($rest) != hint.map_ok(|n| n - $pulled) {
+			crash "len_if_known was ${Str.inspect(Iter.len_if_known($rest))} after ${$pulled.to_str()} pulls from ${Str.inspect(hint)}"
 		}
 		match Iter.next($rest) {
 			One({ item, rest }) => {

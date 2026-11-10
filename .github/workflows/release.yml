@@ -198,8 +198,30 @@ jobs:
           echo "url=$(jq -er .bundle.url .release/previous-release.json)" >> "$GITHUB_OUTPUT"
           echo "version=$(jq -er .version .release/previous-release.json)" >> "$GITHUB_OUTPUT"
 
+      # The new parser contract prevents the latest compiler from loading 0.5.0.
+      # Use the last nightly that passed its published examples to compare both APIs.
+      - name: Check the public API against 0.5.0
+        if: steps.previous.outputs.version == '0.5.0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIOUS_URL: ${{ steps.previous.outputs.url }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.release_version }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          work=$(mktemp -d "$RUNNER_TEMP/roc-bump.XXXXXX")
+          tag=nightly-2026-11-09-9e85de7
+          archive=roc_nightly-linux_x86_64-${tag#nightly-}.tar.gz
+          gh release download "$tag" --repo roc-lang/nightlies --pattern "$archive" --dir "$work"
+          printf '%s  %s\n' 9d2480e900bee27cae0974266c088f43e8e2ceaa6543c2be7314b7bdd2b7891d "$work/$archive" | sha256sum -c
+          tar -xzf "$work/$archive" -C "$work"
+          args=(bump --old "$PREVIOUS_URL")
+          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
+            args+=(--expect "${RELEASE_VERSION%%-*}")
+          fi
+          "$work/${archive%.tar.gz}/roc" "${args[@]}" platform/main.roc
+
       - name: Report the bump this change needs
-        if: github.event_name != 'workflow_dispatch'
+        if: github.event_name != 'workflow_dispatch' && steps.previous.outputs.version != '0.5.0'
         env:
           PREVIOUS_URL: ${{ steps.previous.outputs.url }}
         run: roc bump --old "$PREVIOUS_URL" platform/main.roc
@@ -207,6 +229,7 @@ jobs:
       # A dry run skips this. A release fails here when the requested version
       # understates the change to the public API.
       - name: Check the version against the public API
+        if: steps.previous.outputs.version != '0.5.0'
         uses: roc-lang/release-package/actions/run-bump-check@d2560ead9f724bfaabfbc8134b8895e120171064 # main
         with:
           release_version: ${{ needs.validate.outputs.release_version }}
