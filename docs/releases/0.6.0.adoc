@@ -14,6 +14,6 @@ for fuzz inputs must use the platform's `[MalformedInput, BudgetExceeded]`
 error type throughout. Nominal inputs using `parser_for : _` still derive
 their parser. Existing version-one corpus bytes retain their encoding.
 
-The release includes updated examples, {manual-url}[the manual], and the
+The release includes updated examples, [the manual]({manual-url}), and the
 bundle's SBOM and provenance. Rebuild your fuzz targets after updating the
 compiler and platform URL.
