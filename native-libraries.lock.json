@@ -2,27 +2,27 @@
   "schema_version": 1,
   "kind": "link-inputs",
   "repository": "lukewilliamboswell/roc-fuzz",
-  "release": "linker-inputs-sha256-06beff0f6eceb2f5938c3ebfc7ac6043c4c2d095d7410e7ebf95a6951a6f80f2",
+  "release": "linker-inputs-sha256-87607c935001a854a31d2f954583e0f331dfcd16920ef7fde8824adf795ce502",
   "manifest": {
     "asset": "build-input-release.json",
-    "sha256": "06beff0f6eceb2f5938c3ebfc7ac6043c4c2d095d7410e7ebf95a6951a6f80f2"
+    "sha256": "87607c935001a854a31d2f954583e0f331dfcd16920ef7fde8824adf795ce502"
   },
   "source": {
-    "input_fingerprint": "9171c6a75b59a356392f8e30bb337098082cb22df40c3de0cba5a5f7eaf1c919",
-    "ref": "refs/heads/align/roc-automation-manual",
+    "input_fingerprint": "eae4d9bcb8c748c1bd290b5a3502d6dbe0dd55a16dc63b0b3418133e1e6e3d5d",
+    "ref": "refs/heads/fix/nightly-2026-11-11-pie",
     "repository": "lukewilliamboswell/roc-fuzz",
-    "sha": "65010c0b2a056b3017379bdc29d0d803bc5e84f4",
+    "sha": "f4e6e5b95f1978bad0d878b5c212b17cc1e3337e",
     "workflow": "lukewilliamboswell/roc-fuzz/.github/workflows/link-inputs.yml"
   },
   "targets": {
     "arm64mac": {
       "asset": "link-inputs-arm64mac.tar",
-      "sha256": "6a5ee56f20b694752c8252936a92b7ea492cc54c02ea41200c7badc9b1981d54",
+      "sha256": "194d6547b7424272bd3cdabd7b2906dc4f88c3698036f87fa720aeeb44db50ba",
       "size": 3010560
     },
     "x64musl": {
       "asset": "link-inputs-x64musl.tar",
-      "sha256": "b42827b9d83ef926b149f9b6dc93774e0f08e5fc21fb91e5cc79292e7f7fa367",
+      "sha256": "1e6ccfa2a16797526dcb5159b49963ad78bb77346231ff91782c12a37159b914",
       "size": 6615040
     }
   }
