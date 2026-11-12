@@ -17,6 +17,7 @@ import weaver.Cli
 import weaver.Opt
 import src/CliValues
 import src/Files
+import src/Project
 import src/Report
 import src/RocSource
 import src/Script
@@ -266,7 +267,14 @@ run_step! = |stage, settings, roc, item, work|
 		Test => run_quiet!(settings.verbose, roc, ["test", Path.to_os_str(item.path)], 0)
 		Build => {
 			Path.create_all!(Path.join(work, "executables"))?
-			run_quiet!(settings.verbose, roc, ["build", "--fuzz", Path.to_os_str(item.path), OsStr.from_str("--output=${Path.display(executable_path(work, item))}")], 0)
+			run_quiet!(settings.verbose, roc, ["build", "--fuzz", Path.to_os_str(item.path), OsStr.from_str("--output=${Path.display(executable_path(work, item))}")], 0)?
+			# A successful link must retain the nightly's executable ASLR.
+			# Seed and fuzz stages also exercise startup after relocation.
+			if Project.host_target!()? == X64Musl {
+				bytes = Path.read_bytes!(executable_path(work, item))?
+				Script.require!(bytes.take_first(6) == [127, 69, 76, 70, 2, 1] and bytes.drop_first(16).take_first(2) == [3, 0], "Linux target must be an ELF64 position-independent executable (ET_DYN)")?
+			}
+			Ok({})
 		}
 		Seed => {
 			seed = seed_path!(item, work)?

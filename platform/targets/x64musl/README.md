@@ -10,5 +10,8 @@ miss. Use `--libraries source` only when intentionally developing the separately
 dispatched linker-input producer.
 The generated inputs, provenance metadata, and `SHA256SUMS` are ignored by Git.
 
+Linux executables use static PIE: the native libraries and host are compiled
+with PIC, and `rcrt1.o` relocates the executable before musl starts the runner.
+
 The source and license details for the bundled runtimes are recorded in the
 repository's `THIRD_PARTY_LICENSES.md`.

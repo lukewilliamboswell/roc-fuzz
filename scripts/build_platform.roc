@@ -320,8 +320,9 @@ copy_zig_runtime! = |root, zig, ar, directory, work, spec| {
 	probe = Path.join(work, "${Project.Target.name(spec.target)}-runtime_probe.cpp")
 	Path.write_utf8!(probe, "int main() { return 0; }\n")?
 	executable = Path.join(work, "${Project.Target.name(spec.target)}-runtime_probe")
-	args = ["c++", "-target", OsStr.from_str(spec.zig_target)].concat(cxx_target_args(root, spec)).concat(["-O2", "-s", "-v", Path.to_os_str(probe)])
-	final_args = if (spec.target == X64Musl) args.append("-static") else args
+	args = ["c++", "-target", OsStr.from_str(spec.zig_target)].concat(cxx_target_args(root, spec)).concat(["-O2", "-s", "-v", "-fPIC", Path.to_os_str(probe)])
+	# Static PIE selects musl's self-relocating startup and PIC runtimes.
+	final_args = if (spec.target == X64Musl) args.concat(["-static", "-pie"]) else args
 	output = capture_combined!(zig.cmd(final_args.concat(["-o", Path.to_os_str(executable)])))?
 	wanted = spec.input_names.keep_if(|name| name != "libhost.a" and name != "libfuzzer.a")
 	var $found = []
@@ -360,7 +361,7 @@ build_host! = |root, zig, ar, work, spec| {
 	directory = Project.Target.dir(spec.target, root)
 	Path.create_all!(directory)?
 	host = Path.join(directory, "libhost.a")
-	zig.run!(["build-lib", Path.to_os_str(Path.join(Path.join(root, "src"), "main.zig")), "-target", OsStr.from_str(spec.zig_target)].concat(["-O", "ReleaseFast", "-fstrip", OsStr.from_str("-femit-bin=${Path.display(host)}"), "-fcompiler-rt", "-lc"]))?
+	zig.run!(["build-lib", Path.to_os_str(Path.join(Path.join(root, "src"), "main.zig")), "-target", OsStr.from_str(spec.zig_target)].concat(["-O", "ReleaseFast", "-fPIC", "-fstrip", OsStr.from_str("-femit-bin=${Path.display(host)}"), "-fcompiler-rt", "-lc"]))?
 	if spec.target == Arm64Mac {
 		stack = Path.join(work, "macos_sancov.o")
 		zig.run!(["cc", "-target", OsStr.from_str(spec.zig_target)].concat(cxx_target_args(root, spec)).concat(["-O2", "-g0", "-fPIC", "-c", Path.to_os_str(Path.join(Path.join(root, "src"), "macos_sancov.c")), "-o", Path.to_os_str(stack)]))?
