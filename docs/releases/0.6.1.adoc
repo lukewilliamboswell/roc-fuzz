@@ -1,0 +1,16 @@
+= roc-fuzz 0.6.1
+
+This patch restores Linux x86-64 compatibility with Roc
+`nightly-2026-11-11-7679cc5`, which requires position-independent executables.
+The Linux bundle now supplies PIC-compatible native libraries and musl's
+self-relocating startup object. Apple Silicon macOS remains supported.
+
+Update Roc, change your platform URL, and rebuild your fuzz targets:
+
+[source,roc]
+----
+app [target] { fuzz: platform "{platform-url}" }
+----
+
+The public Roc API and corpus encoding are unchanged. The release includes
+examples, [the manual]({manual-url}), and the bundle's SBOM and provenance.

@@ -20,7 +20,7 @@ Project := [].{
 			X64Musl => TargetSpec.{
 				target: self,
 				zig_target: "x86_64-linux-musl",
-				input_names: ["crt1.o", "libhost.a", "libfuzzer.a", "libc++.a", "libc++abi.a", "libunwind.a", "libc.a", "libzigc.a", "libcompiler_rt.a"],
+				input_names: ["rcrt1.o", "libhost.a", "libfuzzer.a", "libc++.a", "libc++abi.a", "libunwind.a", "libc.a", "libzigc.a", "libcompiler_rt.a"],
 				include_fuzzer_interceptors: Bool.False,
 			}
 			Arm64Mac => TargetSpec.{
