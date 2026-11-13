@@ -9,7 +9,7 @@ the compiler through `Fuzz.InputFormat`.
 The refcounted Dict alias target now runs its seed, allocation checks and
 fuzz campaign again after the upstream compiler fix. The primitive Dict
 alias campaign remains disabled because it still finds alias content drift
-on this nightly.
+on this nightly, tracked in https://github.com/roc-lang/roc/issues/13031[roc#13031].
 
 Update Roc, change your platform URL, and rebuild your fuzz targets:
 

@@ -826,7 +826,7 @@
       "name": "dictInsertAlias",
       "operation": "fuzz",
       "reason": "Retained primitive Dict aliases still change contents on nightly-2026-11-13-03dce41, despite the fix for refcounted aliases. A short campaign reproduces the drift; seed replay, measurement and quality still run.",
-      "issue": "https://github.com/roc-lang/roc/issues/12834"
+      "issue": "https://github.com/roc-lang/roc/issues/13031"
     }
   ],
   "retired": [
