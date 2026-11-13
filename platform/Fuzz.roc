@@ -284,7 +284,7 @@ Fuzz := [].{
 
 	## Frame generator entropy while preserving its storage-shape decisions.
 	entropy : List(U8) -> List(U8)
-	entropy = |bytes| Binary.entropy(bytes)
+	entropy = |input| Binary.entropy(input)
 
 	## Build a fuzz target using the input type's statically dispatched generator.
 	##
