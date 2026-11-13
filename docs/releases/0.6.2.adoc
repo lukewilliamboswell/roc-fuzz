@@ -1,0 +1,23 @@
+= roc-fuzz 0.6.2
+
+This patch restores compatibility with Roc `nightly-2026-11-13-03dce41`.
+The platform now passes the compiler's stricter duplicate-name check for
+`Fuzz.entropy` and `Fuzz.bytes`.
+The API reference also documents the binary codec hooks now exposed by
+the compiler through `Fuzz.InputFormat`.
+
+The refcounted Dict alias target now runs its seed, allocation checks and
+fuzz campaign again after the upstream compiler fix. The primitive Dict
+alias campaign remains disabled because it still finds alias content drift
+on this nightly, tracked in [roc#13031](https://github.com/roc-lang/roc/issues/13031).
+
+Update Roc, change your platform URL, and rebuild your fuzz targets:
+
+[source,roc]
+----
+app [target] { fuzz: platform "{platform-url}" }
+----
+
+The public Roc API and corpus encoding are unchanged. Linux x86-64 and
+Apple Silicon macOS remain supported. The release includes examples,
+[the manual]({manual-url}), and the bundle's SBOM and provenance.

@@ -403,8 +403,8 @@
       "seed_hex": "000102030405060708090a0b",
       "libfuzzer_seed": 1053,
       "expected_failure": false,
-      "skip_seed": true,
-      "skip_fuzz": true
+      "skip_seed": false,
+      "skip_fuzz": false
     },
     {
       "name": "dictInsertUniqueness",
@@ -825,20 +825,8 @@
     {
       "name": "dictInsertAlias",
       "operation": "fuzz",
-      "reason": "Since nightly-2026-10-29-a0a9fc2, --opt=speed builds insert into a Dict still held by a retained alias; fuzzing finds the drift within seconds. The seed replay, measurement and quality stages still run.",
-      "issue": "https://github.com/roc-lang/roc/issues/12834"
-    },
-    {
-      "name": "dictRefcountAlias",
-      "operation": "seed",
-      "reason": "Since nightly-2026-10-29-a0a9fc2, --opt=speed builds overwrite a key in a Dict still held by a retained alias, so every non-empty input fails, including the seed.",
-      "issue": "https://github.com/roc-lang/roc/issues/12834"
-    },
-    {
-      "name": "dictRefcountAlias",
-      "operation": "fuzz",
-      "reason": "Every non-empty input fails for the same reason as its seed replay.",
-      "issue": "https://github.com/roc-lang/roc/issues/12834"
+      "reason": "Retained primitive Dict aliases still change contents on nightly-2026-11-13-03dce41, despite the fix for refcounted aliases. A short campaign reproduces the drift; seed replay, measurement and quality still run.",
+      "issue": "https://github.com/roc-lang/roc/issues/13031"
     }
   ],
   "retired": [
