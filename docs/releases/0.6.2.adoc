@@ -3,6 +3,8 @@
 This patch restores compatibility with Roc `nightly-2026-11-13-03dce41`.
 The platform now passes the compiler's stricter duplicate-name check for
 `Fuzz.entropy` and `Fuzz.bytes`.
+The API reference also documents the binary codec hooks now exposed by
+the compiler through `Fuzz.InputFormat`.
 
 The refcounted Dict alias target now runs its seed, allocation checks and
 fuzz campaign again after the upstream compiler fix. The primitive Dict
