@@ -263,11 +263,12 @@ executable_path = |work, item| Path.join(Path.join(work, "executables"), item.na
 
 run_step! = |stage, settings, roc, item, work|
 	match stage {
+		Seed | Measure | Quality | Fuzz if item.name == "qualitySuite" => suite_step!(stage, roc, item, work)
 		Check => run_quiet!(settings.verbose, roc, ["check", Path.to_os_str(item.path)], 0)
 		Test => run_quiet!(settings.verbose, roc, ["test", Path.to_os_str(item.path)], 0)
 		Build => {
 			Path.create_all!(Path.join(work, "executables"))?
-			run_quiet!(settings.verbose, roc, ["build", "--fuzz", Path.to_os_str(item.path), OsStr.from_str("--output=${Path.display(executable_path(work, item))}")], 0)?
+			run_quiet!(settings.verbose, roc, ["build", "--opt=speed", "--fuzz", Path.to_os_str(item.path), OsStr.from_str("--output=${Path.display(executable_path(work, item))}")], 0)?
 			# A successful link must retain the nightly's executable ASLR.
 			# Seed and fuzz stages also exercise startup after relocation.
 			if Project.host_target!()? == X64Musl {
@@ -286,6 +287,77 @@ run_step! = |stage, settings, roc, item, work|
 		Quality => quality_step!(item, work)
 		Fuzz => fuzz_step!(settings, item, work)
 	}
+
+## A single binary keeps heterogeneous properties, examples, baselines and
+## failures independent across both supervised and raw engine invocations.
+suite_step! = |stage, roc, item, work| {
+	directory = Path.join(Path.join(work, "suite-selection"), stage_name(stage))
+	Path.create_all!(directory)?
+	executable = Script.command(Path.to_os_str(executable_path(work, item)))
+	plain = Path.join(directory, "suite-dev")
+	if stage == Measure {
+		run_quiet!(Bool.False, roc, ["build", "--opt=dev", Path.to_os_str(item.path), OsStr.from_str("--output=${Path.display(plain)}")], 0)?
+	}
+	for (name, expected) in [("numbers", 0), ("text", 0), ("failures", 1)] {
+		selector = OsStr.from_str("--target=${name}")
+		args = match stage {
+			Seed => [selector, "replay", Path.to_os_str(seed_path!(item, work)?)]
+			Measure => [selector, "measure", Path.to_os_str(seed_path!(item, work)?)]
+			Quality => [selector, "check", OsStr.from_str("--report-dir=${name}")]
+			Fuzz => [selector, "explore", "--runs=100", OsStr.from_str("--report-dir=${name}")]
+			_ => return Err(StepFailed("unexpected suite stage"))
+		}
+		output = executable.output!(args, directory)?
+		if output.status != Exited(expected) {
+			return Err(StepFailed("suite ${name} ${stage_name(stage)} failed\n${tail(output)}"))
+		}
+		if stage == Measure {
+			from_dev = Script.command(Path.to_os_str(plain)).output!(args, directory)?
+			if from_dev.status != output.status or from_dev.stdout_bytes != output.stdout_bytes {
+				return Err(StepFailed("suite allocation observations differ in dev builds"))
+			}
+		}
+		if stage == Quality or stage == Fuzz {
+			report : { target : Str, outcome : Str }
+			report = Json.parse(Path.read_utf8!(Path.join(Path.join(directory, name), "report.json"))?)?
+			if report.target != name or report.outcome != (
+				if expected == 0 {
+					"passed"
+				} else {
+					"finding"
+				}
+			) {
+				return Err(StepFailed("suite selected the wrong property or report identity"))
+			}
+		}
+	}
+	if stage == Quality {
+		listed = executable.output!(["--list-targets"], directory)?
+		if listed.status != Exited(0) or Str.from_utf8_lossy(listed.stdout_bytes) != "numbers\ntext\nfailures\n" {
+			return Err(StepFailed("suite inventory changed"))
+		}
+		for args in [["check"], ["--target=missing", "check"], ["--target=numbers", "--target=text", "check"]] {
+			rejected = executable.output!(args, directory)?
+			if rejected.status != Exited(2) {
+				return Err(StepFailed("invalid suite selection was accepted"))
+			}
+		}
+		for name in ["numbers", "text"] {
+			selector = OsStr.from_str("--target=${name}")
+			accepted = executable.output!([selector, "accept"], directory)?
+			if accepted.status != Exited(0) or !Path.is_file!(Path.join(directory, "${name}_baseline.json"))? {
+				return Err(StepFailed("suite did not keep independent baselines"))
+			}
+		}
+	}
+	if stage == Fuzz {
+		output = executable.output!(["--target=text", "raw", "-runs=10", "-jobs=2", "-workers=2"], directory)?
+		if output.status != Exited(0) {
+			return Err(StepFailed("raw engine workers lost target selection\n${tail(output)}"))
+		}
+	}
+	Ok({})
+}
 
 ## A case that is expected to fail must fail the way a target failure does.
 expected_code = |item| if (item.expected_failure) 1 else 0

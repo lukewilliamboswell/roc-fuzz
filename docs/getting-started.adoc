@@ -103,7 +103,7 @@ Build a self-contained fuzzing executable:
 
 [source,sh]
 ----
-roc build --fuzz fuzz/stack/main.roc --output=stack-fuzz
+roc build --opt=speed --fuzz fuzz/stack/main.roc --output=stack-fuzz
 ----
 
 Start with the bounded default run:
@@ -173,7 +173,7 @@ without a failed property:
 
 [source,sh]
 ----
-roc build --fuzz fuzz/stack/main.roc --output=stack-fuzz
+roc build --opt=speed --fuzz fuzz/stack/main.roc --output=stack-fuzz
 ./stack-fuzz replay .roc-fuzz/minimized-crash
 ./stack-fuzz run
 ----
@@ -191,7 +191,7 @@ new example, then check it:
 
 [source,sh]
 ----
-roc build --fuzz fuzz/stack/main.roc --output=stack-fuzz
+roc build --opt=speed --fuzz fuzz/stack/main.roc --output=stack-fuzz
 ./stack-fuzz check
 ----
 

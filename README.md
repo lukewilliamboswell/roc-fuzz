@@ -16,7 +16,7 @@ The platform supports Linux x86-64 with musl and Apple Silicon macOS 11 or newer
 A target builds directly into a self-contained executable:
 
 ```sh
-roc build --fuzz my_target_app.roc
+roc build --opt=speed --fuzz my_target_app.roc
 ./my_target_app check
 ./my_target_app accept   # explicitly review and accept allocation observations
 ./my_target_app run --report-dir=.roc-fuzz/evidence

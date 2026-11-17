@@ -81,8 +81,6 @@ pub const RocErasedCallableOnDrop = *const fn (?[*]u8, *RocHost) callconv(.c) vo
 pub const RocErasedCallablePayload = extern struct {
     callable_fn_ptr: RocErasedCallableFn,
     on_drop: ?RocErasedCallableOnDrop,
-    on_copy: ?*const fn (?[*]u8, isize) callconv(.c) void = null,
-    capture_size: usize = 0,
 };
 
 /// Runtime representation of `Box(function)`.
@@ -120,7 +118,7 @@ pub fn rocErasedCallableAllocate(
     const rc: *isize = @ptrFromInt(@intFromPtr(data) - @sizeOf(isize));
     rc.* = 1;
     const payload: *RocErasedCallablePayload = @ptrCast(@alignCast(data));
-    payload.* = .{ .callable_fn_ptr = callable_fn_ptr, .on_drop = on_drop, .capture_size = capture_size };
+    payload.* = .{ .callable_fn_ptr = callable_fn_ptr, .on_drop = on_drop };
     return data;
 }
 
@@ -1000,6 +998,7 @@ pub const __AnonStruct_fa4a9e94a9b0c16fRelease = struct {
 
 fn rocReleasePolicy(comptime T: type) type {
     if (T == RocStr) return RocStrRelease;
+    if (T == __AnonStruct_b94d4088b4417d03) return __AnonStruct_b94d4088b4417d03Release;
     if (T == __AnonStruct_fa4a9e94a9b0c16f) return __AnonStruct_fa4a9e94a9b0c16fRelease;
     if (T == RocListWith(u8, false)) return RocListSpineRelease(RocListWith(u8, false));
     @compileError("generated glue has no recursive release policy for " ++ @typeName(T));
@@ -1089,6 +1088,7 @@ pub extern fn roc_fuzz_scope_finish(arg0: u64) callconv(.c) __AnonStruct_2466dab
 /// Owned arguments. Release each exactly once before returning, unless it is
 /// moved into storage or into the result:
 ///     decrefBox(@ptrCast(arg1), roc_host);
+/// The result is owned by Roc: return exactly one owned reference.
 pub extern fn roc_fuzz_scope_finish_return(arg0: u64, arg1: RocBox) callconv(.c) __AnonStruct_b94d4088b4417d03;
 
 /// Hosted symbol for Fuzz.scope_start!
@@ -1238,16 +1238,19 @@ pub fn makeRocHost(env: *RocEnv) RocHost {
 // Roc exports these symbols from the app with their natural C ABI signatures.
 
 /// Entrypoint: example_for_host
-pub extern fn roc_fuzz_example(arg0: u64) callconv(.c) __AnonStruct_fa4a9e94a9b0c16f;
+pub extern fn roc_fuzz_example(arg0: u64, arg1: u64) callconv(.c) __AnonStruct_fa4a9e94a9b0c16f;
 
 /// Entrypoint: example_count_for_host
-pub extern fn roc_fuzz_example_count() callconv(.c) u64;
+pub extern fn roc_fuzz_example_count(arg0: u64) callconv(.c) u64;
 
 /// Entrypoint: name_for_host
-pub extern fn roc_fuzz_name() callconv(.c) RocStr;
+pub extern fn roc_fuzz_name(arg0: u64) callconv(.c) RocStr;
 
 /// Entrypoint: run_for_host!
-pub extern fn roc_fuzz_run(arg0: RocListWith(u8, false)) callconv(.c) u8;
+pub extern fn roc_fuzz_run(arg0: u64, arg1: RocListWith(u8, false)) callconv(.c) u8;
 
 /// Entrypoint: show_for_host
-pub extern fn roc_fuzz_show(arg0: RocListWith(u8, false)) callconv(.c) RocStr;
+pub extern fn roc_fuzz_show(arg0: u64, arg1: RocListWith(u8, false)) callconv(.c) RocStr;
+
+/// Entrypoint: target_count_for_host
+pub extern fn roc_fuzz_target_count() callconv(.c) u64;
