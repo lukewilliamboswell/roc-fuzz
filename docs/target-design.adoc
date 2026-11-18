@@ -22,6 +22,44 @@ A generator explores only the cases the property can observe. Calling an
 operation without checking its result finds crashes and resource failures, but
 cannot find an ordinary wrong answer.
 
+== Share an executable across properties
+
+Keep properties independent while compiling their shared library code once.
+Pass existing target values to `Fuzz.suite` instead of combining their assertions
+or adding a selector byte to their input:
+
+[source,roc]
+----
+target = Fuzz.suite([json_roundtrip, json_limits, xml_events])
+----
+
+Members may use different input types and generators. Names must be nonempty
+and unique across the suite; nested suites flatten into the same inventory.
+Build one executable and select a property at runtime:
+
+[source,sh]
+----
+roc build --fuzz formats.roc --output=formats
+./formats --list-targets
+./formats --target=json-roundtrip check
+./formats --target=xml-events explore corpus/xml-events --time=60
+----
+
+`roc build` uses LLVM by default, as required for coverage instrumentation.
+Use `--opt=dev` without `--fuzz`
+for ordinary checks, replay and allocation measurements. Existing single-target
+applications retain their commands and need no selector.
+
+The runnable `examples/multipleTargets/main.roc` groups collection and text
+properties from separate modules. `examples/numberFormats.roc` groups signed
+and unsigned decimal round trips. Both applications are exercised by the target
+inventory, including checks, replay, measurements and exploration.
+
+Each selected property retains its own declared examples, corpus encoding,
+allocation baseline and report identity. Selection follows supervised workers,
+replay, minimization and raw libFuzzer worker processes. Keep separate corpus
+directories for properties whose inputs have different meanings.
+
 == Generate useful values
 
 roc-fuzz provides generators for numeric values, strings, bytes, and collections.

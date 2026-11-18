@@ -819,6 +819,33 @@
       "expected_failure": true,
       "skip_seed": false,
       "skip_fuzz": false
+    },
+    {
+      "name": "qualitySuite",
+      "path": "tests/targets/fixtures/qualitySuite.roc",
+      "seed_hex": "00",
+      "libfuzzer_seed": 2241,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "collectionSuite",
+      "path": "examples/multipleTargets/main.roc",
+      "seed_hex": "00",
+      "libfuzzer_seed": 2242,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "numberSuite",
+      "path": "examples/numberFormats.roc",
+      "seed_hex": "00",
+      "libfuzzer_seed": 2243,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
     }
   ],
   "skips": [
@@ -845,6 +872,55 @@
     {
       "name": "strToNat",
       "reason": "Nat was removed; the fixed-width unsigned parser targets cover the supported API."
+    }
+  ],
+  "suites": [
+    {
+      "name": "qualitySuite",
+      "members": [
+        {
+          "name": "numbers",
+          "expected_failure": false
+        },
+        {
+          "name": "text",
+          "expected_failure": false
+        },
+        {
+          "name": "failures",
+          "expected_failure": true
+        }
+      ]
+    },
+    {
+      "name": "collectionSuite",
+      "members": [
+        {
+          "name": "list-split-roundtrip",
+          "expected_failure": false
+        },
+        {
+          "name": "list-concat",
+          "expected_failure": false
+        },
+        {
+          "name": "text-roundtrip",
+          "expected_failure": false
+        }
+      ]
+    },
+    {
+      "name": "numberSuite",
+      "members": [
+        {
+          "name": "u64-roundtrip",
+          "expected_failure": false
+        },
+        {
+          "name": "i64-roundtrip",
+          "expected_failure": false
+        }
+      ]
     }
   ]
 }

@@ -311,6 +311,10 @@ Binary := [].{
 		parse_dict_after_entry : Format, State -> Try([Continue(State), Done(State)], [MalformedInput, BudgetExceeded])
 		parse_dict_after_entry = |_, _| Err(MalformedInput)
 
+		## Binary never parses, so it never meets a repeated dictionary key.
+		parse_dict_duplicate_key : Format, State -> Try([KeepFirst(State), KeepLast(State)], [MalformedInput, BudgetExceeded])
+		parse_dict_duplicate_key = |_, _| Err(MalformedInput)
+
 		## Begin a dictionary key without adding a separate key marker.
 		encode_key_start : Format, List(U8) -> Try(List(U8), [])
 		encode_key_start = |_, state| Ok(state)

@@ -13,6 +13,7 @@ platform "roc-fuzz"
 		"roc_fuzz_name": name_for_host,
 		"roc_fuzz_run": run_for_host!,
 		"roc_fuzz_show": show_for_host,
+		"roc_fuzz_target_count": target_count_for_host,
 	}
 	hosted {
 		"roc_fuzz_alloc_count": Fuzz.alloc_count!,
@@ -39,17 +40,23 @@ import Arbitrary
 import Fuzz
 import Target
 
-name_for_host : () -> Str
-name_for_host = || target.name()
+target_count_for_host : () -> U64
+target_count_for_host = || target.count()
 
-example_count_for_host : () -> U64
-example_count_for_host = || target.example_count()
+selected : U64 -> Target
+selected = |index| target.get(index) ?? crash "target index is outside the suite inventory"
 
-example_for_host : U64 -> { name : Str, revision : Str, bytes : List(U8) }
-example_for_host = |index| target.example(index)
+name_for_host : U64 -> Str
+name_for_host = |index| selected(index).name()
 
-run_for_host! : List(U8) => U8
-run_for_host! = |input| target.run!(input)
+example_count_for_host : U64 -> U64
+example_count_for_host = |index| selected(index).example_count()
 
-show_for_host : List(U8) -> Str
-show_for_host = |input| target.show(input)
+example_for_host : U64, U64 -> { name : Str, revision : Str, bytes : List(U8) }
+example_for_host = |member, index| selected(member).example(index)
+
+run_for_host! : U64, List(U8) => U8
+run_for_host! = |index, input| selected(index).run!(input)
+
+show_for_host : U64, List(U8) -> Str
+show_for_host = |index, input| selected(index).show(input)

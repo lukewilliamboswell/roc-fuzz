@@ -23,6 +23,11 @@ const max_args = 256;
 
 var roc_host: abi.RocHost = undefined;
 var host_initialized = false;
+var selected_target: u64 = 0;
+var selected_name: [1025]u8 = undefined;
+var target_argument: [1040]u8 = undefined;
+extern "c" fn getenv(name: [*:0]const u8) ?[*:0]u8;
+extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
 var translated_argv: [max_args][*:0]u8 = undefined;
 var runs_arg: [128]u8 = undefined;
 var time_arg: [128]u8 = undefined;
@@ -391,17 +396,17 @@ fn makeInput(bytes: []const u8) abi.RocListWith(u8, false) {
 }
 
 fn printName() void {
-    const name = abi.roc_fuzz_name();
+    const name = abi.roc_fuzz_name(selected_target);
     writeOut(name.asSlice());
     name.decref(&roc_host);
 }
 
 fn prepareExamples(allocator: std.mem.Allocator) ![]const quality.Example {
-    const count = abi.roc_fuzz_example_count();
+    const count = abi.roc_fuzz_example_count(selected_target);
     if (count > 4096) return error.TooManyExamples;
     const examples = try allocator.alloc(quality.Example, @intCast(count));
     for (examples, 0..) |*example, index| {
-        const prepared = abi.roc_fuzz_example(@intCast(index));
+        const prepared = abi.roc_fuzz_example(selected_target, @intCast(index));
         defer prepared.decref(&roc_host);
         if (prepared.bytes.items().len > max_input_len) return error.ExampleTooLarge;
         example.* = .{
@@ -414,7 +419,7 @@ fn prepareExamples(allocator: std.mem.Allocator) ![]const quality.Example {
 }
 
 fn showInput(allocator: std.mem.Allocator, input: []const u8) ![]const u8 {
-    const shown = abi.roc_fuzz_show(makeInput(input));
+    const shown = abi.roc_fuzz_show(selected_target, makeInput(input));
     defer shown.decref(&roc_host);
     return allocator.dupe(u8, shown.asSlice());
 }
@@ -445,7 +450,7 @@ fn runOne(allocator: std.mem.Allocator, input: []const u8, capture: quality.Capt
     quality.healthObservationReady();
     const live_before = physical_live_allocs;
     const bytes_before = physical_live_bytes;
-    const status = abi.roc_fuzz_run(makeInput(input));
+    const status = abi.roc_fuzz_run(selected_target, makeInput(input));
     if (quality.workerLeakDetection() and (physical_live_allocs > live_before or physical_live_bytes > bytes_before)) {
         reportLeak(physical_live_allocs -| live_before);
     }
@@ -461,7 +466,7 @@ fn runOne(allocator: std.mem.Allocator, input: []const u8, capture: quality.Capt
 }
 
 fn dispatchQuality(argc: *c_int, argv: *[*][*:0]u8) void {
-    const name = abi.roc_fuzz_name();
+    const name = abi.roc_fuzz_name(selected_target);
     var buffer: [1024]u8 = undefined;
     const len = name.asSlice().len;
     if (len > buffer.len) {
@@ -505,6 +510,8 @@ fn printHelp() void {
         \\  TARGET reduce-corpus INPUT OUTPUT  retain a coverage corpus
         \\  TARGET raw [LIBFUZZER_ARG...]       advanced native controls
         \\
+        \\  --target=NAME       select one property from a suite
+        \\  --list-targets      list independently selectable properties
         \\  --baseline=PATH     override <target-name>_baseline.json in the working directory
         \\  --profile=NAME      select the named allocation profile (default: default)
         \\  --report-dir=DIR    write one report and original-run evidence to an empty directory
@@ -651,9 +658,93 @@ fn translateFriendlyArgs(argc: *c_int, argv_ptr: *[*][*:0]u8) void {
     // interface available for debugging and future libFuzzer flags.
 }
 
+fn selectionError(message: []const u8) noreturn {
+    writeErr(message);
+    writeErr("\nUse --list-targets to list available properties.\n");
+    std.c._exit(2);
+}
+
+fn listTargets(count: u64) void {
+    for (0..@intCast(count)) |index| {
+        const name = abi.roc_fuzz_name(@intCast(index));
+        writeOut(name.asSlice());
+        writeOut("\n");
+        name.decref(&roc_host);
+    }
+}
+
+// Selection happens before the quality supervisor or libFuzzer sees argv.
+// The inherited name keeps the same property selected across supervisor,
+// replay, minimization and raw libFuzzer exec workers.
+fn selectTarget(argc: *c_int, argv: *[*][*:0]u8) void {
+    const count = abi.roc_fuzz_target_count();
+    if (count == 0 or count > 4096) selectionError("invalid fuzz target inventory");
+    var requested: ?[]const u8 = null;
+    var list = false;
+    var input: usize = 1;
+    var output: usize = 1;
+    const original_count: usize = @intCast(argc.*);
+    while (input < original_count) : (input += 1) {
+        const argument = std.mem.span(argv.*[input]);
+        if (std.mem.eql(u8, argument, "--list-targets")) {
+            list = true;
+        } else if (std.mem.eql(u8, argument, "--target") or std.mem.startsWith(u8, argument, "--target=")) {
+            if (requested != null) selectionError("select exactly one --target");
+            if (std.mem.eql(u8, argument, "--target")) {
+                input += 1;
+                if (input >= original_count) selectionError("--target needs a name");
+                requested = std.mem.span(argv.*[input]);
+            } else requested = argument[9..];
+            if (requested.?.len == 0) selectionError("--target needs a name");
+        } else {
+            argv.*[output] = argv.*[input];
+            output += 1;
+        }
+    }
+    argc.* = @intCast(output);
+    if (list) {
+        listTargets(count);
+        std.c._exit(0);
+    }
+    if (requested == null) {
+        if (getenv("ROC_FUZZ_SELECTED_TARGET")) |inherited| requested = std.mem.span(inherited);
+    }
+    if (requested == null and count > 1) {
+        if (output == 2 and (std.mem.eql(u8, std.mem.span(argv.*[1]), "--help") or std.mem.eql(u8, std.mem.span(argv.*[1]), "help") or std.mem.eql(u8, std.mem.span(argv.*[1]), "-h"))) {
+            writeOut("Select a property with --target=NAME, then use its normal runner commands.\n");
+            listTargets(count);
+            std.c._exit(0);
+        }
+        selectionError("this executable has multiple properties; select --target=NAME");
+    }
+    selected_target = 0;
+    if (requested) |wanted| {
+        var found = false;
+        for (0..@intCast(count)) |index| {
+            const name = abi.roc_fuzz_name(@intCast(index));
+            defer name.decref(&roc_host);
+            if (std.mem.eql(u8, wanted, name.asSlice())) {
+                if (found) selectionError("ambiguous fuzz target name");
+                selected_target = @intCast(index);
+                found = true;
+            }
+        }
+        if (!found) selectionError("unknown fuzz target name");
+    }
+    const name = abi.roc_fuzz_name(selected_target);
+    defer name.decref(&roc_host);
+    if (name.asSlice().len > selected_name.len - 1) selectionError("fuzz target name is too long");
+    @memcpy(selected_name[0..name.asSlice().len], name.asSlice());
+    selected_name[name.asSlice().len] = 0;
+    const argument = std.fmt.bufPrint(&target_argument, "--target={s}", .{name.asSlice()}) catch selectionError("fuzz target name is too long");
+    quality.setTargetArgument(argument);
+    if (setenv("ROC_FUZZ_SELECTED_TARGET", @ptrCast(&selected_name), 1) != 0) selectionError("cannot pass target selection to workers");
+}
+
 pub export fn LLVMFuzzerInitialize(argc: *c_int, argv: *[*][*:0]u8) callconv(.c) c_int {
     if (argc.* > 0) executable_name = std.mem.span(argv.*[0]);
     initHost();
+    selectTarget(argc, argv);
     dispatchQuality(argc, argv);
     translateFriendlyArgs(argc, argv);
     return 0;
@@ -673,7 +764,7 @@ pub export fn LLVMFuzzerTestOneInput(data: ?[*]const u8, size: usize) callconv(.
     quality.healthObservationReady();
     const live_before = physical_live_allocs;
     const bytes_before = physical_live_bytes;
-    const status = abi.roc_fuzz_run(makeInput(input));
+    const status = abi.roc_fuzz_run(selected_target, makeInput(input));
     if (leak_detection_enabled and (physical_live_allocs > live_before or physical_live_bytes > bytes_before)) {
         reportLeak(physical_live_allocs -| live_before);
     }

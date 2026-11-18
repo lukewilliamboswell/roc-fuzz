@@ -286,6 +286,27 @@ Fuzz := [].{
 	entropy : List(U8) -> List(U8)
 	entropy = |input| Binary.entropy(input)
 
+	## Compile several named properties into one executable. Select one with
+	## `--target=NAME`; `--list-targets` lists the inventory. Each member retains
+	## its own examples, corpus encoding, baseline and failure reports.
+	suite : List(Target) -> Target
+	suite = |properties| {
+		combined = Target.new_suite(properties)
+		if combined.count() == 0 {
+			crash "a fuzz suite needs at least one target"
+		}
+		var $names = Set.empty()
+		for index in (0.U64).until(combined.count()) {
+			member = combined.get(index) ?? crash "invalid suite inventory"
+			name = member.name()
+			if name.is_empty() or $names.contains(name) {
+				crash "fuzz suite target names must be nonempty and unique"
+			}
+			$names = $names.insert(name)
+		}
+		combined
+	}
+
 	## Build a fuzz target using the input type's statically dispatched generator.
 	##
 	## The input type must define `generator_for : FuzzEncoding -> Generator(a)`.

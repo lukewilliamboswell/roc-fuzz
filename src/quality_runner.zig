@@ -414,13 +414,27 @@ fn monotonicMilliseconds() u64 {
     return @as(u64, @intCast(now.sec)) * 1000 + @as(u64, @intCast(now.nsec)) / 1_000_000;
 }
 
+var target_argument: ?[]const u8 = null;
+
+/// Borrow a stable selector to forward to each supervised invocation.
+pub fn setTargetArgument(argument: []const u8) void {
+    target_argument = argument;
+}
+
 fn runChild(allocator: Allocator, argv: []const []const u8, log_path: []const u8, deadline_ms: ?u64) !ChildResult {
     const log_z = try allocator.dupeZ(u8, log_path);
     defer allocator.free(log_z);
     const log = std.c.fopen(log_z.ptr, "ab") orelse return error.CannotCreateLog;
     defer _ = std.c.fclose(log);
     const output = std.Io.File{ .handle = fileno(log), .flags = .{ .nonblocking = false } };
-    var child = try std.process.spawn(io(), .{ .argv = argv, .stdin = .ignore, .stdout = .{ .file = output }, .stderr = .{ .file = output }, .pgid = 0 });
+    var forwarded: std.ArrayList([]const u8) = .empty;
+    defer forwarded.deinit(allocator);
+    if (target_argument) |argument| {
+        try forwarded.appendSlice(allocator, &.{ argv[0], argument });
+        try forwarded.appendSlice(allocator, argv[1..]);
+    }
+    const child_argv = if (target_argument != null) forwarded.items else argv;
+    var child = try std.process.spawn(io(), .{ .argv = child_argv, .stdin = .ignore, .stdout = .{ .file = output }, .stderr = .{ .file = output }, .pgid = 0 });
     const process_group = child.id.?;
     defer {
         _ = std.c.kill(-process_group, .KILL);

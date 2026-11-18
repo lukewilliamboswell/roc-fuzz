@@ -22,6 +22,7 @@ import src/Report
 import src/RocSource
 import src/Script
 import src/SkipNotes
+import src/TargetSuites
 import src/WeaverCli
 
 Operation : [All, Build, Check, Fuzz, Seed, Test]
@@ -63,7 +64,8 @@ main! = |raw_args| {
 	inventory = load_inventory!(Path.join(suite_root, "tests/targets.json"))?
 	selected = select_targets(cli_options.selected, cli_options.path_prefix, inventory)?
 	notes = SkipNotes.load!(Path.join(suite_root, "tests/targets.json"))?
-	settings = { max_total_time: cli_options.max_total_time, verbose: cli_options.verbose, campaign: cli_options.campaign_dir }
+	suites = TargetSuites.load!(Path.join(suite_root, "tests/targets.json"))?
+	settings = { suites, max_total_time: cli_options.max_total_time, verbose: cli_options.verbose, campaign: cli_options.campaign_dir }
 	roc = Script.roc!()?
 	Env.with_temp_dir!(
 		|work| {
@@ -263,6 +265,7 @@ executable_path = |work, item| Path.join(Path.join(work, "executables"), item.na
 
 run_step! = |stage, settings, roc, item, work|
 	match stage {
+		Seed | Measure | Quality | Fuzz if !TargetSuites.members(settings.suites, item.name).is_empty() => suite_step!(stage, roc, item, work, TargetSuites.members(settings.suites, item.name).map(|member| (member.name, if (member.expected_failure) 1 else 0)))
 		Check => run_quiet!(settings.verbose, roc, ["check", Path.to_os_str(item.path)], 0)
 		Test => run_quiet!(settings.verbose, roc, ["test", Path.to_os_str(item.path)], 0)
 		Build => {
@@ -286,6 +289,80 @@ run_step! = |stage, settings, roc, item, work|
 		Quality => quality_step!(item, work)
 		Fuzz => fuzz_step!(settings, item, work)
 	}
+
+## A single binary keeps heterogeneous properties, examples, baselines and
+## failures independent across both supervised and raw engine invocations.
+suite_step! = |stage, roc, item, work, members| {
+	selected_members : List((Str, I32))
+	selected_members = members
+	directory = Path.join(Path.join(work, "suite-selection"), stage_name(stage))
+	Path.create_all!(directory)?
+	executable = Script.command(Path.to_os_str(executable_path(work, item)))
+	plain = Path.join(directory, "suite-dev")
+	if stage == Measure {
+		run_quiet!(Bool.False, roc, ["build", "--opt=dev", Path.to_os_str(item.path), OsStr.from_str("--output=${Path.display(plain)}")], 0)?
+	}
+	for (name, expected) in selected_members {
+		selector = OsStr.from_str("--target=${name}")
+		args = match stage {
+			Seed => [selector, "replay", Path.to_os_str(seed_path!(item, work)?)]
+			Measure => [selector, "measure", Path.to_os_str(seed_path!(item, work)?)]
+			Quality => [selector, "check", OsStr.from_str("--report-dir=${name}")]
+			Fuzz => [selector, "explore", "--runs=100", OsStr.from_str("--report-dir=${name}")]
+			_ => return Err(StepFailed("unexpected suite stage"))
+		}
+		output = executable.output!(args, directory)?
+		if output.status != Exited(expected) {
+			return Err(StepFailed("suite ${name} ${stage_name(stage)} failed\n${tail(output)}"))
+		}
+		if stage == Measure {
+			from_dev = Script.command(Path.to_os_str(plain)).output!(args, directory)?
+			if from_dev.status != output.status or from_dev.stdout_bytes != output.stdout_bytes {
+				return Err(StepFailed("suite allocation observations differ in dev builds"))
+			}
+		}
+		if stage == Quality or stage == Fuzz {
+			report : { target : Str, outcome : Str }
+			report = Json.parse(Path.read_utf8!(Path.join(Path.join(directory, name), "report.json"))?)?
+			if report.target != name or report.outcome != (
+				if expected == 0 {
+					"passed"
+				} else {
+					"finding"
+				}
+			) {
+				return Err(StepFailed("suite selected the wrong property or report identity"))
+			}
+		}
+	}
+	if stage == Quality {
+		listed = executable.output!(["--list-targets"], directory)?
+		if listed.status != Exited(0) or Str.from_utf8_lossy(listed.stdout_bytes) != Str.join_with(selected_members.map(|member| "${member.0}\n"), "") {
+			return Err(StepFailed("suite inventory changed"))
+		}
+		for args in [["check"], ["--target=missing", "check"], ["--target=numbers", "--target=text", "check"]] {
+			rejected = executable.output!(args, directory)?
+			if rejected.status != Exited(2) {
+				return Err(StepFailed("invalid suite selection was accepted"))
+			}
+		}
+		for name in selected_members.keep_if(|member| member.1 == 0).map(|member| member.0) {
+			selector = OsStr.from_str("--target=${name}")
+			accepted = executable.output!([selector, "accept"], directory)?
+			if accepted.status != Exited(0) or !Path.is_file!(Path.join(directory, "${name}_baseline.json"))? {
+				return Err(StepFailed("suite did not keep independent baselines"))
+			}
+		}
+	}
+	if stage == Fuzz {
+		first = selected_members.first() ?? crash "suite fixture has no properties"
+		output = executable.output!([OsStr.from_str("--target=${first.0}"), "raw", "-runs=10", "-jobs=2", "-workers=2"], directory)?
+		if output.status != Exited(0) {
+			return Err(StepFailed("raw engine workers lost target selection\n${tail(output)}"))
+		}
+	}
+	Ok({})
+}
 
 ## A case that is expected to fail must fail the way a target failure does.
 expected_code = |item| if (item.expected_failure) 1 else 0
