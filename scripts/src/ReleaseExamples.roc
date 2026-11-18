@@ -7,6 +7,7 @@ import Integrity
 import RocSource
 import Script
 import SkipNotes
+import TargetSuites
 import Version
 
 ## Freeze release examples and acquire the exact published compatibility suite.
@@ -18,7 +19,7 @@ ReleaseExamples := [].{
 	Manifest : { schema : U64, version : Str, source_sha : Str, platform_url : Str, compiler : Str }
 	Case : { name : Str, path : Str, seed_hex : Str, expected_failure : Bool, skip_seed : Bool, skip_fuzz : Bool }
 	Inventory : { schema : U64, cases : List(Case) }
-	ArchivedInventory : { schema : U64, cases : List(Case), skips : List(SkipNotes.Note) }
+	ArchivedInventory : { schema : U64, cases : List(Case), skips : List(SkipNotes.Note), suites : List(TargetSuites.Suite) }
 	SharedCase : { name : Str, args : List(Str), stdin : Str, stdout : Str, stderr : Str, stderr_match : Str, exit_code : I32, skip : Try({ reason : Str, issue : Str }, [Missing]) }
 	SharedApp : { path : Str, build_args : List(Str), cases : List(SharedCase) }
 	SharedSuite : { schema_version : U64, release : Str, dependencies : List(Str), apps : List(SharedApp) }
@@ -88,8 +89,9 @@ ReleaseExamples := [].{
 		inventory = Json.parse(Path.read_utf8!(Path.join(root, "tests/targets.json"))?)?
 		cases = inventory.cases.keep_if(|item| Script.starts_with(item.path, "examples/"))
 		notes = SkipNotes.load!(Path.join(root, "tests/targets.json"))?
+		suites = TargetSuites.load!(Path.join(root, "tests/targets.json"))?.keep_if(|suite| cases.any(|item| item.name == suite.name))
 		archived : ArchivedInventory
-		archived = { schema: inventory.schema, cases, skips: notes.keep_if(|note| cases.any(|item| item.name == note.name)) }
+		archived = { schema: inventory.schema, cases, suites, skips: notes.keep_if(|note| cases.any(|item| item.name == note.name)) }
 		names = AutomationIO.tracked!(root, ["examples"])?.concat(["tests/targets.json"])
 		Env.with_temp_dir!(
 			|temporary| {
@@ -129,15 +131,19 @@ ReleaseExamples := [].{
 					$seeds = $seeds.append(seed)
 					parent_depth = Str.split_on(item.path, "/").len() - 2
 					corpus = "${Str.repeat("../", parent_depth)}.roc-fuzz/corpus/${item.name}"
-					code = if (item.expected_failure) 1 else 0
-					$apps = $apps.append({
-						path: item.path,
-						build_args: ["--fuzz"],
-						cases: [
-							{ name: "replay", args: ["replay", "${corpus}/seed"], stdin: "", stdout: "", stderr: "", stderr_match: "ignore", exit_code: code, skip: shared_skip(item.skip_seed, item.name, "seed", notes)? },
-							{ name: "smoke", args: ["run", corpus, "--time=1", "--seed=1"], stdin: "", stdout: "", stderr: "", stderr_match: "ignore", exit_code: code, skip: shared_skip(item.skip_fuzz, item.name, "fuzz", notes)? },
-						],
-					})
+					members = TargetSuites.members(suites, item.name)
+					selections = if (members.is_empty()) [{ name: "", expected_failure: item.expected_failure }] else members
+					var $checks = []
+					for member in selections {
+						selector = if (member.name.is_empty()) [] else ["--target=${member.name}"]
+						suffix = if (member.name.is_empty()) "" else "-${member.name}"
+						code = if (member.expected_failure) 1 else 0
+						$checks = $checks.concat([
+							{ name: "replay${suffix}", args: selector.concat(["replay", "${corpus}/seed"]), stdin: "", stdout: "", stderr: "", stderr_match: "ignore", exit_code: code, skip: shared_skip(item.skip_seed, item.name, "seed", notes)? },
+							{ name: "smoke${suffix}", args: selector.concat(["run", corpus, "--time=1", "--seed=1"]), stdin: "", stdout: "", stderr: "", stderr_match: "ignore", exit_code: code, skip: shared_skip(item.skip_fuzz, item.name, "fuzz", notes)? },
+						])
+					}
+					$apps = $apps.append({ path: item.path, build_args: ["--fuzz"], cases: $checks })
 				}
 				suite : SharedSuite
 				suite = { schema_version: 1, release: manifest.version, dependencies: [manifest.platform_url], apps: $apps }

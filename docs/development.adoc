@@ -339,6 +339,11 @@ supervisor lifecycle suite, type-checks the platform and runs its
 `tests/targets.json`. After native inputs are prepared, `test-targets`
 provides the focused operations shown above.
 
+For an application built with `Fuzz.suite`, add a `suites` entry in
+`tests/targets.json` with the case name and its `members`, each containing
+`name` and `expected_failure`. Both the target driver and release archive use
+this inventory to select every member while sharing one executable.
+
 `test-targets` runs each stage of the operation (check, test, build, seed,
 measure, quality, fuzz) over every selected case and prints one line per step as it
 finishes, with its position, `PASS`, `FAIL` or `SKIP`, and its time in

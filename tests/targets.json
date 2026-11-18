@@ -873,5 +873,54 @@
       "name": "strToNat",
       "reason": "Nat was removed; the fixed-width unsigned parser targets cover the supported API."
     }
+  ],
+  "suites": [
+    {
+      "name": "qualitySuite",
+      "members": [
+        {
+          "name": "numbers",
+          "expected_failure": false
+        },
+        {
+          "name": "text",
+          "expected_failure": false
+        },
+        {
+          "name": "failures",
+          "expected_failure": true
+        }
+      ]
+    },
+    {
+      "name": "collectionSuite",
+      "members": [
+        {
+          "name": "list-split-roundtrip",
+          "expected_failure": false
+        },
+        {
+          "name": "list-concat",
+          "expected_failure": false
+        },
+        {
+          "name": "text-roundtrip",
+          "expected_failure": false
+        }
+      ]
+    },
+    {
+      "name": "numberSuite",
+      "members": [
+        {
+          "name": "u64-roundtrip",
+          "expected_failure": false
+        },
+        {
+          "name": "i64-roundtrip",
+          "expected_failure": false
+        }
+      ]
+    }
   ]
 }

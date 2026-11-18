@@ -22,6 +22,7 @@ import src/Report
 import src/RocSource
 import src/Script
 import src/SkipNotes
+import src/TargetSuites
 import src/WeaverCli
 
 Operation : [All, Build, Check, Fuzz, Seed, Test]
@@ -63,7 +64,8 @@ main! = |raw_args| {
 	inventory = load_inventory!(Path.join(suite_root, "tests/targets.json"))?
 	selected = select_targets(cli_options.selected, cli_options.path_prefix, inventory)?
 	notes = SkipNotes.load!(Path.join(suite_root, "tests/targets.json"))?
-	settings = { max_total_time: cli_options.max_total_time, verbose: cli_options.verbose, campaign: cli_options.campaign_dir }
+	suites = TargetSuites.load!(Path.join(suite_root, "tests/targets.json"))?
+	settings = { suites, max_total_time: cli_options.max_total_time, verbose: cli_options.verbose, campaign: cli_options.campaign_dir }
 	roc = Script.roc!()?
 	Env.with_temp_dir!(
 		|work| {
@@ -263,9 +265,7 @@ executable_path = |work, item| Path.join(Path.join(work, "executables"), item.na
 
 run_step! = |stage, settings, roc, item, work|
 	match stage {
-		Seed | Measure | Quality | Fuzz if item.name == "qualitySuite" => suite_step!(stage, roc, item, work, [("numbers", 0), ("text", 0), ("failures", 1)])
-		Seed | Measure | Quality | Fuzz if item.name == "collectionSuite" => suite_step!(stage, roc, item, work, [("list-split-roundtrip", 0), ("list-concat", 0), ("text-roundtrip", 0)])
-		Seed | Measure | Quality | Fuzz if item.name == "numberSuite" => suite_step!(stage, roc, item, work, [("u64-roundtrip", 0), ("i64-roundtrip", 0)])
+		Seed | Measure | Quality | Fuzz if !TargetSuites.members(settings.suites, item.name).is_empty() => suite_step!(stage, roc, item, work, TargetSuites.members(settings.suites, item.name).map(|member| (member.name, if (member.expected_failure) 1 else 0)))
 		Check => run_quiet!(settings.verbose, roc, ["check", Path.to_os_str(item.path)], 0)
 		Test => run_quiet!(settings.verbose, roc, ["test", Path.to_os_str(item.path)], 0)
 		Build => {

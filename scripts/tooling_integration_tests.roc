@@ -15,6 +15,7 @@ import src/LinkInputs
 import src/Project
 import src/ReleaseExamples
 import src/Script
+import src/TargetSuites
 
 main! = |_args| {
 	root = Project.root!()?
@@ -60,6 +61,22 @@ main! = |_args| {
 			entries = Archive.entries!(Archive.Format.Zip, first, ReleaseExamples.limit)?
 			Script.require!(entries.all(|entry| Script.starts_with(entry.name, "roc-fuzz-examples-1.2.3/")), "Archive must have one canonical root")?
 			Script.require!(!entries.any(|entry| entry.name.contains("templates/")), "Consumer templates must remain outside example packaging and URL rewrites")?
+			# Suite metadata survives packaging and selects every member from one build.
+			members = [{ name: "passing", expected_failure: Bool.False }, { name: "finding", expected_failure: Bool.True }]
+			suites = [{ name: "nested", members }]
+			AutomationIO.json!(Path.join(source, "tests/targets.json"), { schema: inventory.schema, cases: inventory.cases, suites })?
+			multi = Path.join(temp, "multi.zip")
+			ReleaseExamples.package!(source, multi, manifest)?
+			multi_root = Path.join(temp, "multi-suite")
+			_ = ReleaseExamples.unpack!(multi, multi_root)?
+			Script.require!(TargetSuites.load!(Path.join(multi_root, "tests/targets.json"))? == suites, "Archived suites must retain member identities")?
+			multi_spec : ReleaseExamples.SharedSuite
+			multi_spec = Json.parse(Path.read_utf8!(Path.join(multi_root, "roc-fuzz-examples-1.2.3/spec.json"))?)?
+			checks = multi_spec.apps.first()?.cases
+			Script.require!(multi_spec.apps.len() == 1 and checks.len() == 4, "One suite build must exercise every member")?
+			Script.require!(checks.take_first(2).all(|check| check.args.first() == Ok("--target=passing") and check.exit_code == 0), "Passing member selection must survive packaging")?
+			Script.require!(checks.drop_first(2).all(|check| check.args.first() == Ok("--target=finding") and check.exit_code == 1), "Finding member selection must retain its exit code")?
+			AutomationIO.json!(Path.join(source, "tests/targets.json"), inventory)?
 			flat = Path.join(temp, "legacy.zip")
 			Archive.pack!(Archive.Format.Zip, suite, ["release.json", "tests/targets.json", "examples/nested/main.roc", "examples/nested/Other.roc", "examples/shared/main.roc"], flat)?
 			Script.require!(ReleaseExamples.unpack!(flat, Path.join(temp, "legacy-suite"))? == manifest, "Historical flat archives must remain readable")?
