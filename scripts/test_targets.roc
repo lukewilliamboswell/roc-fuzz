@@ -298,9 +298,11 @@ suite_step! = |stage, roc, item, work, members| {
 	directory = Path.join(Path.join(work, "suite-selection"), stage_name(stage))
 	Path.create_all!(directory)?
 	executable = Script.command(Path.to_os_str(executable_path(work, item)))
-	plain = Path.join(directory, "suite-dev")
+	plain = Path.join(directory, "suite-plain")
 	if stage == Measure {
-		run_quiet!(Bool.False, roc, ["build", "--opt=dev", Path.to_os_str(item.path), OsStr.from_str("--output=${Path.display(plain)}")], 0)?
+		# Use the same default backend for both builds to compare the effect of
+		# coverage instrumentation on allocation observations.
+		run_quiet!(Bool.False, roc, ["build", Path.to_os_str(item.path), OsStr.from_str("--output=${Path.display(plain)}")], 0)?
 	}
 	for (name, expected) in selected_members {
 		selector = OsStr.from_str("--target=${name}")
@@ -316,9 +318,9 @@ suite_step! = |stage, roc, item, work, members| {
 			return Err(StepFailed("suite ${name} ${stage_name(stage)} failed\n${tail(output)}"))
 		}
 		if stage == Measure {
-			from_dev = Script.command(Path.to_os_str(plain)).output!(args, directory)?
-			if from_dev.status != output.status or from_dev.stdout_bytes != output.stdout_bytes {
-				return Err(StepFailed("suite allocation observations differ in dev builds"))
+			from_plain = Script.command(Path.to_os_str(plain)).output!(args, directory)?
+			if from_plain.status != output.status or from_plain.stdout_bytes != output.stdout_bytes {
+				return Err(StepFailed("suite allocation observations differ when built without --fuzz\ninstrumented: ${tail(output)}\nordinary: ${tail(from_plain)}"))
 			}
 		}
 		if stage == Quality or stage == Fuzz {
