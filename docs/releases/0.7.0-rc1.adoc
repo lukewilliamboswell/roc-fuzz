@@ -1,0 +1,38 @@
+= roc-fuzz 0.7.0-rc1
+
+This release candidate lets independent properties share one compiled fuzz
+executable. Group existing targets with `Fuzz.suite([target_a, target_b])`;
+members can use different input types and generators. Build once, list the
+members, then select one by name:
+
+[source,sh]
+----
+roc build --fuzz examples/multipleTargets/main.roc --output=fuzz-targets
+./fuzz-targets --list-targets
+./fuzz-targets --target=list-concat check
+./fuzz-targets --target=text-roundtrip explore corpus/text --runs=1000
+----
+
+Each member keeps its own examples, corpus encoding, allocation baseline and
+report identity. Selection follows supervised workers, replay, minimization and
+raw libFuzzer exec workers. Nested suites flatten; names must be nonempty and
+unique. A multi-target executable requires `--target=NAME`; existing single-target
+applications retain their commands.
+
+The examples archive includes collection/text and signed/unsigned number
+suites. Its checks select every member while building each application once.
+The binary codec also provides the duplicate-dictionary-key format hook
+required by newer Roc compilers. CI uses updated roc-automation and CodeQL actions.
+
+Update your platform URL and rebuild each executable; the native target-selection
+ABI changed. Code that matches `Target` directly must also handle its new suite
+variant:
+
+[source,roc]
+----
+app [target] { fuzz: platform "{platform-url}" }
+----
+
+Supported hosts remain Linux x86-64 and Apple Silicon macOS. The release includes
+[the manual]({manual-url}), examples, SBOM documents and provenance. This is a
+prerelease; test it with your existing targets and report regressions before 0.7.0.
