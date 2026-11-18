@@ -76,6 +76,11 @@ main! = |_args| {
 			Script.require!(multi_spec.apps.len() == 1 and checks.len() == 4, "One suite build must exercise every member")?
 			Script.require!(checks.take_first(2).all(|check| check.args.first() == Ok("--target=passing") and check.exit_code == 0), "Passing member selection must survive packaging")?
 			Script.require!(checks.drop_first(2).all(|check| check.args.first() == Ok("--target=finding") and check.exit_code == 1), "Finding member selection must retain its exit code")?
+			Script.require!(checks.first()?.args == ["--target=passing", "replay", "../.roc-fuzz/corpus/nested/passing/seed"], "Each suite member must have its own corpus")?
+			Script.require!(checks.get(2)?.args == ["--target=finding", "replay", "../.roc-fuzz/corpus/nested/finding/seed"], "Distinct member encodings must not share a corpus")?
+			for name in ["passing", "finding"] {
+				Script.require!(Path.read_bytes!(Path.join(multi_root, "examples/.roc-fuzz/corpus/nested/${name}/seed"))? == [0], "Each archived member must retain its seed")?
+			}
 			AutomationIO.json!(Path.join(source, "tests/targets.json"), inventory)?
 			flat = Path.join(temp, "legacy.zip")
 			Archive.pack!(Archive.Format.Zip, suite, ["release.json", "tests/targets.json", "examples/nested/main.roc", "examples/nested/Other.roc", "examples/shared/main.roc"], flat)?

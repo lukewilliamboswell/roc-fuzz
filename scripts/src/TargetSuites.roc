@@ -1,4 +1,5 @@
 import cli.Path
+import Archive
 
 ## Shared executable members used by repository and archived-example checks.
 TargetSuites := [].{
@@ -21,7 +22,7 @@ TargetSuites := [].{
 					$names = $names.append(suite.name)
 					var $members = []
 					for member in suite.members {
-						if member.name.is_empty() or $members.contains(member.name) {
+						if !Archive.safe_name(member.name) or member.name.contains("/") or $members.contains(member.name) {
 							return Err(InvalidSuiteMember(suite.name, member.name))
 						}
 						$members = $members.append(member.name)

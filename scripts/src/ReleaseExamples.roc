@@ -126,15 +126,16 @@ ReleaseExamples := [].{
 				var $apps = []
 				var $seeds = []
 				for item in cases {
-					seed = "${metadata}/corpus/${item.name}/seed"
-					AutomationIO.write!(Path.join(staging, seed), seed_bytes(item.seed_hex)?)?
-					$seeds = $seeds.append(seed)
 					parent_depth = Str.split_on(item.path, "/").len() - 2
-					corpus = "${Str.repeat("../", parent_depth)}.roc-fuzz/corpus/${item.name}"
 					members = TargetSuites.members(suites, item.name)
 					selections = if (members.is_empty()) [{ name: "", expected_failure: item.expected_failure }] else members
 					var $checks = []
 					for member in selections {
+						corpus_name = if (member.name.is_empty()) item.name else "${item.name}/${member.name}"
+						seed = "${metadata}/corpus/${corpus_name}/seed"
+						AutomationIO.write!(Path.join(staging, seed), seed_bytes(item.seed_hex)?)?
+						$seeds = $seeds.append(seed)
+						corpus = "${Str.repeat("../", parent_depth)}.roc-fuzz/corpus/${corpus_name}"
 						selector = if (member.name.is_empty()) [] else ["--target=${member.name}"]
 						suffix = if (member.name.is_empty()) "" else "-${member.name}"
 						code = if (member.expected_failure) 1 else 0
