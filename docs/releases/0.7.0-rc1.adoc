@@ -24,6 +24,12 @@ suites. Its checks select every member while building each application once.
 The binary codec also provides the duplicate-dictionary-key format hook
 required by newer Roc compilers. CI uses updated roc-automation and CodeQL actions.
 
+On the tested November 15 nightly, combining one CSV diagnostic-retention
+property with another byte-input property changes a structured error tag after
+`Fuzz.measure!` returns. Keep an affected property in a separate executable;
+its original diagnostic and allocation checks pass there. The investigation and
+compiler controls are recorded in [PR #107](https://github.com/lukewilliamboswell/roc-fuzz/pull/107).
+
 Update your platform URL and rebuild each executable; the native target-selection
 ABI changed. Code that matches `Target` directly must also handle its new suite
 variant:
