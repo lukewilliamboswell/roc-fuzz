@@ -3,9 +3,9 @@
 ## stays the one place where the tooling compiler and its bundles are chosen.
 Tooling := [].{
 
-	## The release tag in `Command("roc-stable", "nix#rocpkgs.<tag>")`.
+	## The release tag in the roc-stable download recipe.
 	stable_tag = |blueprint|
-		match Str.split_on(blueprint, "Command(\"roc-stable\", \"nix#rocpkgs.") {
+		match Str.split_on(blueprint, "Fetch(\"roc-stable\", Recipes.roc_nightly(\"") {
 			[_, rest] => match Str.split_on(rest, "\"") {
 				[tag, ..] if !tag.is_empty() => Ok(tag)
 				_ => Err(MissingToolingCompiler)
@@ -42,7 +42,7 @@ Tooling := [].{
 		}
 }
 
-sample = "app [config] { pf: platform \"https://example.org/blueprint.tar.zst\" }\nconfig = [\n\tEnvironment(\"dev\", [\n\t\tCommand(\"roc-stable\", \"nix#rocpkgs.nightly-2026-09-29-7f11a82\"),\n\t\t# A comment that mentions \"https://example.org/ignored.tar.zst\".\n\t\tRocPackages([\n\t\t\t\"https://example.org/one.tar.zst\",\n\t\t\t# \"https://example.org/commented.tar.zst\",\n\t\t\t\"https://example.org/two.tar.zst\",\n\t\t]),\n\t]),\n]\n"
+sample = "app [config] { pf: platform \"https://example.org/blueprint.tar.zst\" }\nconfig = [\n\tEnvironment(\"dev\", [\n\t\tPrograms([Fetch(\"roc-stable\", Recipes.roc_nightly(\"nightly-2026-09-29-7f11a82\"))]),\n\t\t# A comment that mentions \"https://example.org/ignored.tar.zst\".\n\t\tRocPackages([\n\t\t\t\"https://example.org/one.tar.zst\",\n\t\t\t# \"https://example.org/commented.tar.zst\",\n\t\t\t\"https://example.org/two.tar.zst\",\n\t\t]),\n\t]),\n]\n"
 
 expect Tooling.stable_tag(sample) == Ok("nightly-2026-09-29-7f11a82")
 expect Tooling.stable_tag("config = []") == Err(MissingToolingCompiler)

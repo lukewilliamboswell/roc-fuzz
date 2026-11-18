@@ -16,8 +16,17 @@ LibrarySource := [Release, Source].{
 			Release => "release"
 			Source => "source"
 		}
+
+	is_eq = |left, right| match (left, right) {
+		(Release, Release) | (Source, Source) => Bool.True
+		_ => Bool.False
+	}
 }
 
+expect LibrarySource.(Release) == LibrarySource.(Release)
+expect LibrarySource.(Source) == LibrarySource.(Source)
+expect LibrarySource.(Release) != LibrarySource.(Source)
+expect LibrarySource.(Source) != LibrarySource.(Release)
 expect LibrarySource.parse("release") == Ok(Release)
 expect match LibrarySource.parse("local") {
 	Err(_) => Bool.True

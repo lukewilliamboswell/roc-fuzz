@@ -1,9 +1,9 @@
 #!/usr/bin/env roc-stable
 app [main!] {
-	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst",
-	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.26.0/GddgvsGjiNXrHFW6au5i5dUDbTs8FinQdrgE2Gqmw53t.tar.zst",
-	roc: "nightly-2026-10-23-18478ff",
-	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
+	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.3/BioPdu7WjVhTB2j1HaomKMi8htxsuwqwr79GbXY5nAUf.tar.zst",
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.28.1/7brgwR8YUqfeGrkdfF1V4GPPN7DnP7ftqub9KcrTEZtr.tar.zst",
+	roc: "nightly-2026-11-18-a520eed",
+	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.10.2/7CdYzjBAJmprmnK45oTpmH6BXt76ZASN2Ck5uZQEoWsK.tar.zst",
 }
 
 import cli.Env
@@ -26,7 +26,7 @@ main! = |_args| {
 			AutomationIO.write!(Path.join(source, "examples/shared/main.roc"), "package [] {}\n".to_utf8())?
 			AutomationIO.write!(Path.join(source, "examples/nested/Other.roc"), "answer = 42\n".to_utf8())?
 			AutomationIO.write!(Path.join(source, "examples/nested/witnesses/regression.bin"), [0, 1, 255, 0, 82, 70, 90])?
-			AutomationIO.write!(Path.join(source, "templates/quality/fuzz.roc.in"), "platform placeholder must remain outside example packaging\n".to_utf8())?
+			AutomationIO.write!(Path.join(source, "tests/targets/internal.roc"), "internal test target must remain outside example packaging\n".to_utf8())?
 			inventory : ReleaseExamples.Inventory
 			inventory = { schema: 1, cases: [{ name: "nested", path: "examples/nested/main.roc", seed_hex: "00", expected_failure: Bool.False, skip_seed: Bool.False, skip_fuzz: Bool.False }] }
 			AutomationIO.json!(Path.join(source, "tests/targets.json"), inventory)?
@@ -60,7 +60,7 @@ main! = |_args| {
 			Script.require!(Path.read_bytes!(Path.join(canonical, "examples/nested/witnesses/regression.bin"))? == [0, 1, 255, 0, 82, 70, 90], "Archive must preserve original witness bytes and relative paths")?
 			entries = Archive.entries!(Archive.Format.Zip, first, ReleaseExamples.limit)?
 			Script.require!(entries.all(|entry| Script.starts_with(entry.name, "roc-fuzz-examples-1.2.3/")), "Archive must have one canonical root")?
-			Script.require!(!entries.any(|entry| entry.name.contains("templates/")), "Consumer templates must remain outside example packaging and URL rewrites")?
+			Script.require!(!entries.any(|entry| entry.name.contains("tests/targets/")), "Internal test targets must remain outside example packaging and URL rewrites")?
 			# Suite metadata survives packaging and selects every member from one build.
 			members = [{ name: "passing", expected_failure: Bool.False }, { name: "finding", expected_failure: Bool.True }]
 			suites = [{ name: "nested", members }]

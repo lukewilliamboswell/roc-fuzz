@@ -151,9 +151,19 @@
       "reason": "Package set the development environment's tools come from; nothing from it ships"
     },
     {
-      "input": "source:roc",
+      "input": "program:roc-stable:x86_64-linux",
       "component": "",
-      "reason": "Overlay that provides roc-stable, the compiler that runs the repository scripts; it does not build the bundle"
+      "reason": "Pinned compiler that runs repository scripts; it does not build the bundle"
+    },
+    {
+      "input": "program:roc-stable:aarch64-linux",
+      "component": "",
+      "reason": "Pinned compiler that runs repository scripts; it does not build the bundle"
+    },
+    {
+      "input": "program:roc-stable:aarch64-darwin",
+      "component": "",
+      "reason": "Pinned compiler that runs repository scripts; it does not build the bundle"
     },
     {
       "input": "source:zig",
@@ -211,12 +221,12 @@
       "reason": "Documentation renderer; the manual is a separate release file"
     },
     {
-      "input": "roc-package:GddgvsGjiNXrHFW6au5i5dUDbTs8FinQdrgE2Gqmw53t",
+      "input": "roc-package:7brgwR8YUqfeGrkdfF1V4GPPN7DnP7ftqub9KcrTEZtr",
       "component": "",
-      "reason": "Package the repository scripts import (https://github.com/roc-lang/basic-cli/releases/download/0.26.0/GddgvsGjiNXrHFW6au5i5dUDbTs8FinQdrgE2Gqmw53t.tar.zst); scripts do not ship"
+      "reason": "Package the repository scripts import (https://github.com/roc-lang/basic-cli/releases/download/0.28.1/7brgwR8YUqfeGrkdfF1V4GPPN7DnP7ftqub9KcrTEZtr.tar.zst); scripts do not ship"
     },
     {
-      "input": "build-source:roc-GddgvsGjiNXrHFW6au5i5dUDbTs8FinQdrgE2Gqmw53t",
+      "input": "build-source:roc-7brgwR8YUqfeGrkdfF1V4GPPN7DnP7ftqub9KcrTEZtr",
       "component": "",
       "reason": "The same script package, as the source the environment prefetches; scripts do not ship"
     },
@@ -231,12 +241,12 @@
       "reason": "The same script package, as the source the environment prefetches; scripts do not ship"
     },
     {
-      "input": "roc-package:JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL",
+      "input": "roc-package:BioPdu7WjVhTB2j1HaomKMi8htxsuwqwr79GbXY5nAUf",
       "component": "",
-      "reason": "Package the repository scripts import (https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst); scripts do not ship"
+      "reason": "Package the repository scripts import (https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.3/BioPdu7WjVhTB2j1HaomKMi8htxsuwqwr79GbXY5nAUf.tar.zst); scripts do not ship"
     },
     {
-      "input": "build-source:roc-JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL",
+      "input": "build-source:roc-BioPdu7WjVhTB2j1HaomKMi8htxsuwqwr79GbXY5nAUf",
       "component": "",
       "reason": "The same script package, as the source the environment prefetches; scripts do not ship"
     },
@@ -251,12 +261,12 @@
       "reason": "The same script package, as the source the environment prefetches; scripts do not ship"
     },
     {
-      "input": "roc-package:7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77",
+      "input": "roc-package:7CdYzjBAJmprmnK45oTpmH6BXt76ZASN2Ck5uZQEoWsK",
       "component": "",
-      "reason": "Package the repository scripts import (https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst); scripts do not ship"
+      "reason": "Package the repository scripts import (https://github.com/lukewilliamboswell/weaver/releases/download/0.10.2/7CdYzjBAJmprmnK45oTpmH6BXt76ZASN2Ck5uZQEoWsK.tar.zst); scripts do not ship"
     },
     {
-      "input": "build-source:roc-7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77",
+      "input": "build-source:roc-7CdYzjBAJmprmnK45oTpmH6BXt76ZASN2Ck5uZQEoWsK",
       "component": "",
       "reason": "The same script package, as the source the environment prefetches; scripts do not ship"
     },

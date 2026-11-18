@@ -5,10 +5,10 @@ import cli.Path
 ## Repository layout and native target definitions.
 Project := [].{
 	Target := [Arm64Mac, X64Musl].{
-		parse = |name| match name {
+		parse = |target_name| match target_name {
 			"x64musl" => Ok(Target.X64Musl)
 			"arm64mac" => Ok(Target.Arm64Mac)
-			_ => Err(UnknownTarget(name))
+			_ => Err(UnknownTarget(target_name))
 		}
 
 		name = |self| match self {

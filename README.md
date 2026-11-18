@@ -52,8 +52,8 @@ target = Fuzz.target_with({
 })
 ```
 
-See the [consumer template](templates/quality/README.adoc) for Blueprint tasks
-and CI integration.
+See the [CI guide](docs/quality.adoc) for verification commands and evidence
+collection.
 
 The [roc-fuzz manual](https://lukewilliamboswell.github.io/roc-fuzz/) covers
 target design, failure investigation, campaign tuning, corpora, CI evidence,

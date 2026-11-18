@@ -1,10 +1,7 @@
 = Add fuzzing to CI
 
 Every target executable contains its supervisor, baseline reader and evidence
-writer. A consumer needs Roc and the compiled target. The
-https://github.com/lukewilliamboswell/roc-fuzz/tree/trunk/templates/quality[Blueprint consumer template] supplies pinned
-compiler downloads, ordinary tasks and a workflow with no package provider.
-It lives outside the release example URL rewriting path.
+writer. A consumer needs Roc and the compiled target.
 
 [source,sh]
 ----
@@ -108,14 +105,16 @@ consumer tasks use only fetched compilers and self-contained target executables.
 
 === GitHub Actions pattern
 
-The template under `templates/quality/` includes a complete pinned-action workflow
-for Linux and Apple Silicon macOS. Its verification task builds, checks and
-explores with `run --report-dir=...`. Upload evidence even on failure:
+After checking out your project and installing Roc, build the target and run
+verification on each supported host in your CI matrix. Upload evidence even on
+failure:
 
 [source,yaml]
 ----
 - name: Verify quality
-  run: blueprint workflow verify
+  run: |
+    roc build --fuzz fuzz/main.roc --output=fuzz-target
+    ./fuzz-target run --report-dir=.roc-fuzz/verify
 - name: Preserve evidence
   if: always()
   uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9

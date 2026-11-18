@@ -40,8 +40,8 @@ Two Roc compilers are involved, and they are not interchangeable:
 `Blueprint.roc` declares the tooling environment and `Blueprint.lock` pins it:
 `roc-stable`, the Roc bundles the scripts depend on, and the programs they
 start. https://github.com/lukewilliamboswell/roc-blueprint[roc-blueprint]
-realises that environment with Nix, the same way on a contributor's machine and
-on every CI runner. To work on roc-fuzz you need:
+fetches the compiler archives and uses Nix for the other tools, the same way on
+a contributor's machine and on every CI runner. To work on roc-fuzz you need:
 
 * https://nixos.org/download[Nix];
 * the `blueprint` command, from the roc-blueprint release that the platform URL
@@ -84,10 +84,10 @@ maintainer opens:
 
 Update the lock:: Run `blueprint update`, or `blueprint update INPUT` to move
 one input, then `blueprint run check`.
-Change the tooling compiler:: Change the tag in `Command("roc-stable", ...)` in
+Change the tooling compiler:: Change the tag in `Fetch("roc-stable", ...)` in
 `Blueprint.roc` and the `roc` field of every script to the same tag. The check
-script fails until they match. Run `blueprint update roc` if the locked overlay
-predates that nightly.
+script fails until they match. Run `blueprint update roc-stable` to lock the
+compiler archives for every supported development host.
 Upgrade Blueprint:: Change the platform URL in the `Blueprint.roc` header, run
 `blueprint check` and then a full `blueprint update`, and review the new lock.
 No workflow names the version: `actions/setup-blueprint` reads it from
