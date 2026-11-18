@@ -81,6 +81,8 @@ pub const RocErasedCallableOnDrop = *const fn (?[*]u8, *RocHost) callconv(.c) vo
 pub const RocErasedCallablePayload = extern struct {
     callable_fn_ptr: RocErasedCallableFn,
     on_drop: ?RocErasedCallableOnDrop,
+    on_copy: ?*const fn (?[*]u8, isize) callconv(.c) void = null,
+    capture_size: usize = 0,
 };
 
 /// Runtime representation of `Box(function)`.
@@ -118,7 +120,7 @@ pub fn rocErasedCallableAllocate(
     const rc: *isize = @ptrFromInt(@intFromPtr(data) - @sizeOf(isize));
     rc.* = 1;
     const payload: *RocErasedCallablePayload = @ptrCast(@alignCast(data));
-    payload.* = .{ .callable_fn_ptr = callable_fn_ptr, .on_drop = on_drop };
+    payload.* = .{ .callable_fn_ptr = callable_fn_ptr, .on_drop = on_drop, .capture_size = capture_size };
     return data;
 }
 
@@ -562,6 +564,86 @@ pub fn RocListWith(comptime T: type, comptime elements_refcounted: bool) type {
     };
 }
 
+/// A Roc list whose items have a type only the application knows.
+///
+/// This host knows neither the size of an item nor whether items are
+/// refcounted, so it cannot read an item, allocate such a list, or release
+/// one. It can move the list, retain it, and pass it back to Roc. To release
+/// it, pass it to a Roc function that takes ownership of it.
+pub const RocOpaqueList = extern struct {
+    elements_ptr: ?*anyopaque,
+    length: usize,
+    capacity_or_alloc_ptr: usize,
+
+    /// Return the number of items in the list.
+    pub fn len(self: RocOpaqueList) usize {
+        return self.length;
+    }
+
+    /// Return true if the list has zero items.
+    pub fn isEmpty(self: RocOpaqueList) bool {
+        return self.length == 0;
+    }
+
+    /// Increment the reference count by `amount`.
+    pub fn incref(self: RocOpaqueList, amount: isize) void {
+        retainListAllocation(self.elements_ptr, self.capacity_or_alloc_ptr, amount);
+    }
+};
+
+/// A Roc list whose items hold opaque Roc values.
+///
+/// The items have a known layout, so the host can read them. Whether the
+/// opaque values inside them are refcounted is known only to Roc, and the
+/// list's allocation header depends on it, so the host cannot allocate such
+/// a list or release one. It can move the list, retain it, and pass it back
+/// to Roc. To release it, pass it to a Roc function that takes ownership of
+/// it.
+pub fn RocHeldList(comptime T: type) type {
+    return extern struct {
+        elements_ptr: ?[*]T,
+        length: usize,
+        capacity_or_alloc_ptr: usize,
+
+        const Self = @This();
+
+        /// Return the list items as a `[]const T` slice.
+        pub fn items(self: Self) []const T {
+            if (self.elements_ptr) |ptr| return ptr[0..self.length];
+            return &[_]T{};
+        }
+
+        /// Return the number of items in the list.
+        pub fn len(self: Self) usize {
+            return self.length;
+        }
+
+        /// Return true if the list has zero items.
+        pub fn isEmpty(self: Self) bool {
+            return self.length == 0;
+        }
+
+        /// Increment the reference count by `amount`.
+        pub fn incref(self: Self, amount: isize) void {
+            retainListAllocation(@ptrCast(self.elements_ptr), self.capacity_or_alloc_ptr, amount);
+        }
+    };
+}
+
+/// Add `amount` references to a list's allocation. The refcount slot sits
+/// directly before the allocation's first item whatever the item type is,
+/// and a seamless slice names its allocation in `capacity_or_alloc_ptr`.
+fn retainListAllocation(elements_ptr: ?*anyopaque, capacity_or_alloc_ptr: usize, amount: isize) void {
+    const alloc_addr = if ((capacity_or_alloc_ptr & 1) != 0)
+        capacity_or_alloc_ptr & ~@as(usize, 1)
+    else
+        @intFromPtr(elements_ptr);
+    if (alloc_addr == 0) return;
+    const rc: *isize = @ptrFromInt(alloc_addr - @sizeOf(isize));
+    if (rc.* == 0) return; // REFCOUNT_STATIC_DATA
+    _ = @atomicRmw(isize, rc, .Add, amount, .monotonic);
+}
+
 pub fn RocNoopRelease(comptime T: type) type {
     return struct {
         pub fn release(value: T, roc_host: *RocHost) void {
@@ -767,12 +849,9 @@ comptime {
 pub const __AnonStruct_b94d4088b4417d03 = if (@sizeOf(usize) == 4) extern struct {
     stats: __AnonStruct_2466dab754f47a46,
     value: RocBox,
-    /// Recursively decrement Roc-owned fields.
-    pub fn decref(self: @This(), roc_host: *RocHost) void {
-        const value = self;
-        value.stats.decref(roc_host);
-        decrefBox(@ptrCast(value.value), roc_host);
-    }
+    // No `decref`: this value holds an opaque Roc value, which only Roc can
+    // release. Release its other parts one at a time and pass the opaque value
+    // to a Roc function that takes ownership of it.
 
     /// Increment Roc-owned fields.
     pub fn incref(self: @This(), amount: isize) void {
@@ -783,12 +862,9 @@ pub const __AnonStruct_b94d4088b4417d03 = if (@sizeOf(usize) == 4) extern struct
 } else extern struct {
     stats: __AnonStruct_2466dab754f47a46,
     value: RocBox,
-    /// Recursively decrement Roc-owned fields.
-    pub fn decref(self: @This(), roc_host: *RocHost) void {
-        const value = self;
-        value.stats.decref(roc_host);
-        decrefBox(@ptrCast(value.value), roc_host);
-    }
+    // No `decref`: this value holds an opaque Roc value, which only Roc can
+    // release. Release its other parts one at a time and pass the opaque value
+    // to a Roc function that takes ownership of it.
 
     /// Increment Roc-owned fields.
     pub fn incref(self: @This(), amount: isize) void {
@@ -984,12 +1060,6 @@ pub const __AnonStruct_2466dab754f47a46Release = struct {
     }
 };
 
-pub const __AnonStruct_b94d4088b4417d03Release = struct {
-    pub fn release(value: __AnonStruct_b94d4088b4417d03, roc_host: *RocHost) void {
-        value.decref(roc_host);
-    }
-};
-
 pub const __AnonStruct_fa4a9e94a9b0c16fRelease = struct {
     pub fn release(value: __AnonStruct_fa4a9e94a9b0c16f, roc_host: *RocHost) void {
         value.decref(roc_host);
@@ -998,7 +1068,6 @@ pub const __AnonStruct_fa4a9e94a9b0c16fRelease = struct {
 
 fn rocReleasePolicy(comptime T: type) type {
     if (T == RocStr) return RocStrRelease;
-    if (T == __AnonStruct_b94d4088b4417d03) return __AnonStruct_b94d4088b4417d03Release;
     if (T == __AnonStruct_fa4a9e94a9b0c16f) return __AnonStruct_fa4a9e94a9b0c16fRelease;
     if (T == RocListWith(u8, false)) return RocListSpineRelease(RocListWith(u8, false));
     @compileError("generated glue has no recursive release policy for " ++ @typeName(T));
@@ -1087,7 +1156,7 @@ pub extern fn roc_fuzz_scope_finish(arg0: u64) callconv(.c) __AnonStruct_2466dab
 /// Roc signature: U64, Box(rigid) => { stats : { allocs : U64, deallocs : U64, entry_live_allocs : U64, entry_live_bytes : U64, exit_live_allocs : U64, exit_live_bytes : U64, peak_live_bytes : U64, reallocs : U64, requested_bytes : U64 }, value : Box(rigid) }
 /// Owned arguments. Release each exactly once before returning, unless it is
 /// moved into storage or into the result:
-///     decrefBox(@ptrCast(arg1), roc_host);
+///     arg1 holds an opaque Roc value, which only Roc can release: pass it back to Roc.
 /// The result is owned by Roc: return exactly one owned reference.
 pub extern fn roc_fuzz_scope_finish_return(arg0: u64, arg1: RocBox) callconv(.c) __AnonStruct_b94d4088b4417d03;
 

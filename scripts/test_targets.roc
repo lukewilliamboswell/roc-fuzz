@@ -263,12 +263,14 @@ executable_path = |work, item| Path.join(Path.join(work, "executables"), item.na
 
 run_step! = |stage, settings, roc, item, work|
 	match stage {
-		Seed | Measure | Quality | Fuzz if item.name == "qualitySuite" => suite_step!(stage, roc, item, work)
+		Seed | Measure | Quality | Fuzz if item.name == "qualitySuite" => suite_step!(stage, roc, item, work, [("numbers", 0), ("text", 0), ("failures", 1)])
+		Seed | Measure | Quality | Fuzz if item.name == "collectionSuite" => suite_step!(stage, roc, item, work, [("list-split-roundtrip", 0), ("list-concat", 0), ("text-roundtrip", 0)])
+		Seed | Measure | Quality | Fuzz if item.name == "numberSuite" => suite_step!(stage, roc, item, work, [("u64-roundtrip", 0), ("i64-roundtrip", 0)])
 		Check => run_quiet!(settings.verbose, roc, ["check", Path.to_os_str(item.path)], 0)
 		Test => run_quiet!(settings.verbose, roc, ["test", Path.to_os_str(item.path)], 0)
 		Build => {
 			Path.create_all!(Path.join(work, "executables"))?
-			run_quiet!(settings.verbose, roc, ["build", "--opt=speed", "--fuzz", Path.to_os_str(item.path), OsStr.from_str("--output=${Path.display(executable_path(work, item))}")], 0)?
+			run_quiet!(settings.verbose, roc, ["build", "--fuzz", Path.to_os_str(item.path), OsStr.from_str("--output=${Path.display(executable_path(work, item))}")], 0)?
 			# A successful link must retain the nightly's executable ASLR.
 			# Seed and fuzz stages also exercise startup after relocation.
 			if Project.host_target!()? == X64Musl {
@@ -290,7 +292,9 @@ run_step! = |stage, settings, roc, item, work|
 
 ## A single binary keeps heterogeneous properties, examples, baselines and
 ## failures independent across both supervised and raw engine invocations.
-suite_step! = |stage, roc, item, work| {
+suite_step! = |stage, roc, item, work, members| {
+	selected_members : List((Str, I32))
+	selected_members = members
 	directory = Path.join(Path.join(work, "suite-selection"), stage_name(stage))
 	Path.create_all!(directory)?
 	executable = Script.command(Path.to_os_str(executable_path(work, item)))
@@ -298,7 +302,7 @@ suite_step! = |stage, roc, item, work| {
 	if stage == Measure {
 		run_quiet!(Bool.False, roc, ["build", "--opt=dev", Path.to_os_str(item.path), OsStr.from_str("--output=${Path.display(plain)}")], 0)?
 	}
-	for (name, expected) in [("numbers", 0), ("text", 0), ("failures", 1)] {
+	for (name, expected) in selected_members {
 		selector = OsStr.from_str("--target=${name}")
 		args = match stage {
 			Seed => [selector, "replay", Path.to_os_str(seed_path!(item, work)?)]
@@ -333,7 +337,7 @@ suite_step! = |stage, roc, item, work| {
 	}
 	if stage == Quality {
 		listed = executable.output!(["--list-targets"], directory)?
-		if listed.status != Exited(0) or Str.from_utf8_lossy(listed.stdout_bytes) != "numbers\ntext\nfailures\n" {
+		if listed.status != Exited(0) or Str.from_utf8_lossy(listed.stdout_bytes) != Str.join_with(selected_members.map(|member| "${member.0}\n"), "") {
 			return Err(StepFailed("suite inventory changed"))
 		}
 		for args in [["check"], ["--target=missing", "check"], ["--target=numbers", "--target=text", "check"]] {
@@ -342,7 +346,7 @@ suite_step! = |stage, roc, item, work| {
 				return Err(StepFailed("invalid suite selection was accepted"))
 			}
 		}
-		for name in ["numbers", "text"] {
+		for name in selected_members.keep_if(|member| member.1 == 0).map(|member| member.0) {
 			selector = OsStr.from_str("--target=${name}")
 			accepted = executable.output!([selector, "accept"], directory)?
 			if accepted.status != Exited(0) or !Path.is_file!(Path.join(directory, "${name}_baseline.json"))? {
@@ -351,7 +355,8 @@ suite_step! = |stage, roc, item, work| {
 		}
 	}
 	if stage == Fuzz {
-		output = executable.output!(["--target=text", "raw", "-runs=10", "-jobs=2", "-workers=2"], directory)?
+		first = selected_members.first() ?? crash "suite fixture has no properties"
+		output = executable.output!([OsStr.from_str("--target=${first.0}"), "raw", "-runs=10", "-jobs=2", "-workers=2"], directory)?
 		if output.status != Exited(0) {
 			return Err(StepFailed("raw engine workers lost target selection\n${tail(output)}"))
 		}

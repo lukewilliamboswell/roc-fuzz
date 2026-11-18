@@ -39,15 +39,21 @@ Build one executable and select a property at runtime:
 
 [source,sh]
 ----
-roc build --opt=speed --fuzz formats.roc --output=formats
+roc build --fuzz formats.roc --output=formats
 ./formats --list-targets
 ./formats --target=json-roundtrip check
 ./formats --target=xml-events explore corpus/xml-events --time=60
 ----
 
-LLVM is required for coverage instrumentation. Use `--opt=dev` without `--fuzz`
+`roc build` uses LLVM by default, as required for coverage instrumentation.
+Use `--opt=dev` without `--fuzz`
 for ordinary checks, replay and allocation measurements. Existing single-target
 applications retain their commands and need no selector.
+
+The runnable `examples/multipleTargets/main.roc` groups collection and text
+properties from separate modules. `examples/numberFormats.roc` groups signed
+and unsigned decimal round trips. Both applications are exercised by the target
+inventory, including checks, replay, measurements and exploration.
 
 Each selected property retains its own declared examples, corpus encoding,
 allocation baseline and report identity. Selection follows supervised workers,

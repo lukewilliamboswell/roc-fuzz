@@ -828,6 +828,24 @@
       "expected_failure": false,
       "skip_seed": false,
       "skip_fuzz": false
+    },
+    {
+      "name": "collectionSuite",
+      "path": "examples/multipleTargets/main.roc",
+      "seed_hex": "00",
+      "libfuzzer_seed": 2242,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "numberSuite",
+      "path": "examples/numberFormats.roc",
+      "seed_hex": "00",
+      "libfuzzer_seed": 2243,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
     }
   ],
   "skips": [

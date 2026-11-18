@@ -16,7 +16,7 @@ The platform supports Linux x86-64 with musl and Apple Silicon macOS 11 or newer
 A target builds directly into a self-contained executable:
 
 ```sh
-roc build --opt=speed --fuzz my_target_app.roc
+roc build --fuzz my_target_app.roc
 ./my_target_app check
 ./my_target_app accept   # explicitly review and accept allocation observations
 ./my_target_app run --report-dir=.roc-fuzz/evidence
@@ -74,3 +74,15 @@ and live under [`tests/targets/`](tests/targets/). The
 
 Repository development begins in [the contributor guide](CONTRIBUTING.md).
 Security reports follow [the private reporting policy](SECURITY.md).
+
+Multi-target examples compile several independent properties into one binary:
+[`multipleTargets`](examples/multipleTargets/main.roc) groups list and text
+properties in reusable modules; [`numberFormats`](examples/numberFormats.roc)
+groups signed and unsigned decimal round trips. For example:
+
+```sh
+roc build --fuzz examples/multipleTargets/main.roc --output=multiple-targets
+./multiple-targets --list-targets
+./multiple-targets --target=list-concat check
+./multiple-targets --target=text-roundtrip explore corpus/text --runs=1000
+```
