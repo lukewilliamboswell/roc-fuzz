@@ -1,5 +1,29 @@
 (
 	(fetched ((
+		(name "roc-stable")
+		(obtained Published)
+		(served ())
+		(sha256 "d9395495f9dd07c39629c33f156f7fee68e8d22f8a764522e5cdd1cc30879b51")
+		(size 95010092)
+		(system "x86_64-linux")
+		(urls ("https://github.com/roc-lang/nightlies/releases/download/nightly-2026-11-18-a520eed/roc_nightly-linux_x86_64-2026-11-18-a520eed.tar.gz"))
+		(witness "https://api.github.com/repos/roc-lang/nightlies/releases/tags/nightly-2026-11-18-a520eed")) (
+		(name "roc-stable")
+		(obtained Published)
+		(served ())
+		(sha256 "16fb2bd5ace8cd78e3485436398064d2cbe5e28d3c84e155b2460d32101722c3")
+		(size 91178961)
+		(system "aarch64-linux")
+		(urls ("https://github.com/roc-lang/nightlies/releases/download/nightly-2026-11-18-a520eed/roc_nightly-linux_arm64-2026-11-18-a520eed.tar.gz"))
+		(witness "https://api.github.com/repos/roc-lang/nightlies/releases/tags/nightly-2026-11-18-a520eed")) (
+		(name "roc-stable")
+		(obtained Both)
+		(served ("release-assets.githubusercontent.com"))
+		(sha256 "3b9ba3cc7357e47916f03689979be6c35c1986a1fd5a54bf0d06ea609fe0648d")
+		(size 91000550)
+		(system "aarch64-darwin")
+		(urls ("https://github.com/roc-lang/nightlies/releases/download/nightly-2026-11-18-a520eed/roc_nightly-macos_apple_silicon-2026-11-18-a520eed.tar.gz"))
+		(witness "https://api.github.com/repos/roc-lang/nightlies/releases/tags/nightly-2026-11-18-a520eed")) (
 		(name "roc-docs")
 		(obtained Both)
 		(served ("release-assets.githubusercontent.com"))
@@ -42,14 +66,6 @@
 						(value (Str "packages"))) (
 						(name "flake")
 						(value (Bool true))))))) (
-					(name "roc")
-					(value (Attrs ((
-						(name "ref")
-						(value (Str "github:roc-lang/roc-overlay"))) (
-						(name "kind")
-						(value (Str "overlay"))) (
-						(name "flake")
-						(value (Bool true))))))) (
 					(name "zig")
 					(value (Attrs ((
 						(name "ref")
@@ -61,7 +77,7 @@
 				(name "overlays")
 				(value (Attrs ((
 					(name "dev")
-					(value (List ((Str "roc") (Str "zig"))))))))))))) (
+					(value (List ((Str "zig"))))))))))))) (
 			(name "graph")
 			(value (Attrs ((
 				(name "root")
@@ -101,15 +117,15 @@
 						(name "locked")
 						(value (Attrs ((
 							(name "lastModified")
-							(value (Int 1792502884))) (
+							(value (Int 1794890597))) (
 							(name "narHash")
-							(value (Str "sha256-IoNisKcGbUjdd45qCqywGMCYmZ5EnkxezvLII0FWwNA="))) (
+							(value (Str "sha256-lME2lHoDHAaSHP3/okgiVoJ0icVEvsQH8LeU3We7tcc="))) (
 							(name "owner")
 							(value (Str "NixOS"))) (
 							(name "repo")
 							(value (Str "nixpkgs"))) (
 							(name "rev")
-							(value (Str "02c087f3fe673c9e317f206a627cb6b910336dbe"))) (
+							(value (Str "04906337b6d53e8bb0eaf0470ae9f070a4d4eb55"))) (
 							(name "type")
 							(value (Str "github"))))))) (
 						(name "original")
@@ -123,58 +139,6 @@
 							(name "type")
 							(value (Str "github"))))))))))) (
 					(name "nixpkgs")
-					(value (Attrs ((
-						(name "locked")
-						(value (Attrs ((
-							(name "lastModified")
-							(value (Int 1791048980))) (
-							(name "narHash")
-							(value (Str "sha256-KgItSKML8Xvte0B7/uGnBDsYzSnnKHcOaiUbgWBXLXw="))) (
-							(name "owner")
-							(value (Str "NixOS"))) (
-							(name "repo")
-							(value (Str "nixpkgs"))) (
-							(name "rev")
-							(value (Str "a7868a727837f3c09cee2ce0ca671c76b1589fed"))) (
-							(name "type")
-							(value (Str "github"))))))) (
-						(name "original")
-						(value (Attrs ((
-							(name "owner")
-							(value (Str "NixOS"))) (
-							(name "ref")
-							(value (Str "nixos-unstable"))) (
-							(name "repo")
-							(value (Str "nixpkgs"))) (
-							(name "type")
-							(value (Str "github"))))))))))) (
-					(name "nixpkgs-darwin")
-					(value (Attrs ((
-						(name "locked")
-						(value (Attrs ((
-							(name "lastModified")
-							(value (Int 1790772421))) (
-							(name "narHash")
-							(value (Str "sha256-754eQtr0m8xKtNnKYhX7ukI7XaA7oeiQpui1LiEuhyU="))) (
-							(name "owner")
-							(value (Str "NixOS"))) (
-							(name "repo")
-							(value (Str "nixpkgs"))) (
-							(name "rev")
-							(value (Str "e49322d1ec25b45f7c587c5fd69ac826d1a57dbc"))) (
-							(name "type")
-							(value (Str "github"))))))) (
-						(name "original")
-						(value (Attrs ((
-							(name "owner")
-							(value (Str "NixOS"))) (
-							(name "ref")
-							(value (Str "nixpkgs-26.05-darwin"))) (
-							(name "repo")
-							(value (Str "nixpkgs"))) (
-							(name "type")
-							(value (Str "github"))))))))))) (
-					(name "nixpkgs_2")
 					(value (Attrs ((
 						(name "locked")
 						(value (Attrs ((
@@ -200,36 +164,6 @@
 							(value (Str "nixpkgs"))) (
 							(name "type")
 							(value (Str "github"))))))))))) (
-					(name "roc")
-					(value (Attrs ((
-						(name "inputs")
-						(value (Attrs ((
-							(name "nixpkgs")
-							(value (Str "nixpkgs"))) (
-							(name "nixpkgs-darwin")
-							(value (Str "nixpkgs-darwin"))))))) (
-						(name "locked")
-						(value (Attrs ((
-							(name "lastModified")
-							(value (Int 1792802216))) (
-							(name "narHash")
-							(value (Str "sha256-nTt03FD5Aks79B0vcFoiHkLlD+ylTUzKLoIdxQ/3Kmo="))) (
-							(name "owner")
-							(value (Str "roc-lang"))) (
-							(name "repo")
-							(value (Str "roc-overlay"))) (
-							(name "rev")
-							(value (Str "d0ad2328b1d81e2f6dcfcdf1fc800d9e74838a4d"))) (
-							(name "type")
-							(value (Str "github"))))))) (
-						(name "original")
-						(value (Attrs ((
-							(name "owner")
-							(value (Str "roc-lang"))) (
-							(name "repo")
-							(value (Str "roc-overlay"))) (
-							(name "type")
-							(value (Str "github"))))))))))) (
 					(name "root")
 					(value (Attrs ((
 						(name "inputs")
@@ -238,8 +172,6 @@
 							(value (Str "nix"))) (
 							(name "nixpkgs")
 							(value (List ((Str "nix"))))) (
-							(name "roc")
-							(value (Str "roc"))) (
 							(name "zig")
 							(value (Str "zig"))))))))))) (
 					(name "systems")
@@ -275,21 +207,21 @@
 							(name "flake-compat")
 							(value (Str "flake-compat"))) (
 							(name "nixpkgs")
-							(value (Str "nixpkgs_2"))) (
+							(value (Str "nixpkgs"))) (
 							(name "systems")
 							(value (Str "systems"))))))) (
 						(name "locked")
 						(value (Attrs ((
 							(name "lastModified")
-							(value (Int 1792758376))) (
+							(value (Int 1795004240))) (
 							(name "narHash")
-							(value (Str "sha256-WhPPEYn8nHSjjjZoATv4v0lTIcsgoBHfJNflCMzB/og="))) (
+							(value (Str "sha256-NtImaHxcNFhctbQpnYwspsaZNF6utQ0o74GehG7cDU4="))) (
 							(name "owner")
 							(value (Str "mitchellh"))) (
 							(name "repo")
 							(value (Str "zig-overlay"))) (
 							(name "rev")
-							(value (Str "8a73811153506e6657e8bba1d5727fa12d04a760"))) (
+							(value (Str "6aad0084d405f9661050b305514ca1fe627b9919"))) (
 							(name "type")
 							(value (Str "github"))))))) (
 						(name "original")
@@ -303,15 +235,13 @@
 	(intent (
 		(build_sources ())
 		(inputs ((
-			(name "roc")
-			(url "github:roc-lang/roc-overlay")) (
 			(name "zig")
 			(url "github:mitchellh/zig-overlay"))))
 		(overlays ((
 			(environment "dev")
-			(overlays ("roc" "zig")))))
+			(overlays ("zig")))))
 		(resolvers ((
-			(inputs ("roc" "zig"))
+			(inputs ("zig"))
 			(provider "nix"))))
 		(sources ((
 			(name "nix")
@@ -320,18 +250,13 @@
 				(ref "github:NixOS/nixpkgs/nixos-unstable")
 				(version 1))))))))
 	(sources ((
-		(digest "sha256:228362b0a7066d48dd778e6a0aacb018c098999e449e4c5ecef2c8234156c0d0")
+		(digest "sha256:94c136947a031c06921cfdffa2482256827489c544bec407f0b794dd67bbb5c7")
 		(name "nix")
 		(provider "nix")
 		(ref "github:NixOS/nixpkgs/nixos-unstable")
-		(rev "02c087f3fe673c9e317f206a627cb6b910336dbe")) (
-		(digest "sha256:9d3b74dc50f9024b3bf41d2f705a221e42e50feca54d4cca2e821dc50ff72a6a")
-		(name "roc")
-		(provider "nix")
-		(ref "github:roc-lang/roc-overlay")
-		(rev "d0ad2328b1d81e2f6dcfcdf1fc800d9e74838a4d")) (
-		(digest "sha256:5a13cf1189fc9c74a38e3668013bf8bf495321cb20a011df24d7e508ccc1fe88")
+		(rev "04906337b6d53e8bb0eaf0470ae9f070a4d4eb55")) (
+		(digest "sha256:36d226687c5c34585cb5b4299d8c2ca6c699345eaeb50d28ef819e846edc0d4e")
 		(name "zig")
 		(provider "nix")
 		(ref "github:mitchellh/zig-overlay")
-		(rev "8a73811153506e6657e8bba1d5727fa12d04a760")))))
+		(rev "6aad0084d405f9661050b305514ca1fe627b9919")))))

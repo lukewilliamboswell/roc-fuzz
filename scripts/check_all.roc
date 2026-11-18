@@ -1,8 +1,8 @@
 #!/usr/bin/env roc-stable
 app [main!] {
-	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst",
-	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.26.0/GddgvsGjiNXrHFW6au5i5dUDbTs8FinQdrgE2Gqmw53t.tar.zst",
-	roc: "nightly-2026-10-23-18478ff",
+	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.3/BioPdu7WjVhTB2j1HaomKMi8htxsuwqwr79GbXY5nAUf.tar.zst",
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.28.1/7brgwR8YUqfeGrkdfF1V4GPPN7DnP7ftqub9KcrTEZtr.tar.zst",
+	roc: "nightly-2026-11-18-a520eed",
 }
 
 import cli.OsStr
@@ -57,7 +57,7 @@ check_repros! = |roc| {
 
 check_fuzz_targets! = || {
 	Script.info!("CHECK", "Type-checking every fuzz target in tests/targets.json")?
-	(Script.roc_stable!()?).run!(["scripts/test_targets.roc", "--", "--operation", "check"])
+	(Script.roc_stable!()?).run!(["scripts/test_targets.roc", "--operation", "check"])
 }
 
 check_worktree! = || {

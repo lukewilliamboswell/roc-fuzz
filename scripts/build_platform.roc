@@ -1,10 +1,10 @@
 #!/usr/bin/env roc-stable
 app [main!] {
-	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst",
+	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.3/BioPdu7WjVhTB2j1HaomKMi8htxsuwqwr79GbXY5nAUf.tar.zst",
 	arg_path: "https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst",
-	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.26.0/GddgvsGjiNXrHFW6au5i5dUDbTs8FinQdrgE2Gqmw53t.tar.zst",
-	roc: "nightly-2026-10-23-18478ff",
-	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.28.1/7brgwR8YUqfeGrkdfF1V4GPPN7DnP7ftqub9KcrTEZtr.tar.zst",
+	roc: "nightly-2026-11-18-a520eed",
+	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.10.2/7CdYzjBAJmprmnK45oTpmH6BXt76ZASN2Ck5uZQEoWsK.tar.zst",
 }
 
 import cli.Cmd
@@ -45,7 +45,7 @@ main! = |raw_args| {
 		DefaultAr => zig.cmd(["ar"])
 	}
 	libfuzzer_source = match options.libfuzzer_source {
-		LocalSource(path) if library_source == Source => LocalSource(Path.absolute!(path)?)
+		LocalSource(path) if library_source == LibrarySource.Source => LocalSource(Path.absolute!(path)?)
 		LocalSource(_) => return Script.fail!("--libfuzzer-source can only be used with --libraries source")
 		PinnedSource => PinnedSource
 	}
@@ -84,7 +84,7 @@ cli_parser = Cli.assert_valid(
 				help: "Use `release` libraries or build from `source`. [default: release]",
 				type: "library-source",
 				parser: parse_library_source_arg,
-				default: Value(Release),
+				default: Value(LibrarySource.default),
 			}),
 			libraries_only: Opt.flag({ short: "", long: "libraries-only", help: "Build only linker inputs for the independent release workflow." }),
 			libfuzzer_source: Cli.map(
@@ -113,8 +113,10 @@ cli_parser = Cli.assert_valid(
 	),
 )
 
+parse_library_source_arg : _ -> Try(LibrarySource.LibrarySource, [InvalidNumStr, InvalidValue(Str), InvalidUtf8])
 parse_library_source_arg = |argument| CliValues.parse(argument, LibrarySource.parse, "expected release or source")
 
+parse_target_spec_arg : _ -> Try(Project.TargetSpec, [InvalidNumStr, InvalidValue(Str), InvalidUtf8])
 parse_target_spec_arg = |argument|
 	match CliValues.parse(argument, Project.Target.parse, "unknown platform target") {
 		Ok(target) => Ok(target.spec())
@@ -122,9 +124,9 @@ parse_target_spec_arg = |argument|
 	}
 
 build_mode! = |host_only, libraries_only, library_source|
-	if host_only and (libraries_only or library_source != Release) {
+	if host_only and (libraries_only or library_source != LibrarySource.Release) {
 		Script.fail!("--host-only uses existing release libraries, so it cannot be combined with --libraries-only or --libraries source")
-	} else if libraries_only and library_source != Source {
+	} else if libraries_only and library_source != LibrarySource.Source {
 		Script.fail!("--libraries-only builds libraries from source; add --libraries source")
 	} else if host_only {
 		Ok(HostOnly)
@@ -147,7 +149,7 @@ prepare_glue! = |build| {
 }
 
 build_targets! = |build, work| {
-	libfuzzer = if build.library_source == Source {
+	libfuzzer = if build.library_source == LibrarySource.Source {
 		verify_zig_version!(build)?
 		Available(resolve_libfuzzer_source!(build, work)?)
 	} else {
@@ -219,6 +221,7 @@ fetch_pinned_libfuzzer! = |root, dependency, work| {
 validate_libfuzzer_source! = |source|
 	if (Path.is_file!(Path.join(source, "FuzzerMain.cpp"))?) Ok(source) else Err(IncompleteLibfuzzerSource(source))
 
+build_libraries! : Path, Script.Command, Cmd.Command, Path, Path, Project.TargetSpec => Try({}, _)
 build_libraries! = |root, zig, ar, source, work, spec| {
 	directory = Project.Target.dir(spec.target, root)
 	Path.create_all!(directory)?
@@ -230,13 +233,14 @@ build_libraries! = |root, zig, ar, source, work, spec| {
 	copy_zig_runtime!(root, zig, ar, directory, work, spec)
 }
 
+build_libfuzzer! : Path, Script.Command, Cmd.Command, Path, Path, Path, Project.TargetSpec => Try({}, _)
 build_libfuzzer! = |root, zig, ar, source, output, work, spec| {
 	object_dir = Path.join(work, "${Project.Target.name(spec.target)}-libfuzzer-objects")
 	Path.create_all!(object_dir)?
 	cpps = Files.direct_files!(source)?.keep_if(
 		|path| {
 			name = Path.display(path)
-			Script.ends_with(name, ".cpp") and !(Script.ends_with(name, "FuzzerInterceptors.cpp") and !spec.include_fuzzer_interceptors) and !(Script.ends_with(name, "FuzzerExtFunctionsDlsym.cpp") and spec.target == Arm64Mac)
+			Script.ends_with(name, ".cpp") and !(Script.ends_with(name, "FuzzerInterceptors.cpp") and !spec.include_fuzzer_interceptors) and !(Script.ends_with(name, "FuzzerExtFunctionsDlsym.cpp") and spec.target == Project.Target.Arm64Mac)
 		},
 	)
 	var $objects = []
@@ -247,7 +251,7 @@ build_libfuzzer! = |root, zig, ar, source, output, work, spec| {
 		$objects = $objects.append(object)
 		$index = $index + 1
 	}
-	all_objects = if spec.target == Arm64Mac {
+	all_objects = if spec.target == Project.Target.Arm64Mac {
 		adapter = Path.join(Path.join(root, "src"), "macos_fuzzer_ext_functions.cpp")
 		object = Path.join(object_dir, "macos_fuzzer_ext_functions.o")
 		zig.run!(["c++", "-target", OsStr.from_str(spec.zig_target)].concat(cxx_target_args(root, spec)).concat(["-I", Path.to_os_str(source), "-std=c++17", "-O2", "-g0", "-fno-omit-frame-pointer", "-fPIC", "-w", "-c", Path.to_os_str(adapter), "-o", Path.to_os_str(object)]))?
@@ -280,8 +284,9 @@ archive_flags = "rcsD"
 ## The macOS target is compiled against the headers Zig bundles, on any host.
 ## The build reads no installed Apple SDK. `src/macos_compat` supplies the one
 ## header libFuzzer includes that Zig does not carry.
+cxx_target_args : Path, Project.TargetSpec -> List(OsStr)
 cxx_target_args = |root, spec|
-	if spec.target == Arm64Mac {
+	if spec.target == Project.Target.Arm64Mac {
 		["-isystem", Path.to_os_str(Path.join(root, "src/macos_compat"))]
 	} else {
 		[]
@@ -316,13 +321,14 @@ flatten_archive! = |ar, archive, work, label| {
 	ar.args([archive_flags, Path.to_os_str(archive)].concat($flat.map(Path.to_os_str))).call!()
 }
 
+copy_zig_runtime! : Path, Script.Command, Cmd.Command, Path, Path, Project.TargetSpec => Try({}, _)
 copy_zig_runtime! = |root, zig, ar, directory, work, spec| {
 	probe = Path.join(work, "${Project.Target.name(spec.target)}-runtime_probe.cpp")
 	Path.write_utf8!(probe, "int main() { return 0; }\n")?
 	executable = Path.join(work, "${Project.Target.name(spec.target)}-runtime_probe")
 	args = ["c++", "-target", OsStr.from_str(spec.zig_target)].concat(cxx_target_args(root, spec)).concat(["-O2", "-s", "-v", "-fPIC", Path.to_os_str(probe)])
 	# Static PIE selects musl's self-relocating startup and PIC runtimes.
-	final_args = if (spec.target == X64Musl) args.concat(["-static", "-pie"]) else args
+	final_args = if (spec.target == Project.Target.X64Musl) args.concat(["-static", "-pie"]) else args
 	output = capture_combined!(zig.cmd(final_args.concat(["-o", Path.to_os_str(executable)])))?
 	wanted = spec.input_names.keep_if(|name| name != "libhost.a" and name != "libfuzzer.a")
 	var $found = []
@@ -348,6 +354,7 @@ copy_zig_runtime! = |root, zig, ar, directory, work, spec| {
 	if (missing.is_empty()) Ok({}) else Err(MissingZigRuntimeArtifacts(missing))
 }
 
+capture_combined! : Cmd.Command => Try(Str, _)
 capture_combined! = |command| {
 	output = command.stdout(Capture).stderr(Capture).run!().map_err(|err| CommandRunFailed(err))?
 	match output.status {
@@ -357,12 +364,13 @@ capture_combined! = |command| {
 	}
 }
 
+build_host! : Path, Script.Command, Cmd.Command, Path, Project.TargetSpec => Try({}, _)
 build_host! = |root, zig, ar, work, spec| {
 	directory = Project.Target.dir(spec.target, root)
 	Path.create_all!(directory)?
 	host = Path.join(directory, "libhost.a")
 	zig.run!(["build-lib", Path.to_os_str(Path.join(Path.join(root, "src"), "main.zig")), "-target", OsStr.from_str(spec.zig_target)].concat(["-O", "ReleaseFast", "-fPIC", "-fstrip", OsStr.from_str("-femit-bin=${Path.display(host)}"), "-fcompiler-rt", "-lc"]))?
-	if spec.target == Arm64Mac {
+	if spec.target == Project.Target.Arm64Mac {
 		stack = Path.join(work, "macos_sancov.o")
 		zig.run!(["cc", "-target", OsStr.from_str(spec.zig_target)].concat(cxx_target_args(root, spec)).concat(["-O2", "-g0", "-fPIC", "-c", Path.to_os_str(Path.join(Path.join(root, "src"), "macos_sancov.c")), "-o", Path.to_os_str(stack)]))?
 		ar.args([archive_flags, Path.to_os_str(host), Path.to_os_str(stack)]).call!()?

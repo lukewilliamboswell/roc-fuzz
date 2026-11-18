@@ -46,9 +46,11 @@ roc build --fuzz formats.roc --output=formats
 ----
 
 `roc build` uses LLVM by default, as required for coverage instrumentation.
-Use `--opt=dev` without `--fuzz`
-for ordinary checks, replay and allocation measurements. Existing single-target
-applications retain their commands and need no selector.
+Omit `--fuzz` for an ordinary build with the same compiler settings. Keep the
+compiler version and build mode consistent when comparing allocation measurements.
+Dev builds (`--opt=dev`, without `--fuzz`) also support ordinary checks, replay
+and measurements. Existing single-target applications retain their commands and
+need no selector.
 
 The runnable `examples/multipleTargets/main.roc` groups collection and text
 properties from separate modules. `examples/numberFormats.roc` groups signed

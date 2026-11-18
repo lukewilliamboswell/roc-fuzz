@@ -1,10 +1,10 @@
 #!/usr/bin/env roc-stable
 app [main!] {
-	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.0/JXLM47L6CzrLXB5HBfqc27VnU6CD4jMm5Mk6dgbbovL.tar.zst",
+	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.3/BioPdu7WjVhTB2j1HaomKMi8htxsuwqwr79GbXY5nAUf.tar.zst",
 	arg_path: "https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst",
-	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.26.0/GddgvsGjiNXrHFW6au5i5dUDbTs8FinQdrgE2Gqmw53t.tar.zst",
-	roc: "nightly-2026-10-23-18478ff",
-	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.9.0/7j6KBFBEZ8pNMLQHkx9xiwyZ2PmwQPgKNDPUih6gKe77.tar.zst",
+	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.28.1/7brgwR8YUqfeGrkdfF1V4GPPN7DnP7ftqub9KcrTEZtr.tar.zst",
+	roc: "nightly-2026-11-18-a520eed",
+	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.10.2/7CdYzjBAJmprmnK45oTpmH6BXt76ZASN2Ck5uZQEoWsK.tar.zst",
 }
 
 import cli.Duration
@@ -298,9 +298,11 @@ suite_step! = |stage, roc, item, work, members| {
 	directory = Path.join(Path.join(work, "suite-selection"), stage_name(stage))
 	Path.create_all!(directory)?
 	executable = Script.command(Path.to_os_str(executable_path(work, item)))
-	plain = Path.join(directory, "suite-dev")
+	plain = Path.join(directory, "suite-plain")
 	if stage == Measure {
-		run_quiet!(Bool.False, roc, ["build", "--opt=dev", Path.to_os_str(item.path), OsStr.from_str("--output=${Path.display(plain)}")], 0)?
+		# Use the same default backend for both builds to compare the effect of
+		# coverage instrumentation on allocation observations.
+		run_quiet!(Bool.False, roc, ["build", Path.to_os_str(item.path), OsStr.from_str("--output=${Path.display(plain)}")], 0)?
 	}
 	for (name, expected) in selected_members {
 		selector = OsStr.from_str("--target=${name}")
@@ -316,9 +318,9 @@ suite_step! = |stage, roc, item, work, members| {
 			return Err(StepFailed("suite ${name} ${stage_name(stage)} failed\n${tail(output)}"))
 		}
 		if stage == Measure {
-			from_dev = Script.command(Path.to_os_str(plain)).output!(args, directory)?
-			if from_dev.status != output.status or from_dev.stdout_bytes != output.stdout_bytes {
-				return Err(StepFailed("suite allocation observations differ in dev builds"))
+			from_plain = Script.command(Path.to_os_str(plain)).output!(args, directory)?
+			if from_plain.status != output.status or from_plain.stdout_bytes != output.stdout_bytes {
+				return Err(StepFailed("suite allocation observations differ when built without --fuzz\ninstrumented: ${tail(output)}\nordinary: ${tail(from_plain)}"))
 			}
 		}
 		if stage == Quality or stage == Fuzz {
