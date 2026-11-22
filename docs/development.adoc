@@ -79,8 +79,18 @@ as published, on the latest nightly every day.
 
 === Maintain the tooling
 
-Nothing updates the tooling on a schedule. Each of these is a pull request a
-maintainer opens:
+Review tooling changes in pull requests:
+
+Upgrade roc-automation:: Review the upstream changes and the
+https://lukewilliamboswell.github.io/roc-automation/actions.html[shared action
+guidance]. Pin the shared actions, nightly workflow, and archive tester checkout
+in `.github/` to the same reviewed full commit SHA. Check the CI, documentation,
+and release dry run before merging. The shared nightly validates the published
+examples after the upgrade reaches `trunk`.
+Upgrade the documentation renderer:: Change the roc-docs release in
+`Blueprint.roc` and the documentation and release workflow labels. Run
+`blueprint update roc-docs` and review the digests for all three development
+hosts, then build the manual with `blueprint run docs`.
 
 Update the lock:: Run `blueprint update`, or `blueprint update INPUT` to move
 one input, then `blueprint run check`.

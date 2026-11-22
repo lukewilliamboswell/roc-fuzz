@@ -45,7 +45,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@6c796f299012707d2e9bad23fd6449ed93f1f475 # 6c796f2
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@acc5efdcd929b38e665cd3ae6e694d1c4887f9c7 # acc5efd
         with:
           install-nix: 'true'
 
@@ -68,14 +68,13 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@6c796f299012707d2e9bad23fd6449ed93f1f475 # 6c796f2
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@acc5efdcd929b38e665cd3ae6e694d1c4887f9c7 # acc5efd
         with:
           install-nix: 'true'
 
       - name: Install the Roc nightly this run resolved
-        uses: roc-lang/setup-roc@dd81390553b0a1236aedb61cdd4c0ed7cf7eaec4 # dd81390
+        uses: lukewilliamboswell/roc-automation/actions/setup-roc-nightly@acc5efdcd929b38e665cd3ae6e694d1c4887f9c7 # acc5efd
         with:
-          version: nightly
           nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
 
       - name: Regenerate the bindings and compare them with the committed file
@@ -99,14 +98,13 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@6c796f299012707d2e9bad23fd6449ed93f1f475 # 6c796f2
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@acc5efdcd929b38e665cd3ae6e694d1c4887f9c7 # acc5efd
         with:
           install-nix: 'true'
 
       - name: Install the Roc nightly this run resolved
-        uses: roc-lang/setup-roc@dd81390553b0a1236aedb61cdd4c0ed7cf7eaec4 # dd81390
+        uses: lukewilliamboswell/roc-automation/actions/setup-roc-nightly@acc5efdcd929b38e665cd3ae6e694d1c4887f9c7 # acc5efd
         with:
-          version: nightly
           nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
 
       - name: Show the compilers
@@ -142,7 +140,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@6c796f299012707d2e9bad23fd6449ed93f1f475 # 6c796f2
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@acc5efdcd929b38e665cd3ae6e694d1c4887f9c7 # acc5efd
         with:
           install-nix: 'true'
 
@@ -196,14 +194,13 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@6c796f299012707d2e9bad23fd6449ed93f1f475 # 6c796f2
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@acc5efdcd929b38e665cd3ae6e694d1c4887f9c7 # acc5efd
         with:
           install-nix: 'true'
 
       - name: Install the Roc nightly this run resolved
-        uses: roc-lang/setup-roc@dd81390553b0a1236aedb61cdd4c0ed7cf7eaec4 # dd81390
+        uses: lukewilliamboswell/roc-automation/actions/setup-roc-nightly@acc5efdcd929b38e665cd3ae6e694d1c4887f9c7 # acc5efd
         with:
-          version: nightly
           nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
 
       - name: Restore the content-addressed linker-input download cache
@@ -256,14 +253,13 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@6c796f299012707d2e9bad23fd6449ed93f1f475 # 6c796f2
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@acc5efdcd929b38e665cd3ae6e694d1c4887f9c7 # acc5efd
         with:
           install-nix: 'true'
 
       - name: Install the Roc nightly this run resolved
-        uses: roc-lang/setup-roc@dd81390553b0a1236aedb61cdd4c0ed7cf7eaec4 # dd81390
+        uses: lukewilliamboswell/roc-automation/actions/setup-roc-nightly@acc5efdcd929b38e665cd3ae6e694d1c4887f9c7 # acc5efd
         with:
-          version: nightly
           nightly-tag: ${{ needs.resolve.outputs.nightly-tag }}
 
       - name: Download the platform bundle
