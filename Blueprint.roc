@@ -25,7 +25,7 @@ config = [
 			Programs([
 				Fetch("roc-stable", Recipes.roc_nightly("nightly-2026-11-18-a520eed")),
 				# The shared documentation renderer, as actions/build-docs runs it.
-				Fetch("roc-docs", Recipes.file("https://github.com/lukewilliamboswell/roc-automation/releases/download/tools-0.10.0/roc-docs-{system}")),
+				Fetch("roc-docs", Recipes.file("https://github.com/lukewilliamboswell/roc-automation/releases/download/tools-0.12.0/roc-docs-{system}")),
 			]),
 			# Every bundle the scripts depend on, including dependencies of
 			# dependencies: `roc-stable deps scripts/check_all.roc` lists them.
