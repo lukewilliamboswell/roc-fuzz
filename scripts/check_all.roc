@@ -42,6 +42,9 @@ check_platform! = |roc| {
 	roc.run!(["check", "platform/main.roc"])?
 	# One run on the root covers the expects of every module it imports.
 	roc.run!(["test", "platform/main.roc"])?
+	# Tests that use only what the platform exposes live outside it, so that
+	# an application's `roc test` does not run them.
+	roc.run!(["test", "tests/model/main.roc"])?
 	check_repros!(roc)
 }
 

@@ -192,6 +192,46 @@ and occurrence numbers distinguish repeated names. Neither traces nor assertions
 contain timestamps. Capture truncation does not turn an invalid trace into a
 passing one and does not invalidate completed allocation statistics.
 
+[[campaign-goals]]
+=== Declare campaign goals
+
+Trace rules are judged on every input. A goal is judged once, over a campaign:
+a named event that some kept input must reach, among the declared examples, the
+saved corpus and exploration.
+
+[source,roc]
+----
+target = Fuzz.target_with!({
+    name: "parse",
+    examples: [],
+    generator: Fuzz.bytes,
+    test!: |input| {
+        match parse(input) {
+            Ok(_) => Fuzz.mark!("parsed a document")
+            Err(_) => Fuzz.mark!("refused a document")
+        }
+        Fuzz.keep
+    },
+    show: Str.inspect,
+}).with_goals(["parsed a document", "refused a document"])
+----
+
+`with_goals` puts the inventory on the target, so the runner knows every goal
+before any input runs and can name the ones no input reached. An input reaches
+a goal when an event of that name occurs anywhere in it: a `Fuzz.mark!` or a
+completed measured region. It is an ordinary event, so `Before`, `Count` and
+`Forbidden` apply to it in its region. Only a kept input counts; a rejected one
+reaches nothing. Names are unique, nonempty and at most 128 bytes, and a target
+declares at most 1024. Each member of a suite declares its own. When the names
+are computed, pass a function with `with_goals_from(|| names)`: the runner asks
+for the inventory once, where an argument would be computed again for every
+input.
+
+During exploration the first input to reach a goal counts as new coverage, so
+the corpus keeps a witness for every goal reached and `reduce-corpus` preserves
+one. xref:quality.adoc#grade-goals[Grade a campaign with goals] describes the
+report and the outcome.
+
 [[allocation-ratchets]]
 === Accept an exact allocation baseline
 

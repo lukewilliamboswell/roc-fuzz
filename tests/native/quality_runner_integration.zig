@@ -240,6 +240,69 @@ pub fn main(init: std.process.Init) !void {
     try std.testing.expect(conflicting_witness.term == .exited and conflicting_witness.term.exited == 2);
     try std.testing.expectEqualStrings("one", try suite.read("witnesses/previous-crash.bin"));
 
+    // Goals grade the campaign a command runs. An unreached goal is missing
+    // evidence: never a finding, and never a pass unless the run allows it.
+    const ungraded = try field(run, "goals");
+    try expectString(ungraded, "status", "none_declared");
+    const goals_check = try suite.run("goals-check", &.{"check"}, "goals", 1);
+    try expectString(goals_check, "outcome", "inconclusive");
+    try expectString(goals_check, "baseline_status", "matched");
+    const checked_goals = try field(goals_check, "goals");
+    try expectString(checked_goals, "status", "unreached");
+    try std.testing.expect((try field(checked_goals, "required")).bool);
+    try std.testing.expectEqual(@as(i64, 3), (try field(checked_goals, "declared")).integer);
+    try std.testing.expectEqual(@as(i64, 2), (try field(checked_goals, "reached")).integer);
+    const never = (try field(checked_goals, "unreached")).array.items;
+    try std.testing.expectEqual(@as(usize, 1), never.len);
+    try std.testing.expectEqualStrings("far", never[0].string);
+    const checked_inventory = (try field(checked_goals, "inventory")).array.items;
+    try expectString(checked_inventory[1], "name", "right");
+    const right_witness = try field(checked_inventory[1], "first");
+    try expectString(right_witness, "source", "example");
+    try expectString(right_witness, "example", "second");
+    try std.testing.expectEqualStrings("two", try std.Io.Dir.cwd().readFileAlloc(init.io, (try field(right_witness, "input_path")).string, allocator, .limited(1024)));
+    try std.testing.expect((try field(checked_inventory[2], "first")) == .null);
+    try std.testing.expectEqualStrings("left", (try field((try field(goals_check, "examples")).array.items[0], "goals_reached")).array.items[0].string);
+    try std.testing.expect(std.mem.indexOf(u8, try suite.read("goals-check/summary.md"), "Reached 2 of 3 declared goals.") != null);
+    const goals_allowed = try suite.run("goals-allowed", &.{ "check", "--allow-unreached-goals" }, "goals", 0);
+    try expectString(goals_allowed, "outcome", "passed");
+    try expectString(try field(goals_allowed, "goals"), "status", "unreached");
+    try std.testing.expect(!(try field(try field(goals_allowed, "goals"), "required")).bool);
+    const goals_accept = try suite.run("goals-accept", &.{ "accept", "--baseline=goals-baseline.json" }, "goals", 0);
+    try expectString(goals_accept, "baseline_status", "accepted");
+    try std.testing.expect(!(try field(try field(goals_accept, "goals"), "required")).bool);
+    // Exploration reaches the third goal, and its first input is the witness.
+    const goals_run = try suite.run("goals-run", &.{ "run", "--runs=5" }, "goals-explore", 0);
+    try expectString(goals_run, "outcome", "passed");
+    const run_goals = try field(goals_run, "goals");
+    try expectString(run_goals, "status", "reached");
+    const far = (try field(run_goals, "inventory")).array.items[2];
+    try std.testing.expectEqual(@as(i64, 1), (try field(far, "inputs")).integer);
+    const far_witness = try field(far, "first");
+    try expectString(far_witness, "source", "exploration");
+    try std.testing.expectEqual(@as(i64, 1), (try field(far_witness, "attempt")).integer);
+    try std.testing.expectEqual(@as(i64, 16), (try field(far_witness, "input_length")).integer);
+    try std.testing.expectEqualStrings("original entropy", try suite.read("goals-run/goals/goal-2.bin"));
+    try std.testing.expect(std.mem.endsWith(u8, (try field(far_witness, "input_path")).string, "goals-run/goals/goal-2.bin"));
+    // Exploration alone grades what exploration reached.
+    const goals_explore = try suite.run("goals-explore", &.{ "explore", "--runs=5", "--no-goal-feedback" }, "goals-explore", 1);
+    try expectString(goals_explore, "outcome", "inconclusive");
+    try expectString(try field(goals_explore, "exploration"), "status", "passed");
+    try std.testing.expectEqual(@as(usize, 2), (try field(try field(goals_explore, "goals"), "unreached")).array.items.len);
+    try std.testing.expect(!(try field(try field(goals_explore, "configuration"), "goal_feedback")).bool);
+    // A worker that dies leaves the goals it had reached, and their witnesses.
+    const goals_crash = try suite.run("goals-explore-crash", &.{ "explore", "--runs=5" }, "goals-explore-crash", 1);
+    try expectString(goals_crash, "outcome", "finding");
+    const crash_far = (try field(try field(goals_crash, "goals"), "inventory")).array.items[2];
+    try std.testing.expect((try field(crash_far, "reached")).bool);
+    try std.testing.expectEqualStrings("original entropy", try suite.read("goals-explore-crash/goals/goal-2.bin"));
+    // One replayed input is not a campaign: it reports what it reached.
+    const goals_replay = try suite.run("goals-replay", &.{ "replay", "goals-run/example-1.bin" }, "goals", 0);
+    try expectString(try field(goals_replay, "goals"), "status", "not_graded");
+    try std.testing.expectEqualStrings("right", (try field((try field(goals_replay, "examples")).array.items[0], "goals_reached")).array.items[0].string);
+    const goals_invalid = try suite.run("goals-duplicate", &.{"check"}, "goals-duplicate", 2);
+    try expectString(goals_invalid, "outcome", "infrastructure_error");
+
     // The exact old file survives a failed atomic rename, even after every
     // declared example completed successfully.
     const bad_baseline = try suite.path("baseline-directory");

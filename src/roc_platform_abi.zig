@@ -1066,10 +1066,19 @@ pub const __AnonStruct_fa4a9e94a9b0c16fRelease = struct {
     }
 };
 
+/// Release one owned reference to a `RocList(RocStr)`.
+///
+/// The allocation's final reference is claimed atomically before any element
+/// is read, so concurrent owners cannot skip or duplicate element teardown.
+pub fn decrefListOfStr(value: RocList(RocStr), roc_host: *RocHost) void {
+    value.deinitWith(RocStrRelease, roc_host);
+}
+
 fn rocReleasePolicy(comptime T: type) type {
     if (T == RocStr) return RocStrRelease;
     if (T == __AnonStruct_fa4a9e94a9b0c16f) return __AnonStruct_fa4a9e94a9b0c16fRelease;
     if (T == RocListWith(u8, false)) return RocListSpineRelease(RocListWith(u8, false));
+    if (T == RocList(RocStr)) return RocListRelease(RocList(RocStr), RocStrRelease);
     @compileError("generated glue has no recursive release policy for " ++ @typeName(T));
 }
 
@@ -1311,6 +1320,9 @@ pub extern fn roc_fuzz_example(arg0: u64, arg1: u64) callconv(.c) __AnonStruct_f
 
 /// Entrypoint: example_count_for_host
 pub extern fn roc_fuzz_example_count(arg0: u64) callconv(.c) u64;
+
+/// Entrypoint: goals_for_host
+pub extern fn roc_fuzz_goals(arg0: u64) callconv(.c) RocList(RocStr);
 
 /// Entrypoint: name_for_host
 pub extern fn roc_fuzz_name(arg0: u64) callconv(.c) RocStr;

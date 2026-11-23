@@ -5,11 +5,12 @@ platform "roc-fuzz"
 	requires {
 		target : Target
 	}
-	exposes [Arbitrary, Fuzz, Target]
-	packages {}
+	exposes [Arbitrary, Fuzz, Model, Solve, Target]
+	packages { sat: "https://github.com/lukewilliamboswell/rocsat/releases/download/0.0.2/3vAUWAXKSUvBxELd63BG4FjmGjgrJoHscu2GVFQTHhu.tar.zst" }
 	provides {
 		"roc_fuzz_example": example_for_host,
 		"roc_fuzz_example_count": example_count_for_host,
+		"roc_fuzz_goals": goals_for_host,
 		"roc_fuzz_name": name_for_host,
 		"roc_fuzz_run": run_for_host!,
 		"roc_fuzz_show": show_for_host,
@@ -38,6 +39,8 @@ platform "roc-fuzz"
 
 import Arbitrary
 import Fuzz
+import Model
+import Solve
 import Target
 
 target_count_for_host : () -> U64
@@ -54,6 +57,9 @@ example_count_for_host = |index| selected(index).example_count()
 
 example_for_host : U64, U64 -> { name : Str, revision : Str, bytes : List(U8) }
 example_for_host = |member, index| selected(member).example(index)
+
+goals_for_host : U64 -> List(Str)
+goals_for_host = |index| selected(index).goals()
 
 run_for_host! : U64, List(U8) => U8
 run_for_host! = |index, input| selected(index).run!(input)

@@ -284,6 +284,15 @@ The macOS target includes `FuzzerInterceptors.cpp`: its `dlsym` lookups
 work with macOS's dynamic `libSystem`. Its deployment target is macOS
 11.0, and its only allowed dynamic dependencies are system libraries.
 
+The host makes a goal's first reach new coverage. For a target that declares
+goals it registers one inline 8-bit counter for each, and a PC table of the same
+length, through libFuzzer's `__sanitizer_cov_8bit_counters_init` and
+`__sanitizer_cov_pcs_init`: the entry points instrumented code calls on both
+targets. The region therefore lives in `libhost.a` and needs no linker section
+and no change to `libfuzzer.a`. A target without goals registers nothing.
+libFuzzer's extra counters are not an option: the pinned source reads them on
+Linux only.
+
 `src/macos_sancov.c` supplies the public TLS slot required by Roc's
 macOS stack-depth coverage instrumentation.
 `src/macos_fuzzer_ext_functions.cpp` binds the standalone runner hooks

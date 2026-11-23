@@ -14,6 +14,17 @@ fn modeIs(expected: []const u8) bool {
     return std.mem.eql(u8, env("ROCFUZZ_FIXTURE_CASE"), expected);
 }
 
+/// Goal cases declare three goals: the first example reaches `left`, the
+/// second `right`, and only exploration can reach `far`.
+fn goalMode() bool {
+    return std.mem.startsWith(u8, env("ROCFUZZ_FIXTURE_CASE"), "goals");
+}
+
+fn goals(allocator: Allocator) ![]const []const u8 {
+    if (!goalMode()) return &.{};
+    return allocator.dupe([]const u8, if (modeIs("goals-duplicate")) &.{ "left", "left" } else &.{ "left", "right", "far" });
+}
+
 fn examples(allocator: Allocator) ![]const quality.Example {
     if (modeIs("prepare-crash")) std.c.abort();
     if (modeIs("prepare-timeout")) {
@@ -61,6 +72,8 @@ fn runOne(allocator: Allocator, input: []const u8, capture: quality.Capture) !qu
     const cost: usize = if (modeIs("increase")) 3 else if (modeIs("reduction")) 1 else 2;
     quality.healthFinish(!modeIs("reject"));
     return .{
+        .goals_declared = if (goalMode()) 3 else 0,
+        .goals_reached = if (!goalMode()) &.{} else if (first) &.{"left"} else &.{"right"},
         .accepted = !modeIs("reject"),
         .metric_valid = !modeIs("invalid"),
         .trace_rules_passed = !modeIs("trace"),
@@ -108,7 +121,7 @@ pub fn main(init: std.process.Init) !void {
     if (args.len >= 4 and std.mem.eql(u8, args[1], "__quality-worker")) worker_output_directory = std.fs.path.dirname(args[3]);
     const argv = try allocator.alloc([*:0]u8, args.len);
     for (args, argv) |argument, *slot| slot.* = (try allocator.dupeZ(u8, argument)).ptr;
-    const adapter = quality.Adapter{ .prepare_examples = examples, .run_one = runOne, .show = show, .original_snapshot = snapshot };
+    const adapter = quality.Adapter{ .prepare_examples = examples, .prepare_goals = goals, .run_one = runOne, .show = show, .original_snapshot = snapshot };
     if (quality.dispatch(argv.len, argv.ptr, "fixture_target", adapter)) return;
     if (args.len >= 2 and std.mem.eql(u8, args[1], "raw")) {
         const encoded = try std.json.Stringify.valueAlloc(allocator, args, .{});
@@ -133,7 +146,12 @@ pub fn main(init: std.process.Init) !void {
         quality.healthObservationReady();
         quality.healthFinish(!modeIs("all-rejected"));
         quality.breadcrumb("{\"mark\":\"original-run\"}");
-        if (modeIs("explore-crash")) std.c.abort();
+        if (goalMode()) {
+            for (args) |argument| if (std.mem.startsWith(u8, argument, "--goal-dir=")) quality.setGoalDirectory(argument[11..]);
+            quality.healthGoalInventory(3);
+            if (modeIs("goals-explore") or modeIs("goals-explore-crash")) quality.healthGoalsReached(&.{2}, "original entropy");
+        }
+        if (modeIs("explore-crash") or modeIs("goals-explore-crash")) std.c.abort();
         return;
     }
     return error.UnhandledCommand;

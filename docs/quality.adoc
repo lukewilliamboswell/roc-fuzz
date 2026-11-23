@@ -27,7 +27,8 @@ Defaults are 60 seconds of exploration, a 10-second per-input deadline and leak
 checking. `check` runs examples and baseline checks without exploration;
 `explore` runs the search independently. A missing accepted entry reports
 `unbaselined` and allows normal execution. Exploration with zero accepted
-executions is `inconclusive` and exits unsuccessfully.
+executions is `inconclusive` and exits unsuccessfully, and so is a campaign that
+leaves a declared goal unreached.
 
 == Review and accept allocation observations
 
@@ -50,6 +51,37 @@ runs each declared example once and updates the relevant entry atomically only
 when the complete inventory passes. Rejections, assertions, crashes, timeouts,
 incomplete observations and write failures cannot accept a partial inventory.
 
+[[grade-goals]]
+== Grade a campaign with goals
+
+A campaign can pass every rule and exercise little. Goals state what a passing
+campaign must have reached; xref:internals.adoc#campaign-goals[Declare campaign goals]
+shows how a target declares them. `check` grades the declared examples,
+`explore` grades the saved corpus and the search, and `run` grades all three.
+
+[source,sh]
+----
+./fuzz-target run .roc-fuzz/corpus --report-dir=.roc-fuzz/evidence --time=60
+./fuzz-target replay .roc-fuzz/evidence/goals/goal-3.bin
+./fuzz-target retain .roc-fuzz/evidence/goals/goal-3.bin --name fork-at-bit-32 --output=fuzz/regressions
+----
+
+The report's `goals` object gives the status, the names never reached and, for
+each goal, how many kept inputs reached it and its first witness: a declared
+example, or an exploration input whose bytes are saved as `goals/goal-N.bin`,
+where `N` counts the goals of the inventory from zero. `summary.md` shows the
+same table. `replay` names the goals one input reaches. `retain` prints a
+`Fuzz.saved` declaration for a witness; once it is an example, every `check`
+reaches that goal.
+
+A campaign that breaks no rule and leaves a goal unreached is `inconclusive`,
+with exit status `1`. It lacks evidence the target asked for, as an exploration
+that keeps no input does. Reaching a goal is never a finding, and neither is
+missing one. Pass `--allow-unreached-goals` where partial evidence is expected,
+such as a `check` whose goals are left to exploration: the report still lists
+them, with `required` false. `accept` reports goals and its result does not
+depend on them.
+
 == Read the evidence
 
 An explicit report directory must be absent or empty. Keep it separate from
@@ -62,7 +94,8 @@ The directory contains:
 * `summary.md` and the combined child `run.log`;
 * original example inputs, worker observations and original trace snapshots;
 * exploration failure artifacts and `original-input.bin` for the last attempted
-  input, with capture completeness and its SHA-256 in the report; and
+  input, with capture completeness and its SHA-256 in the report;
+* `goals/`, the first exploration input to reach each declared goal; and
 * bounded original-run logical traces, including unfinished regions on failure.
 
 The report records the metric version, effective execution controls (including
@@ -92,7 +125,7 @@ the original bytes and prints a `Fuzz.saved` source declaration plus the decoded
 representative. Keep the binary witness when storage shape matters.
 
 Exit status `0` means success, `1` means a finding, baseline change or inconclusive
-exploration, and `2` means an infrastructure/configuration failure. Native child
+campaign, and `2` means an infrastructure/configuration failure. Native child
 termination remains separate in the report.
 
 == Keep project policy in the project

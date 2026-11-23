@@ -199,6 +199,7 @@ Friendly execution options include:
 |`--profile=NAME` |Select the named baseline profile.
 |`--detailed` |Capture a detailed logical trace for replay.
 |`--no-detect-leaks` |Disable the broader invocation leak check.
+|`--allow-unreached-goals` |Report unreached goals without making the campaign inconclusive.
 |===
 
 Provenance options are `--source-revision`, `--roc-version`,

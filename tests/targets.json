@@ -821,6 +821,15 @@
       "skip_fuzz": false
     },
     {
+      "name": "qualityGoals",
+      "path": "tests/targets/fixtures/qualityGoals.roc",
+      "seed_hex": "0102",
+      "libfuzzer_seed": 2244,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
       "name": "qualitySuite",
       "path": "tests/targets/fixtures/qualitySuite.roc",
       "seed_hex": "00",

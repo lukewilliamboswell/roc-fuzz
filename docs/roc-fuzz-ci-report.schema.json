@@ -19,7 +19,8 @@
     "provenance",
     "preparation",
     "metric_version",
-    "configuration"
+    "configuration",
+    "goals"
   ],
   "properties": {
     "format": {
@@ -97,6 +98,9 @@
     },
     "configuration": {
       "$ref": "#/$defs/configuration"
+    },
+    "goals": {
+      "$ref": "#/$defs/goals"
     }
   },
   "$defs": {
@@ -233,7 +237,8 @@
         "observations",
         "diagnostics",
         "finding_kind",
-        "log"
+        "log",
+        "goals_reached"
       ],
       "properties": {
         "name": {
@@ -307,6 +312,15 @@
         },
         "log": {
           "$ref": "#/$defs/logSpan"
+        },
+        "goals_reached": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -561,7 +575,8 @@
         "leak_detection",
         "detailed_capture",
         "corpus",
-        "exploration_options"
+        "exploration_options",
+        "goal_feedback"
       ],
       "properties": {
         "invocation_deadline_ms": {
@@ -592,6 +607,134 @@
           "items": {
             "type": "string"
           }
+        },
+        "goal_feedback": {
+          "type": "boolean"
+        }
+      }
+    },
+    "goals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "required",
+        "declared",
+        "reached",
+        "unreached",
+        "inventory"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "not_graded",
+            "none_declared",
+            "reached",
+            "unreached"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "declared": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reached": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unreached": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "inventory": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/goal"
+          }
+        }
+      }
+    },
+    "goal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "reached",
+        "inputs",
+        "first"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reached": {
+          "type": "boolean"
+        },
+        "inputs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "first": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/goalWitness"
+            }
+          ]
+        }
+      }
+    },
+    "goalWitness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "example",
+        "attempt",
+        "input_path",
+        "input_sha256",
+        "input_length"
+      ],
+      "properties": {
+        "source": {
+          "enum": [
+            "example",
+            "exploration"
+          ]
+        },
+        "example": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "attempt": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "input_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "input_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "input_length": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     }

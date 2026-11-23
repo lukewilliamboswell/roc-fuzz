@@ -480,6 +480,13 @@ quality_step! = |item, work| {
 			return Err(StepFailed("an unused measured return was dropped before its observation boundary"))
 		}
 	}
+	if item.name == "qualityGoals" {
+		report : { outcome : Str, goals : { status : Str, declared : U64, reached : U64, inventory : List({ name : Str, reached : Bool, inputs : U64 }) } }
+		report = Json.parse(Path.read_utf8!(Path.join(directory, "unbaselined/report.json"))?)?
+		if report.outcome != "passed" or report.goals.status != "reached" or report.goals.declared != 3 or report.goals.reached != 3 or !report.goals.inventory.any(|goal| goal.name == "checked" and goal.inputs == 2) {
+			return Err(StepFailed("the declared examples did not reach every declared goal"))
+		}
+	}
 	if !Script.trim(Str.from_utf8_lossy(listed.stdout_bytes)).is_empty() {
 		accepted = executable.output!(["accept", "--report-dir=accept"], directory)?
 		if accepted.status != Exited(0) {
