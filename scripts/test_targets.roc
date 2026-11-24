@@ -486,6 +486,15 @@ quality_step! = |item, work| {
 		if report.outcome != "passed" or report.goals.status != "reached" or report.goals.declared != 3 or report.goals.reached != 3 or !report.goals.inventory.any(|goal| goal.name == "checked" and goal.inputs == 2) {
 			return Err(StepFailed("the declared examples did not reach every declared goal"))
 		}
+		goal_witnesses!(executable, directory, report.goals.inventory.map(|goal| goal.name))?
+	}
+	if item.name == "qualityLifetimes" {
+		# A target that declares no goal adds nothing to coverage.
+		explored = executable.output!(["explore", "goal-free-corpus", "--runs=1", "--report-dir=goal-free"], directory)?
+		log = Path.read_utf8!(Path.join(directory, "goal-free/run.log"))?
+		if explored.status != Exited(0) or !log.contains("Loaded 1 modules") {
+			return Err(StepFailed("a target without goals registered more than its own coverage\n${tail(explored)}"))
+		}
 	}
 	if !Script.trim(Str.from_utf8_lossy(listed.stdout_bytes)).is_empty() {
 		accepted = executable.output!(["accept", "--report-dir=accept"], directory)?
@@ -503,6 +512,73 @@ quality_step! = |item, work| {
 		}
 	}
 	Ok({})
+}
+
+## Exploration reaches every goal and keeps the first input to reach each:
+## the witness replays to its goal, retains as a saved example, and a reduced
+## corpus still reaches every goal. The goals are one more coverage module, of
+## one counter each.
+goal_witnesses! = |executable, directory, names| {
+	explored = executable.output!(["explore", "goal-corpus", "--runs=200", "--report-dir=explored"], directory)?
+	if explored.status != Exited(0) {
+		return Err(StepFailed("exploration did not reach every goal\n${tail(explored)}"))
+	}
+	report : { format : Str, goals : { status : Str, inventory : List({ name : Str, first : { source : Str, input_path : Str } }) } }
+	report = Json.parse(Path.read_utf8!(Path.join(directory, "explored/report.json"))?)?
+	log = Path.read_utf8!(Path.join(directory, "explored/run.log"))?
+	if report.format != "roc-fuzz-quality/2" or report.goals.status != "reached" or report.goals.inventory.map(|goal| goal.name) != names {
+		return Err(StepFailed("exploration reported the wrong goals"))
+	}
+	if !log.contains("Loaded 2 modules") or !log.contains(", ${names.len().to_str()} [0x") {
+		return Err(StepFailed("the goals were not one coverage module of their own"))
+	}
+	var $index = 0.U64
+	for goal in report.goals.inventory {
+		witness = "explored/goals/goal-${$index.to_str()}.bin"
+		if !Path.exists!(Path.join(directory, witness))? {
+			return Err(StepFailed("the witness for ${goal.name} was not saved as ${witness}"))
+		}
+		replay_dir = "replay-${$index.to_str()}"
+		if !replay_reaches!(executable, directory, witness, replay_dir)?.contains(goal.name) {
+			return Err(StepFailed("the witness for ${goal.name} did not reach it on replay"))
+		}
+		$index = $index + 1
+	}
+	retained = executable.output!(["retain", "explored/goals/goal-0.bin", "--name=witness", "--output=retained"], directory)?
+	if retained.status != Exited(0) or !Str.from_utf8_lossy(retained.stdout_bytes).contains("Fuzz.saved(") or Path.read_bytes!(Path.join(directory, "retained/witness.bin"))? != Path.read_bytes!(Path.join(directory, "explored/goals/goal-0.bin"))? {
+		return Err(StepFailed("a goal witness was not retained as a saved example\n${tail(retained)}"))
+	}
+	reduced = executable.output!(["reduce-corpus", "goal-corpus", "reduced-corpus", "--report-dir=reduced"], directory)?
+	if reduced.status != Exited(0) {
+		return Err(StepFailed("reduce-corpus failed\n${tail(reduced)}"))
+	}
+	var $reached = []
+	var $replays = 0.U64
+	for path in Files.direct_files!(Path.join(directory, "reduced-corpus"))? {
+		input = Path.display(path)
+		$reached = $reached.concat(replay_reaches!(executable, directory, input, "reduced-replay-${$replays.to_str()}")?)
+		$replays = $replays + 1
+	}
+	for name in names {
+		if !$reached.contains(name) {
+			return Err(StepFailed("the reduced corpus lost the goal ${name}"))
+		}
+	}
+	Ok({})
+}
+
+## The goals one replayed input reached.
+replay_reaches! = |executable, directory, input, report_dir| {
+	replayed = executable.output!(["replay", OsStr.from_str(input), OsStr.from_str("--report-dir=${report_dir}")], directory)?
+	if replayed.status != Exited(0) {
+		return Err(StepFailed("replay of ${input} failed\n${tail(replayed)}"))
+	}
+	report : { examples : List({ goals_reached : List(Str) }) }
+	report = Json.parse(Path.read_utf8!(Path.join(Path.join(directory, report_dir), "report.json"))?)?
+	match report.examples {
+		[example] => Ok(example.goals_reached)
+		_ => Err(StepFailed("replay of ${input} reported no single input"))
+	}
 }
 
 ## Fuzz the target for the configured time. In a campaign the corpus outlives
