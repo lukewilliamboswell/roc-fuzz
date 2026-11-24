@@ -292,12 +292,12 @@
       "reason": "The same script package, as the source the environment prefetches; scripts do not ship"
     },
     {
-      "input": "roc-package:2q3JUnEiL7N5i3cCNq4keScCxg8jgnLxVPJydRnXrr5L",
+      "input": "roc-package:CxK9QaRb2VBQn2hKHAmSQ1zFYW2AGNC6XLuDXeHDamZY",
       "component": "",
-      "reason": "Package the repository scripts import (https://github.com/lukewilliamboswell/roc-zip/releases/download/0.3.0-rc5/2q3JUnEiL7N5i3cCNq4keScCxg8jgnLxVPJydRnXrr5L.tar.zst); scripts do not ship"
+      "reason": "Package the repository scripts import (https://github.com/lukewilliamboswell/roc-zip/releases/download/0.3.0-rc6/CxK9QaRb2VBQn2hKHAmSQ1zFYW2AGNC6XLuDXeHDamZY.tar.zst); scripts do not ship"
     },
     {
-      "input": "build-source:roc-2q3JUnEiL7N5i3cCNq4keScCxg8jgnLxVPJydRnXrr5L",
+      "input": "build-source:roc-CxK9QaRb2VBQn2hKHAmSQ1zFYW2AGNC6XLuDXeHDamZY",
       "component": "",
       "reason": "The same script package, as the source the environment prefetches; scripts do not ship"
     },
@@ -308,16 +308,6 @@
     },
     {
       "input": "build-source:roc-GVgp4MNmCBjdtJg8j2gBdsrdsKKyx4huzRz7ZtbRaYvJ",
-      "component": "",
-      "reason": "The same script package, as the source the environment prefetches; scripts do not ship"
-    },
-    {
-      "input": "roc-package:2VEuxTntQvoRYzwwhGU22yHUiiC3cAgR1XyKajLw2Gpy",
-      "component": "",
-      "reason": "Package that the ZIP package imports (https://github.com/lukewilliamboswell/roc-deflate/releases/download/0.6.0-rc1/2VEuxTntQvoRYzwwhGU22yHUiiC3cAgR1XyKajLw2Gpy.tar.zst); scripts do not ship"
-    },
-    {
-      "input": "build-source:roc-2VEuxTntQvoRYzwwhGU22yHUiiC3cAgR1XyKajLw2Gpy",
       "component": "",
       "reason": "The same script package, as the source the environment prefetches; scripts do not ship"
     },

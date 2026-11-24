@@ -36,9 +36,8 @@ config = [
 				"https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst",
 				"https://github.com/lukewilliamboswell/weaver/releases/download/0.10.2/7CdYzjBAJmprmnK45oTpmH6BXt76ZASN2Ck5uZQEoWsK.tar.zst",
 				"https://github.com/lukewilliamboswell/roc-tar/releases/download/0.0.3-rc1/8egXmMy7h6TTkRzUmxWygp2GnPe4mBSNGy5Q2ZZYkppu.tar.zst",
-				"https://github.com/lukewilliamboswell/roc-zip/releases/download/0.3.0-rc5/2q3JUnEiL7N5i3cCNq4keScCxg8jgnLxVPJydRnXrr5L.tar.zst",
+				"https://github.com/lukewilliamboswell/roc-zip/releases/download/0.3.0-rc6/CxK9QaRb2VBQn2hKHAmSQ1zFYW2AGNC6XLuDXeHDamZY.tar.zst",
 				"https://github.com/niclas-ahden/roc-crc32/releases/download/2.0.1/GVgp4MNmCBjdtJg8j2gBdsrdsKKyx4huzRz7ZtbRaYvJ.tar.zst",
-				"https://github.com/lukewilliamboswell/roc-deflate/releases/download/0.6.0-rc1/2VEuxTntQvoRYzwwhGU22yHUiiC3cAgR1XyKajLw2Gpy.tar.zst",
 				"https://github.com/lukewilliamboswell/roc-deflate/releases/download/0.6.0-rc2/CQoQh2ycoMgMbrkSnQJdsEhWjp67fYrT7hWwgQXynEBy.tar.zst",
 			]),
 			# Programs the scripts and workflows start. Zig is the exact
