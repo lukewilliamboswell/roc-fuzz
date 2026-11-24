@@ -144,7 +144,11 @@ pub fn main(init: std.process.Init) !void {
     if (args.len >= 2 and std.mem.eql(u8, args[1], "__quality-explore")) {
         const storage = quality.sharedObservation(u64).?;
         storage.* = 31;
-        quality.healthAttempt("original entropy");
+        const input = if (modeIs("large-input-crash"))
+            try std.Io.Dir.cwd().readFileAlloc(init.io, "large-input.bin", allocator, .limited(2 * 1024 * 1024 + 1))
+        else
+            "original entropy";
+        quality.healthAttempt(input);
         quality.healthObservationReady();
         quality.healthFinish(!modeIs("all-rejected"));
         quality.breadcrumb("{\"mark\":\"original-run\"}");
@@ -153,7 +157,7 @@ pub fn main(init: std.process.Init) !void {
             quality.healthGoalInventory(3);
             if (modeIs("goals-explore") or modeIs("goals-explore-crash")) quality.healthGoalsReached(&.{2}, "original entropy");
         }
-        if (modeIs("explore-crash") or modeIs("goals-explore-crash")) std.c.abort();
+        if (modeIs("explore-crash") or modeIs("goals-explore-crash") or modeIs("large-input-crash")) std.c.abort();
         return;
     }
     return error.UnhandledCommand;

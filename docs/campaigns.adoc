@@ -194,7 +194,7 @@ Friendly execution options include:
 |`--time=N` |Exploration budget in seconds; default 60, 0 unbounded.
 |`--runs=N` |Exploration execution bound.
 |`--timeout=N` |Invocation deadline in seconds; default 10.
-|`--max-input-size=N` |Bound corpus input bytes, from 1 byte through 1 MiB.
+|`--max-input-size=N` |Bound corpus input bytes, from 1 byte through 2 MiB.
 |`--memory-limit=N` |Exploration process RSS limit in MiB.
 |`--dictionary=FILE` |Mutation tokens.
 |`--seed=N` |Exploration random seed; retain input bytes for reproduction.
