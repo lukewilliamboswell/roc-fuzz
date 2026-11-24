@@ -100,6 +100,34 @@ expect {
 
 expect Model.explain(Model.explore(documented, { depth: 10, key: whole })) == "Holds for every reachable state. The search ran out of new states: 4 visited, the farthest 3 actions from the start, and every step from each of them checked (6 steps). Goals reached: 1 of 1."
 
+# The examples in the doc comments of the exposed functions, word for word.
+expect Model.goals(documented) == ["reaches three"]
+
+expect {
+	strict = { ..documented, rules: [Model.always("never reaches two", |n| n < 2)] }
+	Model.check(strict, { depth: 10 }) == { verdict: Violated({ rule: "never reaches two", trace: [Up, Up] }), states: 3, depth: 2 }
+}
+
+expect Model.witness(Model.explore(documented, { depth: 10, key: whole }), "reaches three") == Ok([Up, Up, Up])
+expect Model.walk(documented, [0, 0, 1]) == { trace: [Up, Up, Down], state: 1, reached: [], verdict: Completed }
+expect Model.replay(documented, [Up, Up, Up]).reached == ["reaches three"]
+expect Model.replay(documented, [Up, Down, Down]).verdict == Impossible({ at: 2 })
+expect Model.apply(documented, [Up, Up, Up, Up]) == {
+	trace: [Up, Up, Up, Up],
+	state: 4,
+	reached: ["reaches three"],
+	unreached: [],
+	outside: [3],
+	verdict: Violated({ rule: "never above three" }),
+}
+expect Model.step_from(documented, 2) == Preserved({ actions: 2, reached: ["reaches three"] })
+expect Model.step_from(documented, 7) == Outside({ rule: "never above three" })
+
+expect {
+	resting = { ..lift, rules: [Model.at_rest("a lift rests only at the ground floor", |floor| floor == 0)] }
+	Model.check(resting, { depth: 10 }).verdict == Deadlock({ rule: "a lift rests only at the ground floor", trace: [Up, Up] })
+}
+
 # ---------------------------------------------------------------------------
 # Rules about steps, in every engine
 # ---------------------------------------------------------------------------
@@ -219,3 +247,45 @@ expect Model.replay(stepped(3, 1), [Up, Up, Up, Up, Down]).verdict == Impossible
 expect Model.apply(stepped(3, 2), [Up, Up]) == { trace: [Up], state: 2, reached: [], unreached: ["reaches two", "comes down from the top", "goes up from five"], outside: [], verdict: Violated({ rule: "a step moves by one" }) }
 expect Model.apply(plain(3, 2), [Up, Up]) == { trace: [Up, Up], state: 4, reached: ["reaches two"], unreached: [], outside: [], verdict: Completed }
 expect Model.apply(lift, [Up, Up]).verdict == Deadlock({ rule: "the lift never jams" })
+
+# ---------------------------------------------------------------------------
+# Failure paths every engine shares
+# ---------------------------------------------------------------------------
+
+# A machine whose `init` breaks a rule fails before any step, in every engine.
+broken_start : Model.Machine(U64, [Up, Down])
+broken_start = { ..counter(3, 10), init: 20, rules: [Model.always("stays below ten", |n| n < 10), Model.always("stays below twenty", |n| n < 20), Model.sometimes("reaches three", |n| n == 3)] }
+
+expect Model.check(broken_start, { depth: 10 }) == { verdict: Violated({ rule: "stays below ten", trace: [] }), states: 1, depth: 0 }
+expect Model.explore(broken_start, { depth: 10, key: whole, blame: EveryRule }) == {
+	verdict: Violated({ rule: "stays below ten", trace: [] }),
+	states: 1,
+	depth: 0,
+	steps: 0,
+	broken: ["stays below ten", "stays below twenty"],
+	reached: [],
+	unreached: ["reaches three"],
+}
+expect Model.walk(broken_start, [0, 0]) == { trace: [], state: 20, reached: [], verdict: Violated({ rule: "stays below ten" }) }
+expect Model.replay(broken_start, [Up]).verdict == Violated({ rule: "stays below ten" })
+expect Model.apply(broken_start, [Up]) == { trace: [], state: 20, reached: [], unreached: ["reaches three"], outside: [], verdict: Violated({ rule: "stays below ten" }) }
+
+# A deadlock names every `at_rest` rule the resting state breaks.
+expect {
+	two = { ..lift, rules: [Model.at_rest("the lift never jams", |_| Bool.False), Model.at_rest("the lift rests below the top", |floor| floor < 2)] }
+	report = Model.explore(two, { depth: 10, key: whole, blame: EveryRule })
+	report.verdict == Deadlock({ rule: "the lift never jams", trace: [Up, Up] }) and report.broken == ["the lift never jams", "the lift rests below the top"] and report.unreached == []
+}
+
+# A replayed path that ends at rest in a forbidden state is a deadlock too.
+expect Model.replay(lift, [Up, Up]) == { trace: [Up, Up], state: 2, reached: [], verdict: Deadlock({ rule: "the lift never jams" }) }
+
+# A walk ends where nothing can happen, with bytes left over, and that is no
+# deadlock unless an `at_rest` rule says so.
+halting : Model.Machine(U64, [Up])
+halting = { init: 0, actions: |n| if (n < 2) [Up] else [], step: |n, _| n + 1, rules: [Model.sometimes("reaches two", |n| n == 2)] }
+
+expect Model.walk(halting, [7, 7, 7, 7]) == { trace: [Up, Up], state: 2, reached: ["reaches two"], verdict: Completed }
+expect Model.walk({ ..halting, rules: [Model.at_rest("never stops", |_| Bool.False)] }, [7, 7, 7]).verdict == Deadlock({ rule: "never stops" })
+expect Model.step_from(halting, 2) == Preserved({ actions: 0, reached: ["reaches two"] })
+expect Model.check(halting, { depth: 10 }) == { verdict: Holds(Exhausted), states: 3, depth: 2 }

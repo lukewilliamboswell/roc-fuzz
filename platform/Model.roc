@@ -6,11 +6,16 @@ import Target
 ## they run in a plain `expect` under `roc test`, and inside a fuzz target
 ## unchanged.
 ##
+## A [`Machine`](#Model.Machine) is where the system starts, what can happen in
+## each state, and what happening does. Its `rules` say what must always be
+## true and, as goals, what some run must reach. Start with a search in an
+## `expect`:
+##
 ## ```roc
 ## counter : Model.Machine(U64, [Up, Down])
 ## counter = {
 ## 	init: 0,
-## 	actions: |n| if n == 0 [Up] else if n == 3 [Down] else [Up, Down],
+## 	actions: |n| if (n == 0) [Up] else if (n == 3) [Down] else [Up, Down],
 ## 	step: |n, action| match action {
 ## 		Up => n + 1
 ## 		Down => n - 1
@@ -51,8 +56,9 @@ import Target
 ## input that reached it, and the goals no input reached, and a campaign that
 ## leaves one unreached is `inconclusive`: it passed every rule without going
 ## where the model says a run must go. Replay a goal's witness with
-## `TARGET replay`, or keep it with `TARGET retain` and declare it as an
-## example, after which `TARGET check` reaches that goal every time.
+## `TARGET replay`, or keep it with `TARGET retain` and add the `Fuzz.saved`
+## declaration it prints to the target's `examples`, after which
+## `TARGET check` reaches that goal every time.
 ##
 ## ## Rules about steps
 ##
@@ -108,13 +114,22 @@ Model := [].{
 	]
 
 	## A rule that must hold in every state an engine visits, the first included.
+	##
+	## ```roc
+	## Model.always("never above three", |n| n <= 3)
+	## ```
 	always : Str, (state -> Bool) -> Rule(state, action)
 	always = |name, holds| Always(name, holds)
 
 	## A goal: a rule that some visited state must satisfy. It guards against
 	## a model that passes only because it never gets anywhere interesting.
 	## Only a search can say a goal was never reached; a path reports the
-	## ones it did reach.
+	## ones it did reach, and a fuzz campaign reports the ones no input
+	## reached.
+	##
+	## ```roc
+	## Model.sometimes("reaches three", |n| n == 3)
+	## ```
 	sometimes : Str, (state -> Bool) -> Rule(state, action)
 	sometimes = |name, goal| Sometimes(name, goal)
 
@@ -123,14 +138,27 @@ Model := [].{
 	## Such a state must satisfy `allowed`, otherwise the machine is stuck there
 	## and the engines report a `Deadlock`. With no `at_rest` rule, resting
 	## anywhere is fine.
+	##
+	## ```roc
+	## Model.at_rest("a lift rests only at the ground floor", |floor| floor == 0)
+	## ```
 	at_rest : Str, (state -> Bool) -> Rule(state, action)
 	at_rest = |name, allowed| AtRest(name, allowed)
 
-	## A rule that must hold of every step an engine takes.
+	## A rule that must hold of every step an engine takes. It is handed a
+	## [`Transition`](#Model.Transition).
+	##
+	## ```roc
+	## Model.always_step("one at a time", |{ before, action: _, after }| after == before + 1 or before == after + 1)
+	## ```
 	always_step : Str, (Transition(state, action) -> Bool) -> Rule(state, action)
 	always_step = |name, holds| AlwaysStep(name, holds)
 
 	## A goal about a step: some step taken must satisfy it.
+	##
+	## ```roc
+	## Model.sometimes_step("comes down from three", |{ before, action, after: _ }| action == Down and before == 3)
+	## ```
 	sometimes_step : Str, (Transition(state, action) -> Bool) -> Rule(state, action)
 	sometimes_step = |name, goal| SometimesStep(name, goal)
 
@@ -160,7 +188,12 @@ Model := [].{
 	}
 
 	## The names of a machine's goals, its `sometimes` and `sometimes_step`
-	## rules, in the order they are written.
+	## rules, in the order they are written: the inventory a fuzz target
+	## declares to the runner.
+	##
+	## ```roc
+	## expect Model.goals(counter) == ["reaches three"]
+	## ```
 	goals : Machine(state, action) -> List(Str)
 	goals = |machine| {
 		rules = sorted(machine.rules)
@@ -211,6 +244,15 @@ Model := [].{
 	## A state equal to one already seen is dropped before any rule sees it, so
 	## the state's `==` must not call two different states equal. See "What a
 	## search remembers" above, and [`explore`](#Model.explore) for the way out.
+	##
+	## A broken rule comes back with a shortest trace that breaks it:
+	##
+	## ```roc
+	## expect {
+	## 	strict = { ..counter, rules: [Model.always("never reaches two", |n| n < 2)] }
+	## 	Model.check(strict, { depth: 10 }) == { verdict: Violated({ rule: "never reaches two", trace: [Up, Up] }), states: 3, depth: 2 }
+	## }
+	## ```
 	check : Machine(state, action), { depth : U64 } -> Search(action)
 		where [state.is_eq : state, state -> Bool, state.to_hash : state, Hasher -> Hasher]
 	check = |machine, { depth }| {
@@ -396,8 +438,13 @@ Model := [].{
 		{ verdict, states: $seen.len(), depth: $deepest, steps: $steps, broken: [], reached: witnesses($found, count), unreached }
 	}
 
-	## The shortest trace the search found that meets the `sometimes` rule
-	## with this name.
+	## The shortest trace the search found that meets the goal with this name.
+	## Keep it as a regression with [`replay`](#Model.replay), or as a fuzz
+	## target's example with [`walk_example`](#Model.walk_example).
+	##
+	## ```roc
+	## expect Model.witness(Model.explore(counter, { depth: 10, key: |n| n }), "reaches three") == Ok([Up, Up, Up])
+	## ```
 	witness : Report(action), Str -> Try(List(action), [NotReached])
 	witness = |report, rule| match report.reached.find_first(|met| met.rule == rule) {
 		Ok(met) => Ok(met.trace)
@@ -459,6 +506,11 @@ Model := [].{
 	## path, and a shorter byte list gives a prefix of it, so the fuzzer's
 	## minimiser shortens the trace. Only the first 256 possible actions in a
 	## state can be chosen.
+	##
+	## ```roc
+	## # At 0 only `Up` is possible; at 1 and 2, byte 0 picks `Up` and byte 1 `Down`.
+	## expect Model.walk(counter, [0, 0, 1]) == { trace: [Up, Up, Down], state: 1, reached: [], verdict: Completed }
+	## ```
 	walk : Machine(state, action), List(U8) -> Run(state, action)
 		where [state.is_eq : state, state -> Bool]
 	walk = |machine, bytes| strict(
@@ -483,6 +535,11 @@ Model := [].{
 	## Follow a path given as actions, checking that each one is possible when
 	## its turn comes. Paste the trace from a failed [`check`](#Model.check) or a
 	## fuzzer's finding here to keep it as an ordinary `expect`.
+	##
+	## ```roc
+	## expect Model.replay(counter, [Up, Up, Up]).reached == ["reaches three"]
+	## expect Model.replay(counter, [Up, Down, Down]).verdict == Impossible({ at: 2 })
+	## ```
 	replay : Machine(state, action), List(action) -> Run(state, action)
 		where [state.is_eq : state, state -> Bool, action.is_eq : action, action -> Bool]
 	replay = |machine, trace| strict(
@@ -520,6 +577,18 @@ Model := [].{
 	##
 	## Because `actions` is not consulted first, `step` must accept whatever
 	## the path holds.
+	##
+	## ```roc
+	## # At 3 only `Down` is possible. The fourth `Up` is applied all the same.
+	## expect Model.apply(counter, [Up, Up, Up, Up]) == {
+	## 	trace: [Up, Up, Up, Up],
+	## 	state: 4,
+	## 	reached: ["reaches three"],
+	## 	unreached: [],
+	## 	outside: [3],
+	## 	verdict: Violated({ rule: "never above three" }),
+	## }
+	## ```
 	apply : Machine(state, action), List(action) -> Applied(state, action)
 		where [state.is_eq : state, state -> Bool, action.is_eq : action, action -> Bool]
 	apply = |machine, path| {
@@ -533,28 +602,6 @@ Model := [].{
 			outside: ran.outside,
 			verdict: ran.verdict,
 		}
-	}
-
-	## The bytes that make [`walk`](#Model.walk) take exactly this trace, or the
-	## index of the first action that is not possible (or is beyond the 256 a
-	## byte can choose). Use it to seed a fuzz corpus with a trace from `check`.
-	walk_bytes : Machine(state, action), List(action) -> Try(List(U8), [Impossible({ at : U64 })])
-		where [action.is_eq : action, action -> Bool]
-	walk_bytes = |machine, trace| {
-		var $state = machine.init
-		var $bytes = []
-		for action in trace {
-			match position((machine.actions)($state), action) {
-				Ok(index) if index < 256 => {
-					$bytes = $bytes.append(index.to_u8_wrap())
-				}
-				_ => {
-					return Err(Impossible({ at: $bytes.len() }))
-				}
-			}
-			$state = (machine.step)($state, action)
-		}
-		Ok($bytes)
 	}
 
 	## What one step from a given state showed.
@@ -581,6 +628,11 @@ Model := [].{
 	## reachable and it is one, or it is not and the rules are too weak to rule
 	## it out: add the missing `always` rule and run again. The rules are strong
 	## enough when this only ever answers `Outside` or `Preserved`.
+	##
+	## ```roc
+	## expect Model.step_from(counter, 2) == Preserved({ actions: 2, reached: ["reaches three"] })
+	## expect Model.step_from(counter, 7) == Outside({ rule: "never above three" })
+	## ```
 	step_from : Machine(state, action), state -> Step(action)
 		where [state.is_eq : state, state -> Bool]
 	step_from = |machine, state| {
@@ -627,30 +679,30 @@ Model := [].{
 	## each one choosing among the possible actions ([`walk`](#Model.walk)), so
 	## no input is rejected and the minimiser shortens the trace by deleting
 	## bytes. `show` prints the trace taken, the state it ended in and the
-	## verdict.
+	## verdict. Bound the walk's length with the runner's `--max-input-size`.
 	##
-	## `examples` are traces: paste in one printed by [`check`](#Model.check)
-	## or by a failed run and it is checked on every run and seeds the corpus.
-	## Bound the walk's length with the runner's `--max-input-size`.
+	## ```roc
+	## target = Model.walk_target({
+	## 	name: "counter",
+	## 	machine: counter,
+	## 	examples: [Model.walk_example(counter, { name: "up to three", revision: "1", trace: [Up, Up, Up] })],
+	## })
+	## ```
+	##
+	## `examples` are inputs, checked on every run and added to the corpus.
+	## [`walk_example`](#Model.walk_example) makes one from a trace, such as a
+	## witness from [`explore`](#Model.explore), and the `Fuzz.saved`
+	## declaration that the runner's `retain` prints goes in the same list.
 	##
 	## When the code under test crashes on a walk, `show` crashes with it,
 	## because it has to take the walk to know the trace. Use
 	## [`path_target`](#Model.path_target) where that matters: its `show`
 	## prints the path without running it.
-	walk_target : { name : Str, machine : Machine(state, action), examples : List({ name : Str, trace : List(action) }) } -> Target
+	walk_target : { name : Str, machine : Machine(state, action), examples : List(Fuzz.Example(List(U8))) } -> Target
 		where [state.is_eq : state, state -> Bool, action.is_eq : action, action -> Bool]
 	walk_target = |{ name, machine, examples }| Fuzz.target_with!({
 		name,
-		examples: examples.map(
-			|example| Fuzz.example({
-				name: example.name,
-				revision: "1",
-				make: || match walk_bytes(machine, example.trace) {
-					Ok(bytes) => bytes
-					Err(Impossible(stopped)) => crash "example ${example.name}: action ${stopped.at.to_str()} of its trace is not possible"
-				},
-			}),
-		),
+		examples,
 		generator: Fuzz.raw_bytes,
 		test!: |bytes| {
 			run = walk(machine, bytes)
@@ -662,6 +714,22 @@ Model := [].{
 		show: |bytes| Str.inspect(walk(machine, bytes)),
 	}).with_goals_from(|| goals(machine))
 
+	## An example for a [`walk_target`](#Model.walk_target): the input that
+	## makes [`walk`](#Model.walk) take exactly this trace. The bytes are
+	## worked out when the runner prepares its examples, and an action that is
+	## not possible when its turn comes, or is not among the first 256 that
+	## are, fails that preparation and names the action.
+	walk_example : Machine(state, action), { name : Str, revision : Str, trace : List(action) } -> Fuzz.Example(List(U8))
+		where [action.is_eq : action, action -> Bool]
+	walk_example = |machine, { name, revision, trace }| Fuzz.example({
+		name,
+		revision,
+		make: || match walk_bytes(machine, trace) {
+			Ok(bytes) => bytes
+			Err(Impossible(stopped)) => crash "example ${name}: action ${stopped.at.to_str()} of its trace is not possible"
+		},
+	})
+
 	## A path from `init` made by `decode` from the fuzzer's bytes and applied
 	## as it comes ([`apply`](#Model.apply)), as a fuzz target: the machine's
 	## `actions` are not asked whether each action is possible, so the actions
@@ -670,7 +738,17 @@ Model := [].{
 	## into a prefix of the path, so that the minimiser shortens the trace.
 	##
 	## `examples` are inputs: bytes that `decode` turns into the paths to
-	## check on every run.
+	## check on every run. A `Fuzz.saved` declaration that the runner's
+	## `retain` prints goes here as it is.
+	##
+	## ```roc
+	## target = Model.path_target({
+	## 	name: "index",
+	## 	machine: Index.machine,
+	## 	decode: Index.path,
+	## 	examples: [Fuzz.saved({ name: "fork-at-bit-32", revision: "1", bytes: [2, 0, 0, 0, 0, 32] })],
+	## })
+	## ```
 	##
 	## `show` prints the decoded path and does not run it. The path is in the
 	## input, so when the code under test crashes on it, `show` still prints
@@ -704,6 +782,20 @@ Model := [].{
 	## each one as a corpus seed and mutates the encoded state directly, which
 	## gives the fuzzer valid states to vary even when the generator almost
 	## never makes one.
+	##
+	## ```roc
+	## target = Model.step_target({
+	## 	name: "counter steps",
+	## 	machine: counter,
+	## 	generator: Fuzz.u64_in(0, 3),
+	## 	examples: [Fuzz.example({ name: "at the top", revision: "1", make: || 3 })],
+	## })
+	## ```
+	##
+	## It is worth its cost when a bug lies further from `init` than a walk
+	## goes, and it asks two things of you: `always` rules strong enough that
+	## no unreachable state satisfies them (see [`step_from`](#Model.step_from)),
+	## and a generator that makes states which satisfy them often.
 	step_target : { name : Str, machine : Machine(state, action), generator : Fuzz.Generator(state), examples : List(Fuzz.Example(state)) } -> Target
 		where [state.is_eq : state, state -> Bool, state.Fuzz.Encodable, state.Fuzz.Parseable(errs)]
 	step_target = |{ name, machine, generator, examples }| Fuzz.target_with!({
@@ -868,6 +960,27 @@ resting : Model.Machine(state, action), state -> Bool
 	where [state.is_eq : state, state -> Bool]
 resting = |machine, state| (machine.actions)(state).all(|action| (machine.step)(state, action) == state)
 
+## The bytes that make `walk` take exactly this trace, or the index of the
+## first action that is not possible (or is beyond the 256 a byte can choose).
+walk_bytes : Model.Machine(state, action), List(action) -> Try(List(U8), [Impossible({ at : U64 })])
+	where [action.is_eq : action, action -> Bool]
+walk_bytes = |machine, trace| {
+	var $state = machine.init
+	var $bytes = []
+	for action in trace {
+		match position((machine.actions)($state), action) {
+			Ok(index) if index < 256 => {
+				$bytes = $bytes.append(index.to_u8_wrap())
+			}
+			_ => {
+				return Err(Impossible({ at: $bytes.len() }))
+			}
+		}
+		$state = (machine.step)($state, action)
+	}
+	Ok($bytes)
+}
+
 position : List(item), item -> Try(U64, [NotFound])
 	where [item.is_eq : item, item -> Bool]
 position = |items, wanted| {
@@ -1006,8 +1119,8 @@ expect Model.replay(counter(9, 10), [Up, Up, Down]).verdict == Completed
 expect Model.replay(counter(9, 10), [Up, Down, Down]) == { trace: [Up, Down], state: 0, reached: [], verdict: Impossible({ at: 2 }) }
 
 # `walk_bytes` and `walk` are inverses on possible traces.
-expect Model.walk_bytes(counter(9, 10), [Up, Up, Down, Up]) == Ok([0, 0, 1, 0])
-expect Model.walk_bytes(counter(9, 10), [Down]) == Err(Impossible({ at: 0 }))
+expect walk_bytes(counter(9, 10), [Up, Up, Down, Up]) == Ok([0, 0, 1, 0])
+expect walk_bytes(counter(9, 10), [Down]) == Err(Impossible({ at: 0 }))
 
 # One step from anywhere: 3 is fine below a limit of 5, 4 steps over it, 7 is outside.
 expect Model.step_from(counter(9, 5), 3) == Preserved({ actions: 2, reached: ["reaches three"] })
