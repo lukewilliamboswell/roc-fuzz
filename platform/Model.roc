@@ -712,7 +712,7 @@ Model := [].{
 			}
 		},
 		show: |bytes| Str.inspect(walk(machine, bytes)),
-	}).with_goals_from(|| goals(machine))
+	}).with_goals(goals(machine))
 
 	## An example for a [`walk_target`](#Model.walk_target): the input that
 	## makes [`walk`](#Model.walk) take exactly this trace. The bytes are
@@ -770,7 +770,7 @@ Model := [].{
 			}
 		},
 		show: |bytes| Str.inspect(decode(bytes)),
-	}).with_goals_from(|| goals(machine))
+	}).with_goals(goals(machine))
 
 	## One step from a generated state as a fuzz target:
 	## [`step_from`](#Model.step_from) on whatever `generator` makes. A state
@@ -808,7 +808,7 @@ Model := [].{
 			other => crash "${Str.inspect(other)} from ${Str.inspect(state)}"
 		},
 		show: |state| Str.inspect({ state, step: step_from(machine, state) }),
-	}).with_goals_from(|| goals(machine))
+	}).with_goals(goals(machine))
 }
 
 ## Keep an input that broke no rule, and tell the runner which goals it met.

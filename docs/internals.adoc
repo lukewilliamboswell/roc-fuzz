@@ -237,8 +237,7 @@ and a target declares at most 1024. A command run on a target whose inventory
 breaks these rules stops before any input with exit status `2`, and the
 message names the goal at fault. In a suite, each member declares its own goals
 before `Fuzz.suite` combines them; calling `with_goals` on the combined suite
-crashes. To work the names out only when the runner asks for the inventory,
-pass a function with `with_goals_from(|| names)`.
+crashes.
 
 During exploration the first input to reach a goal counts as new coverage, so
 the corpus keeps a witness for every goal reached and `reduce-corpus` preserves

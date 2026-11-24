@@ -46,16 +46,10 @@ Target := [Target({ name : Str, run! : List(U8) => U8, show : List(U8) -> Str, e
 	## unique, nonempty and at most 128 bytes each, or that has more than 1024.
 	## Calling this again adds to the goals already declared.
 	with_goals : Target, List(Str) -> Target
-	with_goals = |value, names| with_goals_from(value, || names)
-
-	## As [`with_goals`](#Target.with_goals), for an inventory that is worked
-	## out rather than written down: `names` is called when the runner asks
-	## for the inventory, once in a process, and not when the target is built.
-	with_goals_from : Target, (() -> List(Str)) -> Target
-	with_goals_from = |value, names| match value {
+	with_goals = |value, names| match value {
 		Target(inner) => {
 			declared = inner.goals
-			Target({ ..inner, goals: || declared().concat(names()) })
+			Target({ ..inner, goals: || declared().concat(names) })
 		}
 		Targets(_) => crash "declare goals on each member before combining them with Fuzz.suite"
 	}
