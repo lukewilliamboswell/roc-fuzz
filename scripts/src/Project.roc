@@ -61,7 +61,7 @@ Project := [].{
 
 	all_targets : List(Target)
 	all_targets = [Target.X64Musl, Target.Arm64Mac]
-	public_modules = ["Arbitrary", "Fuzz", "Target"]
+	public_modules = ["Arbitrary", "Fuzz", "Model", "Solve", "Target"]
 	target_specs = all_targets.map(|target| target.spec())
 
 	host_target! : () => Try(Target, _)
