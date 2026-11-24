@@ -56,31 +56,57 @@ incomplete observations and write failures cannot accept a partial inventory.
 
 A campaign can pass every rule and exercise little. Goals state what a passing
 campaign must have reached; xref:internals.adoc#campaign-goals[Declare campaign goals]
-shows how a target declares them. `check` grades the declared examples,
-`explore` grades the saved corpus and the search, and `run` grades all three.
+shows how a target declares them and how an input reaches one. Each command
+grades the inputs it runs:
+
+* `check` grades the declared examples;
+* `explore` grades the corpus it starts from, which includes copies of the
+  examples, and the inputs the search makes; and
+* `run` grades the examples, then exploration.
 
 [source,sh]
 ----
 ./fuzz-target run .roc-fuzz/corpus --report-dir=.roc-fuzz/evidence --time=60
-./fuzz-target replay .roc-fuzz/evidence/goals/goal-3.bin
-./fuzz-target retain .roc-fuzz/evidence/goals/goal-3.bin --name fork-at-bit-32 --output=fuzz/regressions
 ----
 
-The report's `goals` object gives the status, the names never reached and, for
-each goal, how many kept inputs reached it and its first witness: a declared
-example, or an exploration input whose bytes are saved as `goals/goal-N.bin`,
-where `N` counts the goals of the inventory from zero. `summary.md` shows the
-same table. `replay` names the goals one input reaches. `retain` prints a
-`Fuzz.saved` declaration for a witness; once it is an example, every `check`
-reaches that goal.
+The console line ends with `reached 2 of 3 goals` and names up to eight goals
+never reached. The report's `goals` object holds the tally: `status`
+(`reached`, `unreached`, or `none_declared`), `required`, the counts, the names
+in `unreached`, and an `inventory` entry per goal, in declaration order. An entry
+gives `inputs`, the number of kept executions that reached the goal, and
+`first`, its witness: the first input that reached it. A witness's `source` is
+`example`, `corpus` for an input exploration started from, or `exploration`
+for one the search made, with `attempt` counting exploration's executions from
+one. `summary.md` lists the goals never reached and then a table of the reached
+ones with their witnesses.
 
 A campaign that breaks no rule and leaves a goal unreached is `inconclusive`,
 with exit status `1`. It lacks evidence the target asked for, as an exploration
 that keeps no input does. Reaching a goal is never a finding, and neither is
 missing one. Pass `--allow-unreached-goals` where partial evidence is expected,
-such as a `check` whose goals are left to exploration: the report still lists
-them, with `required` false. `accept` reports goals and its result does not
-depend on them.
+such as a `check` whose goals are left to exploration: the outcome then ignores
+goals, and the report still lists them, with `required` false. `accept` reports
+goals and its result does not depend on them.
+
+=== Keep a goal's witness
+
+Exploration saves the first input it ran that reached each goal as
+`goals/goal-N.bin` in the report directory, where `N` is the goal's position in
+the inventory, counted from zero. Make that input an example, so that every
+`check` reaches the goal without exploring:
+
+[source,sh]
+----
+./fuzz-target replay .roc-fuzz/evidence/goals/goal-2.bin
+./fuzz-target retain .roc-fuzz/evidence/goals/goal-2.bin --name reaches-fork --output=fuzz/regressions
+----
+
+`replay` runs the one input and names the goals it reached; its report's
+`goals` has status `not_graded`, because one input is not a campaign. `retain`
+copies the bytes to `fuzz/regressions/reaches-fork.bin` and prints a
+`Fuzz.saved` declaration. Add that declaration to the target's examples and
+rebuild: the witness is now a declared example, and `check` reaches that goal
+on every run.
 
 == Read the evidence
 
@@ -90,12 +116,12 @@ a fresh directory under `.roc-fuzz/reports/`.
 
 The directory contains:
 
-* `report.json`, following link:roc-fuzz-ci-report.schema.json[`roc-fuzz-quality/1`];
+* `report.json`, following link:roc-fuzz-ci-report.schema.json[`roc-fuzz-quality/2`];
 * `summary.md` and the combined child `run.log`;
 * original example inputs, worker observations and original trace snapshots;
 * exploration failure artifacts and `original-input.bin` for the last attempted
   input, with capture completeness and its SHA-256 in the report;
-* `goals/`, the first exploration input to reach each declared goal; and
+* `goals/`, the witness exploration found for each declared goal; and
 * bounded original-run logical traces, including unfinished regions on failure.
 
 The report records the metric version, effective execution controls (including

@@ -289,7 +289,10 @@ goals it registers one inline 8-bit counter for each, and a PC table of the same
 length, through libFuzzer's `__sanitizer_cov_8bit_counters_init` and
 `__sanitizer_cov_pcs_init`: the entry points instrumented code calls on both
 targets. The region therefore lives in `libhost.a` and needs no linker section
-and no change to `libfuzzer.a`. A target without goals registers nothing.
+and no change to `libfuzzer.a`; on x64musl they are the only sanitizer symbols
+`libhost.a` leaves undefined. A target without goals registers nothing, so
+libFuzzer's `Loaded N modules` line gains one module of G counters for G goals
+and none otherwise; `test-targets` checks both on each host.
 libFuzzer's extra counters are not an option: the pinned source reads them on
 Linux only.
 

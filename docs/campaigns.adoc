@@ -103,6 +103,9 @@ preserving coverage:
 TARGET reduce-corpus quality/corpus/my-target quality/corpus/my-target-small
 ----
 
+For a target with xref:internals.adoc#campaign-goals[goals], the reduced corpus
+still holds an input for every goal the original reached.
+
 Keep valuable seeds and fixed crash inputs with the target in version
 control. Use a deliberate directory such as `fuzz/corpus/<target>/`,
 document why each seed matters, and replay it in tests. Generated
