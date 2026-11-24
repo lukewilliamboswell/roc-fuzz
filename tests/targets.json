@@ -855,6 +855,24 @@
       "expected_failure": false,
       "skip_seed": false,
       "skip_fuzz": false
+    },
+    {
+      "name": "indexModel",
+      "path": "examples/indexModel/main.roc",
+      "seed_hex": "020000000020",
+      "libfuzzer_seed": 2245,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "queueModel",
+      "path": "examples/queueModel.roc",
+      "seed_hex": "00010000020202",
+      "libfuzzer_seed": 2246,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
     }
   ],
   "skips": [
