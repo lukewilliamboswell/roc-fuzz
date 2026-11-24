@@ -1,0 +1,232 @@
+= Prove facts about integer arithmetic
+
+A fuzz target tries many inputs. The `Solve` module answers for every input at
+once: state a claim about some fixed-width integers, and it either proves the
+claim for every value they can take or returns values where it fails. It is at
+its best on the questions fuzzing rarely settles: does this sum overflow for
+some pair of `U64`s, does this bounds check let a table past the end, is this
+bit trick the same as its definition.
+
+A claim covers only what it says, in fixed-width integers. Use `Solve` for the
+arithmetic at the heart of a check, such as a guard or a calculation, and fuzz
+the code around it. Use both on the same definition when you can: the proof
+covers every value of the term, and a fuzz target that compares the term with
+the compiled code checks that the term means what the code does.
+
+`Solve` is part of the platform, so an application that imports `fuzz.Solve`
+needs nothing else, and an application that does not pays nothing for it.
+
+== State unknowns and a claim
+
+The midpoint of a binary search is the classic. Put the proof in an `expect`
+and run `roc test`:
+
+[source,roc]
+----
+import fuzz.Solve
+
+naive = |lo, hi| (lo + hi) // 2
+
+expect Solve.prove(
+    { lo: Solve.u32, hi: Solve.u32 }.Solve,
+    |v| {
+        mid = naive(v.lo, v.hi)
+        v.lo.lte(v.hi).implies(Solve.all([v.lo.lte(mid), mid.lte(v.hi)]))
+    },
+) == Ok(Crashes({ lo: 1, hi: 4_294_967_295 }))
+----
+
+`{ lo: Solve.u32, hi: Solve.u32 }.Solve` declares two unknowns. Inside the
+claim each is a `Solve.Uint`, a term that stands for a number not yet chosen.
+The claim is a `Solve.Claim` built from those terms:
+
+* `+`, `-`, `*`, `//`, `%` and number literals work on terms as they do on
+  `U32`.
+* Comparisons are methods, `eq`, `neq`, `lt`, `lte`, `gt` and `gte`, because
+  Roc's `<` must return a `Bool`.
+* `Solve.all`, `Solve.any`, `implies` and `Solve.if_else` stand in for `and`,
+  `or` and `if`, and stop early in the same way.
+
+`naive` has no type annotation, so the same definition runs on `U32`s and
+builds a term on `Solve.Uint`s. Write the code under test that way and the
+function you prove is the function you ship. The answer above covers every pair
+of `U32`s and names one where `lo + hi` overflows. Change the body to
+`lo + (hi - lo) // 2` and the same claim is `Proved`.
+
+The runnable version, with the careful midpoint proved and fuzzed, is
+`examples/midpoint.roc`.
+
+Other unknowns: `Solve.u8` to `Solve.u64`, `Solve.uint(width)` for any width
+from 1 to 64, ranges such as `Solve.u64_in(0, 999_999)`, `Solve.bool` for a
+truth value, and `Solve.several(Solve.u8, 8)` for a fixed number of them as a
+list. A narrow range in a wide type is cheap: `Solve.u64_in(0, 999_999)`
+computes like a `U64` but gives the solver only 20 bits to choose.
+
+== Read the answer
+
+[cols="1,3",options="header"]
+|===
+|Answer |Meaning
+
+|`Ok(Proved)`
+|The claim is true and evaluates without crashing for every value of the
+unknowns.
+
+|`Ok(Refuted(v))`
+|`v` makes the claim false.
+
+|`Ok(Crashes(v))`
+|Evaluating the claim on `v` overflows or divides by zero, where Roc would
+crash.
+
+|`Err(GaveUp(effort))`
+|The search spent its budget first. Nothing is known about the claim.
+
+|`Err(WidthMismatch(..))` and others
+|The claim is ill-formed whatever the values: for example an 8-bit term
+compared with a 16-bit one.
+|===
+
+The record inside `Refuted` and `Crashes` is the record of unknowns with numbers
+filled in. Compare it with a literal record, as above, or take a number out with
+`v.lo.value()`. Every set of values is run through a plain evaluator of terms
+before it is returned, so `Refuted` and `Crashes` never depend on the solver
+being right. `Proved` does: it says the solver searched everything and found
+nothing. roc-fuzz checks the solver against brute-force enumeration at small
+widths in its own tests.
+
+`Solve.check(vars, claim, values)` runs a claim on ordinary values without the
+solver, and `term.eval()` runs a term with no unknowns left in it. Use them to
+test a term against the Roc code it describes; the fuzz target in
+`examples/midpoint.roc` does exactly that on every input.
+
+== Overflow crashes, as in Roc
+
+A term means what the same expression means in Roc. `+`, `-` and `*` crash when
+the result does not fit the width, and `//` and `%` crash on a zero divisor, so
+a `Proved` claim is also proof that nothing in it overflowed. When overflow is
+what the code intends, or what you want to ask about, use the other forms:
+
+[cols="1,2",options="header"]
+|===
+|Form |Meaning
+
+|`a.plus_wrap(b)`, `minus_wrap`, `times_wrap`
+|Wrap around, as `U32.plus_wrap` does. Never crash.
+
+|`a.plus_overflows(b)`, `minus_overflows`, `times_overflows`
+|A claim: would the plain form crash?
+
+|`a.to_width(33)`
+|The same number in more bits, to compute with a bit to spare. Crashes when
+narrowing a number that does not fit; `to_width_wrap` keeps the low bits.
+
+|`lt_signed`, `plus_signed`, `to_width_signed` and the other `_signed` forms
+|Read the bits as a two's complement integer, as `I8` to `I64` do, and crash
+where those crash.
+|===
+
+A guard written first protects what follows, because `implies`, `Solve.all` and
+`Solve.if_else` evaluate left to right and stop early.
+`v.y.neq(0).implies((v.x // v.y).lte(v.x))` never divides by zero. Leave the
+guard out and the answer is `Crashes({ x: 0, y: 0 })`, not a wrong verdict.
+
+Signed questions read the same bits differently. The textbook absolute value
+crashes on one `I32`:
+
+[source,roc]
+----
+absolute = |x| Solve.if_else(x.lt_signed(0), Solve.num(0).minus_signed(x), x)
+
+expect Solve.prove(Solve.map(Solve.u32, |x| { x: x }), |v| absolute(v.x).gte_signed(0))
+    == Ok(Crashes({ x: 2_147_483_648 }))
+----
+
+The answer is a bit pattern: `v.x.value_signed()` reads 2,147,483,648 as
+`I32.lowest`, whose negation does not fit.
+
+== Give a question a budget
+
+The solver counts its work in conflicts: dead ends it meets and learns from. The
+count depends only on the question, never on the machine or the build, so a
+budget is not a timeout: a question that fits a budget once fits it every time,
+and a larger budget never changes an answer that was given.
+
+* `find`, `find_near`, `prove` and `enumerate` stop at `Solve.default_budget`, a
+  million conflicts, and return `Err(GaveUp(effort))`. An optimised build spends
+  a million conflicts in about a minute.
+* `find_within`, `find_near_within`, `prove_within` and `enumerate_within` take
+  the budget as an argument and answer `GaveUp(effort)` as an ordinary result.
+* `Solve.effort(vars, claim, Prove)` reports what a question costs, for choosing
+  a budget.
+
+Multiplication of two unknowns is what makes a question hard, and it gets
+several times harder with each bit. Proving `a * b == b * a` with wrapping
+products takes about a thousand conflicts at 5 bits and 913,801 at 10 bits,
+about forty seconds of an optimised build. At 8 bits it takes about a second
+optimised; at 16 bits it gives up at the default budget. Comparisons, sums,
+differences, bitwise operations and division by a constant power of two stay
+cheap at 64 bits.
+
+`roc test` uses the default backend, which runs the solver thirty to a hundred
+and fifty times slower than `roc test --opt=speed`. A claim that needs a few
+thousand conflicts is comfortable there. For anything larger use `--opt=speed`,
+or give the test a small budget of its own and expect `GaveUp`.
+
+== Find values and steer them
+
+`Solve.find(vars, claim)` returns `Ok(Found(v))` with values that make the claim
+hold, or `Ok(None)` when there are none. `Solve.enumerate(vars, claim, limit)`
+lists up to `limit` different ones.
+
+`Solve.find_near(vars, claim, proposed)` takes one proposed number per unknown,
+in declaration order, and returns the solution nearest them by a fixed rule:
+earlier unknowns win, and within a number the higher bits win. A proposal that
+already satisfies the claim comes back unchanged, and proposing zeros gives the
+smallest solution. The API reference for `find_near` states the rule in full.
+
+Steering turns a claim into a generator: a fuzzer's bytes propose and the
+solver repairs what does not fit. Build the claim once with `Solve.prepare_with`
+and ask it many times with `Solve.ask`. Extra claims given to `prepare_with` cost
+nothing until a query assumes them by position. Hold the prepared claim in a
+top-level constant, which the compiler works out once; a claim prepared inside
+the test is prepared again for every input.
+
+`examples/slidingWindow.roc` generates the states of a sliding-window link,
+three counters that must stay in order with at most eight messages in flight,
+and asks for states whose window crosses the wrap of the 16-bit wire numbers.
+Almost no random triple of numbers is such a state.
+
+As an input generator `Solve` complements a hand-written generator; it does not
+replace one. Each input costs a solver query. `examples/slidingWindow.roc`,
+three counters and one optional extra claim, runs about 200 inputs a second on
+an Apple Silicon Mac. A larger state, a whole link with its frames and
+acknowledgements, ran about 15 to 23 inputs a second built by the solver, where
+a hand-written generator for the same states ran about 138,000. Reach for it to
+build states that satisfy rules you have already written as a claim, and that a
+generator would need its own careful code to reach.
+
+== Limits
+
+* *Fixed widths only.* Every number is 1 to 64 bits wide. There are no
+  unbounded integers, no `U128` or `I128`, no floats and no `Dec`.
+* *No lists or strings.* `Solve.several` gives a fixed number of unknowns as a
+  list, but the length is not an unknown, and a claim cannot index a list by a
+  term.
+* *No signed division or remainder.* `//` and `%` are unsigned.
+* *Multiplication is costly.* Each product of two unknowns builds a multiplier;
+  questions about products slow down several times per bit, as the numbers
+  above show. `times_signed` builds a multiplier of twice the width.
+* *The default backend is slow.* Expect thirty to a hundred and fifty times the
+  optimised time under a plain `roc test`.
+* *A term is not the code.* When the claim restates code by hand instead of
+  calling one unannotated definition, nothing ties the two together. Test the
+  term against the code with `Solve.check`, `eval` or a fuzz target.
+* *`Proved` rests on the solver.* `Refuted`, `Crashes` and `Found` are checked
+  by the evaluator; `Proved` and `None` are not.
+* *Shared terms are told apart by a 64-bit fingerprint.* `x.shared()` keeps a
+  term that is reused step after step from doubling, and two different shared
+  terms with the same fingerprint would be taken for one. With a thousand
+  shared terms the chance is about one in ten trillion.
+
+The link:api/Solve/index.html[`Solve` API reference] documents every function.

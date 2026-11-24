@@ -5,7 +5,17 @@ const abi = @import("roc_platform_abi.zig");
 const observation = @import("observation.zig");
 const quality = @import("quality_runner.zig");
 const bookkeeping = @import("allocation_bookkeeping.zig");
+const goals = @import("goals.zig");
 var return_box: bookkeeping.ReturnBox = .{};
+
+/// The selected target's goal inventory and the goals the current input has
+/// reached. See `registerGoalCoverage` for how libFuzzer reads the counters.
+var goal_tracker: goals.Tracker = .{};
+var goals_loaded = false;
+/// libFuzzer pairs every counter with a PC table entry of two words.
+var goal_pcs: [goals.max_goals][2]usize = undefined;
+extern "c" fn __sanitizer_cov_8bit_counters_init(start: [*]u8, stop: [*]u8) void;
+extern "c" fn __sanitizer_cov_pcs_init(begin: [*]const usize, end: [*]const usize) void;
 
 var local_engine: observation.Engine = .{};
 var engine: *observation.Engine = &local_engine;
@@ -16,6 +26,11 @@ comptime {
     if (!std.mem.eql(u8, observation.metric_version, quality.metric_version)) {
         @compileError("observation and supervisor metric versions must agree");
     }
+    // The supervisor validates the inventory the host declares, and a goal is
+    // reached by an event, so the three limits must agree.
+    if (goals.max_goals != quality.max_goals or goals.max_name_bytes != quality.max_goal_name_bytes or goals.max_name_bytes != observation.max_name_bytes) {
+        @compileError("goal limits must agree with the supervisor and the event name limit");
+    }
 }
 
 const max_input_len = quality.max_input_len;
@@ -23,6 +38,12 @@ const max_args = 256;
 
 var roc_host: abi.RocHost = undefined;
 var host_initialized = false;
+/// The application's target, built once by `roc_fuzz_build` in `initHost`.
+/// The host owns one reference for the life of the process and lends Roc one
+/// more for each call; see `heldTarget`. Everything allocated while it is
+/// built is bookkeeping, so no input and no observation sees it.
+var held_target: ?*abi.Target = null;
+var building_target = false;
 var selected_target: u64 = 0;
 var selected_name: [1025]u8 = undefined;
 var target_argument: [1040]u8 = undefined;
@@ -92,6 +113,22 @@ fn initHost() void {
         .roc_crashed = &hostCrashed,
     };
     host_initialized = true;
+    // Before any input or measured region, so the live balance each input
+    // samples already includes the target. A crash here ends the process
+    // before the first command runs.
+    building_target = true;
+    held_target = abi.roc_fuzz_build();
+    building_target = false;
+}
+
+/// The held target for one call into Roc. A provided function consumes the
+/// box it is passed, so each call gets a reference of its own and the host's
+/// stays: the box is never unique in Roc, is never freed, and nothing it holds
+/// is mutated in place.
+fn heldTarget() *abi.Target {
+    const built = held_target.?;
+    abi.increfBox(built, 1);
+    return built;
 }
 
 fn allocImpl(length: usize, alignment: usize, internal: bool) ?*anyopaque {
@@ -112,7 +149,8 @@ fn allocImpl(length: usize, alignment: usize, internal: bool) ?*anyopaque {
 /// allocations a region performed and whether that region left anything
 /// outstanding.
 ///
-/// Private measurement ownership containers are excluded from these counters.
+/// Private measurement ownership containers and the held target are excluded
+/// from these counters.
 /// `g_alloc_count` counts application `roc_alloc` and `roc_realloc` calls, matching
 /// the roc test platform's `Host.alloc_count!`. `g_live_alloc_count` is the
 /// number of allocations still outstanding: a realloc replaces one block with
@@ -129,7 +167,8 @@ var g_live_alloc_count: u64 = 0;
 var g_realloc_count: u64 = 0;
 var g_dealloc_count: u64 = 0;
 var g_requested_bytes: u64 = 0;
-// Include private ownership containers in the invocation-wide leak check.
+// Include private ownership containers and the held target in the
+// invocation-wide leak check; each input samples it before and after.
 var physical_live_allocs: u64 = 0;
 var physical_live_bytes: u64 = 0;
 
@@ -164,7 +203,7 @@ fn deallocImpl(ptr: *anyopaque, alignment: usize) void {
 
 pub export fn roc_alloc(length: usize, alignment: usize) callconv(.c) *anyopaque {
     const ptr = allocImpl(length, alignment, false) orelse outOfMemory();
-    const internal = return_box.claim(@intFromPtr(ptr), length) catch |err| invalidMetric(err);
+    const internal = building_target or (return_box.claim(@intFromPtr(ptr), length) catch |err| invalidMetric(err));
     if (internal) {
         const metadata: *usize = @ptrFromInt(@intFromPtr(ptr) - @sizeOf(usize));
         metadata.* = bookkeeping.pack(length, true) catch |err| invalidMetric(err);
@@ -254,6 +293,8 @@ fn hostedScopeStart(label: abi.RocStr) callconv(.c) u64 {
 fn hostedScopeFinish(id: u64) callconv(.c) abi.FuzzScope_finish {
     if (return_box.scope != null) invalidMetric(error.UnfinishedReturnBox);
     const stats = engine.finish(id) catch |err| observationFailure(err);
+    // A completed child region is an event in its parent, as a mark is.
+    if (goal_tracker.count != 0 and engine.depth != 0) goal_tracker.event(engine.regionName(id));
     var result: abi.FuzzScope_finish = undefined;
     inline for (@typeInfo(observation.Stats).@"struct".fields) |field| {
         @field(result, field.name) = @field(stats, field.name);
@@ -277,6 +318,7 @@ fn hostedScopeFinishReturn(id: u64, value: abi.RocBox) callconv(.c) abi.FuzzScop
 fn hostedMark(label: abi.RocStr) callconv(.c) void {
     defer label.decref(&roc_host);
     engine.mark(label.asSlice()) catch |err| observationFailure(err);
+    goal_tracker.event(label.asSlice());
 }
 
 fn hostedBefore(first: abi.RocStr, second: abi.RocStr) callconv(.c) void {
@@ -396,17 +438,17 @@ fn makeInput(bytes: []const u8) abi.RocListWith(u8, false) {
 }
 
 fn printName() void {
-    const name = abi.roc_fuzz_name(selected_target);
+    const name = abi.roc_fuzz_name(heldTarget(), selected_target);
     writeOut(name.asSlice());
     name.decref(&roc_host);
 }
 
 fn prepareExamples(allocator: std.mem.Allocator) ![]const quality.Example {
-    const count = abi.roc_fuzz_example_count(selected_target);
+    const count = abi.roc_fuzz_example_count(heldTarget(), selected_target);
     if (count > 4096) return error.TooManyExamples;
     const examples = try allocator.alloc(quality.Example, @intCast(count));
     for (examples, 0..) |*example, index| {
-        const prepared = abi.roc_fuzz_example(selected_target, @intCast(index));
+        const prepared = abi.roc_fuzz_example(heldTarget(), selected_target, @intCast(index));
         defer prepared.decref(&roc_host);
         if (prepared.bytes.items().len > max_input_len) return error.ExampleTooLarge;
         example.* = .{
@@ -418,8 +460,54 @@ fn prepareExamples(allocator: std.mem.Allocator) ![]const quality.Example {
     return examples;
 }
 
+/// Copy the selected target's goal inventory out of Roc once per process.
+fn loadGoals() void {
+    if (goals_loaded) return;
+    goals_loaded = true;
+    const names = abi.roc_fuzz_goals(heldTarget(), selected_target);
+    defer names.deinit(&roc_host);
+    for (names.items()) |name| _ = goal_tracker.declare(name.asSlice()) catch |err| goalInventoryError(err, name.asSlice());
+}
+
+fn goalInventoryError(err: goals.Error, name: []const u8) noreturn {
+    var buffer: [512]u8 = undefined;
+    writeErr(goals.describe(&buffer, err, name));
+    std.c._exit(2);
+}
+
+fn prepareGoals(allocator: std.mem.Allocator) ![]const []const u8 {
+    loadGoals();
+    const names = try allocator.alloc([]const u8, goal_tracker.count);
+    for (names, 0..) |*name, index| name.* = try allocator.dupe(u8, goal_tracker.name(index));
+    return names;
+}
+
+/// Make a goal's first reach new coverage, so libFuzzer keeps that input.
+///
+/// libFuzzer treats each registered counter region as one module of inline
+/// 8-bit counters and requires a PC table of the same length beside it. It
+/// clears every region before an input and reads it after, so a byte set while
+/// an input runs is a feature of that input, and a feature seen for the first
+/// time adds the input to the corpus. Both entry points are libFuzzer's public
+/// sanitizer-coverage interface on every target, which is why this needs no
+/// linker section and no change to libfuzzer.a. A target that declares no
+/// goal registers nothing, and its coverage is exactly what it was.
+fn registerGoalCoverage() void {
+    const count = goal_tracker.count;
+    if (count == 0) return;
+    for (goal_pcs[0..count], 0..) |*entry, index| {
+        // The table's first entry must be a function entry; the rest are
+        // blocks of it. The addresses are never executed or dereferenced.
+        entry.* = .{ @intFromPtr(&goal_tracker.counters[index]), @intFromBool(index == 0) };
+    }
+    const counters: [*]u8 = &goal_tracker.counters;
+    const pcs: [*]const usize = @ptrCast(&goal_pcs);
+    __sanitizer_cov_8bit_counters_init(counters, counters + count);
+    __sanitizer_cov_pcs_init(pcs, pcs + 2 * count);
+}
+
 fn showInput(allocator: std.mem.Allocator, input: []const u8) ![]const u8 {
-    const shown = abi.roc_fuzz_show(selected_target, makeInput(input));
+    const shown = abi.roc_fuzz_show(heldTarget(), selected_target, makeInput(input));
     defer shown.decref(&roc_host);
     return allocator.dupe(u8, shown.asSlice());
 }
@@ -443,18 +531,23 @@ fn originalSnapshot(allocator: std.mem.Allocator, storage: []align(64) const u8)
 fn runOne(allocator: std.mem.Allocator, input: []const u8, capture: quality.Capture) !quality.WorkerResult {
     bindSharedEngine();
     standalone_worker = true;
+    loadGoals();
     current_input_ptr = if (input.len > 0) input.ptr else null;
     current_input_len = input.len;
     quality.healthAttempt(input);
     engine.reset(engine.live_allocs, engine.live_bytes);
+    goal_tracker.begin();
     quality.healthObservationReady();
     const live_before = physical_live_allocs;
     const bytes_before = physical_live_bytes;
-    const status = abi.roc_fuzz_run(selected_target, makeInput(input));
+    const status = abi.roc_fuzz_run(heldTarget(), selected_target, makeInput(input));
     if (quality.workerLeakDetection() and (physical_live_allocs > live_before or physical_live_bytes > bytes_before)) {
         reportLeak(physical_live_allocs -| live_before);
     }
     quality.healthFinish(status == 0);
+    // Only a kept input reaches a goal: a rejected one is outside the domain.
+    const reached = try allocator.alloc([]const u8, if (status == 0) goal_tracker.reached().len else 0);
+    for (reached, 0..) |*name, index| name.* = goal_tracker.name(goal_tracker.reached()[index]);
     return .{
         .accepted = status == 0,
         .metric_valid = engine.complete() and (status != 0 or engine.region_count > 0),
@@ -462,11 +555,13 @@ fn runOne(allocator: std.mem.Allocator, input: []const u8, capture: quality.Capt
         .capture_complete = engine.capture_complete,
         .observations_json = try engine.observationsJson(allocator),
         .diagnostics_json = if (capture == .detailed) try engine.traceJson(allocator) else null,
+        .goals_declared = goal_tracker.count,
+        .goals_reached = reached,
     };
 }
 
 fn dispatchQuality(argc: *c_int, argv: *[*][*:0]u8) void {
-    const name = abi.roc_fuzz_name(selected_target);
+    const name = abi.roc_fuzz_name(heldTarget(), selected_target);
     var buffer: [1024]u8 = undefined;
     const len = name.asSlice().len;
     if (len > buffer.len) {
@@ -478,6 +573,7 @@ fn dispatchQuality(argc: *c_int, argv: *[*][*:0]u8) void {
     name.decref(&roc_host);
     _ = quality.dispatch(@intCast(argc.*), argv.*, buffer[0..len], .{
         .prepare_examples = &prepareExamples,
+        .prepare_goals = &prepareGoals,
         .show = &showInput,
         .run_one = &runOne,
         .original_snapshot = &originalSnapshot,
@@ -523,6 +619,7 @@ fn printHelp() void {
         \\  --dictionary=FILE   mutation tokens
         \\  --seed=NUMBER       exploration seed
         \\  --no-detect-leaks   disable the invocation leak check
+        \\  --allow-unreached-goals  report unreached goals without failing the run
         \\  --detailed          record bounded logical traces
         \\
     );
@@ -617,6 +714,8 @@ fn translateFriendlyArgs(argc: *c_int, argv_ptr: *[*][*:0]u8) void {
                 pushTranslatedArg(&count, &seed_arg, "-seed=", arg[7..]);
             } else if (std.mem.eql(u8, arg, "--no-detect-leaks")) {
                 leak_detection_enabled = false;
+            } else if (std.mem.startsWith(u8, arg, "--goal-dir=")) {
+                quality.setGoalDirectory(arg[11..]);
             } else if (std.mem.startsWith(u8, arg, "--artifact-dir=")) {
                 artifact_directory = arg[15..];
                 if (artifact_directory.len == 0) {
@@ -666,7 +765,7 @@ fn selectionError(message: []const u8) noreturn {
 
 fn listTargets(count: u64) void {
     for (0..@intCast(count)) |index| {
-        const name = abi.roc_fuzz_name(@intCast(index));
+        const name = abi.roc_fuzz_name(heldTarget(), @intCast(index));
         writeOut(name.asSlice());
         writeOut("\n");
         name.decref(&roc_host);
@@ -677,7 +776,7 @@ fn listTargets(count: u64) void {
 // The inherited name keeps the same property selected across supervisor,
 // replay, minimization and raw libFuzzer exec workers.
 fn selectTarget(argc: *c_int, argv: *[*][*:0]u8) void {
-    const count = abi.roc_fuzz_target_count();
+    const count = abi.roc_fuzz_target_count(heldTarget());
     if (count == 0 or count > 4096) selectionError("invalid fuzz target inventory");
     var requested: ?[]const u8 = null;
     var list = false;
@@ -721,7 +820,7 @@ fn selectTarget(argc: *c_int, argv: *[*][*:0]u8) void {
     if (requested) |wanted| {
         var found = false;
         for (0..@intCast(count)) |index| {
-            const name = abi.roc_fuzz_name(@intCast(index));
+            const name = abi.roc_fuzz_name(heldTarget(), @intCast(index));
             defer name.decref(&roc_host);
             if (std.mem.eql(u8, wanted, name.asSlice())) {
                 if (found) selectionError("ambiguous fuzz target name");
@@ -731,7 +830,7 @@ fn selectTarget(argc: *c_int, argv: *[*][*:0]u8) void {
         }
         if (!found) selectionError("unknown fuzz target name");
     }
-    const name = abi.roc_fuzz_name(selected_target);
+    const name = abi.roc_fuzz_name(heldTarget(), selected_target);
     defer name.decref(&roc_host);
     if (name.asSlice().len > selected_name.len - 1) selectionError("fuzz target name is too long");
     @memcpy(selected_name[0..name.asSlice().len], name.asSlice());
@@ -747,6 +846,10 @@ pub export fn LLVMFuzzerInitialize(argc: *c_int, argv: *[*][*:0]u8) callconv(.c)
     selectTarget(argc, argv);
     dispatchQuality(argc, argv);
     translateFriendlyArgs(argc, argv);
+    // Only a process that libFuzzer will drive reaches this point.
+    loadGoals();
+    quality.healthGoalInventory(goal_tracker.count);
+    registerGoalCoverage();
     return 0;
 }
 
@@ -761,10 +864,11 @@ pub export fn LLVMFuzzerTestOneInput(data: ?[*]const u8, size: usize) callconv(.
     // any target having to opt in.
     quality.healthAttempt(input);
     engine.reset(engine.live_allocs, engine.live_bytes);
+    goal_tracker.begin();
     quality.healthObservationReady();
     const live_before = physical_live_allocs;
     const bytes_before = physical_live_bytes;
-    const status = abi.roc_fuzz_run(selected_target, makeInput(input));
+    const status = abi.roc_fuzz_run(heldTarget(), selected_target, makeInput(input));
     if (leak_detection_enabled and (physical_live_allocs > live_before or physical_live_bytes > bytes_before)) {
         reportLeak(physical_live_allocs -| live_before);
     }
@@ -773,6 +877,9 @@ pub export fn LLVMFuzzerTestOneInput(data: ?[*]const u8, size: usize) callconv(.
         writeErr("[roc-fuzz observation failure] invalid metrics, unfinished region or trace rule violation\n");
         finishRocFailure();
     }
+    // Only a kept input reaches a goal. Its counters stay set until the next
+    // input, which is when libFuzzer reads them.
+    if (status == 0) quality.healthGoalsReached(goal_tracker.reached(), input) else goal_tracker.begin();
     current_input_ptr = null;
     current_input_len = 0;
     return if (status == 0) 0 else -1;

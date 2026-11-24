@@ -306,6 +306,12 @@ pub const Engine = struct {
         return region.stats;
     }
 
+    /// The name of a region this input started. Valid for an id that `start`
+    /// returned since the last reset.
+    pub fn regionName(self: *const Engine, id: u64) []const u8 {
+        return self.regions[@intCast(id - 1)].name.slice();
+    }
+
     fn capture(self: *Engine, kind: EventKind, region_id: u64, label: []const u8) Error!void {
         self.sequence = try self.add(self.sequence, 1);
         if (self.event_count < @min(self.trace_limit, max_trace_events)) {

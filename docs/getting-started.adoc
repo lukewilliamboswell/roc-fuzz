@@ -243,34 +243,20 @@ fields and tuning options.
 == Design the next target
 
 Choose one fast application operation and one rule that should hold for every
-input. Common property shapes include:
-
-* *Round trip:* decoding an encoded value returns the original value.
-* *Inverse:* an operation followed by its inverse returns the starting value.
-* *Idempotence:* normalizing twice gives the same result as normalizing once.
-* *Invariant:* an operation preserves ordering, length, membership, or another
-rule of the data structure.
-* *Differential:* two independent implementations produce the same result.
-* *Robustness:* arbitrary input may return success or an ordinary error, but
-must not crash or hang.
-
-Generate useful values directly. If a parser accepts bytes of any shape, arbitrary
-bytes may be appropriate. If an operation requires a bounded port number or a
-non-empty list, express that rule in the generator so most search effort reaches
-the behavior you care about. Enforce the same preconditions in the property or
-a validated input type: encoded examples and mutations bypass the generator.
-Return `Fuzz.reject` for inputs outside the property; do not use `crash` to
-reject an ordinary invalid input.
-
-Keep unrelated operations and properties in separate targets. A practical first
-set might include one target per parser, encoder/decoder pair, state transition,
-or important business invariant. There is no need to fuzz every function.
-
-The xref:campaigns.adoc[campaign guide] explains corpora, tuning, and unstable
-failures. The xref:internals.adoc[advanced guide] covers generator dispatch,
-allocation assertions, and the low-level engine interface. Run `TARGET --help`
-for the command summary and browse the link:api/index.html[generated API
-reference] for generator, combinator, and target signatures.
+input, and give it its own target.
+xref:target-design.adoc#start-from-the-operation[Design effective targets]
+lists the common shapes of such a rule and shows how to generate records,
+declare examples and share one executable between properties.
+xref:observations.adoc#check-what-passing-does-not-show[Check what passing does not show]
+adds goals, trace rules and allocation checks to a target, and
+xref:campaigns.adoc#run-and-maintain-fuzzing-campaigns[Run and maintain fuzzing campaigns]
+explains corpora, tuning and unstable failures. A component that breaks in
+sequences of calls is better described as a
+xref:modelling.adoc#model-a-component-and-check-it[model], and arithmetic on
+fixed-width integers can be
+xref:solve.adoc#prove-facts-about-integer-arithmetic[proved]. Run `TARGET --help` for the command
+summary and browse the link:api/index.html[generated API reference] for
+generator, combinator, and target signatures.
 
 == Repository and release examples
 

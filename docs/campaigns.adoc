@@ -1,9 +1,10 @@
 = Run and maintain fuzzing campaigns
 
-After the first target works, use these goal-oriented guides to choose bounds,
-interpret status output, retain useful inputs, investigate unstable failures,
-and prepare longer searches. The xref:internals.adoc[advanced guide] covers the
-embedded engine and target implementation details.
+After the first target works, use these guides to choose bounds, interpret
+status output, retain useful inputs, investigate unstable failures, and prepare
+longer searches. The same commands run every target, including those made from
+a `Model`. The xref:internals.adoc[internals chapter] covers the embedded engine
+and its raw interface.
 
 == Tune a run
 
@@ -103,6 +104,9 @@ preserving coverage:
 TARGET reduce-corpus quality/corpus/my-target quality/corpus/my-target-small
 ----
 
+For a target with xref:observations.adoc#campaign-goals[goals], the reduced corpus
+still holds an input for every goal the original reached.
+
 Keep valuable seeds and fixed crash inputs with the target in version
 control. Use a deliberate directory such as `fuzz/corpus/<target>/`,
 document why each seed matters, and replay it in tests. Generated
@@ -199,11 +203,15 @@ Friendly execution options include:
 |`--profile=NAME` |Select the named baseline profile.
 |`--detailed` |Capture a detailed logical trace for replay.
 |`--no-detect-leaks` |Disable the broader invocation leak check.
+|`--allow-unreached-goals` |Report unreached goals without making the campaign inconclusive.
 |===
 
 Provenance options are `--source-revision`, `--roc-version`,
 `--platform-release` and `--platform-sha256`, each supplied as `--name=value`.
-See xref:quality.adoc[Add fuzzing to CI] for evidence and baseline workflows.
+See xref:quality.adoc#read-the-evidence[Read the evidence] for the report these
+options are recorded in, and
+xref:observations.adoc#allocation-ratchets[Accept an exact allocation baseline]
+for `--baseline` and `--profile`.
 
 Minimization and corpus reduction accept `--time`, `--runs`, `--timeout` and
 `--report-dir`. They default to a 60-second campaign budget and require a positive

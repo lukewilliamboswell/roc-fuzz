@@ -885,6 +885,76 @@ comptime {
     }
 }
 
+/// Element type for __AnonStruct_3eb5366143d6ae75
+pub const __AnonStruct_3eb5366143d6ae75 = if (@sizeOf(usize) == 4) extern struct {
+    example: RocErasedCallable,
+    example_count: RocErasedCallable,
+    goals: RocErasedCallable,
+    name: RocStr,
+    @"run!": RocErasedCallable,
+    show: RocErasedCallable,
+    /// Recursively decrement Roc-owned fields.
+    pub fn decref(self: @This(), roc_host: *RocHost) void {
+        const value = self;
+        decrefErasedCallable(value.example, roc_host);
+        decrefErasedCallable(value.example_count, roc_host);
+        decrefErasedCallable(value.goals, roc_host);
+        value.name.decref(roc_host);
+        decrefErasedCallable(value.@"run!", roc_host);
+        decrefErasedCallable(value.show, roc_host);
+    }
+
+    /// Increment Roc-owned fields.
+    pub fn incref(self: @This(), amount: isize) void {
+        const value = self;
+        increfErasedCallable(value.example, amount);
+        increfErasedCallable(value.example_count, amount);
+        increfErasedCallable(value.goals, amount);
+        value.name.incref(amount);
+        increfErasedCallable(value.@"run!", amount);
+        increfErasedCallable(value.show, amount);
+    }
+} else extern struct {
+    example: RocErasedCallable,
+    example_count: RocErasedCallable,
+    goals: RocErasedCallable,
+    name: RocStr,
+    @"run!": RocErasedCallable,
+    show: RocErasedCallable,
+    /// Recursively decrement Roc-owned fields.
+    pub fn decref(self: @This(), roc_host: *RocHost) void {
+        const value = self;
+        decrefErasedCallable(value.example, roc_host);
+        decrefErasedCallable(value.example_count, roc_host);
+        decrefErasedCallable(value.goals, roc_host);
+        value.name.decref(roc_host);
+        decrefErasedCallable(value.@"run!", roc_host);
+        decrefErasedCallable(value.show, roc_host);
+    }
+
+    /// Increment Roc-owned fields.
+    pub fn incref(self: @This(), amount: isize) void {
+        const value = self;
+        increfErasedCallable(value.example, amount);
+        increfErasedCallable(value.example_count, amount);
+        increfErasedCallable(value.goals, amount);
+        value.name.incref(amount);
+        increfErasedCallable(value.@"run!", amount);
+        increfErasedCallable(value.show, amount);
+    }
+};
+
+comptime {
+    if (@sizeOf(usize) == 8) {
+        if (@sizeOf(__AnonStruct_3eb5366143d6ae75) != 64) @compileError("__AnonStruct_3eb5366143d6ae75 size mismatch");
+        if (@alignOf(__AnonStruct_3eb5366143d6ae75) != 8) @compileError("__AnonStruct_3eb5366143d6ae75 alignment mismatch");
+    }
+    if (@sizeOf(usize) == 4) {
+        if (@sizeOf(__AnonStruct_3eb5366143d6ae75) != 32) @compileError("__AnonStruct_3eb5366143d6ae75 size mismatch");
+        if (@alignOf(__AnonStruct_3eb5366143d6ae75) != 4) @compileError("__AnonStruct_3eb5366143d6ae75 alignment mismatch");
+    }
+}
+
 /// Element type for __AnonStruct_fa4a9e94a9b0c16f
 pub const __AnonStruct_fa4a9e94a9b0c16f = if (@sizeOf(usize) == 4) extern struct {
     bytes: RocListWith(u8, false),
@@ -934,6 +1004,72 @@ comptime {
     if (@sizeOf(usize) == 4) {
         if (@sizeOf(__AnonStruct_fa4a9e94a9b0c16f) != 36) @compileError("__AnonStruct_fa4a9e94a9b0c16f size mismatch");
         if (@alignOf(__AnonStruct_fa4a9e94a9b0c16f) != 4) @compileError("__AnonStruct_fa4a9e94a9b0c16f alignment mismatch");
+    }
+}
+
+/// Tag discriminant for Target.
+pub const TargetTag = enum(u8) {
+    Target = 0,
+    Targets = 1,
+};
+
+/// Payload union for Target.
+pub const TargetPayload = extern union {
+    target: __AnonStruct_3eb5366143d6ae75,
+    targets: RocList(Target),
+};
+
+/// Tag union: Target
+pub const Target = if (@sizeOf(usize) == 4) extern struct {
+    payload: [32]u8 align(4),
+    tag: TargetTag,
+    pub fn payload_target(self: *const @This()) __AnonStruct_3eb5366143d6ae75 {
+        const ptr: *const __AnonStruct_3eb5366143d6ae75 = @ptrCast(@alignCast(&self.payload));
+        return ptr.*;
+    }
+    pub fn payload_targets(self: *const @This()) RocList(Target) {
+        const ptr: *const RocList(Target) = @ptrCast(@alignCast(&self.payload));
+        return ptr.*;
+    }
+    /// Recursively decrement Roc-owned payloads.
+    pub fn decref(self: @This(), roc_host: *RocHost) void {
+        decrefTarget(self, roc_host);
+    }
+
+    /// Increment Roc-owned payloads.
+    pub fn incref(self: @This(), amount: isize) void {
+        increfTarget(self, amount);
+    }
+} else extern struct {
+    payload: TargetPayload,
+    tag: TargetTag,
+    pub fn payload_target(self: *const @This()) __AnonStruct_3eb5366143d6ae75 {
+        return self.payload.target;
+    }
+    pub fn payload_targets(self: *const @This()) RocList(Target) {
+        return self.payload.targets;
+    }
+    /// Recursively decrement Roc-owned payloads.
+    pub fn decref(self: @This(), roc_host: *RocHost) void {
+        decrefTarget(self, roc_host);
+    }
+
+    /// Increment Roc-owned payloads.
+    pub fn incref(self: @This(), amount: isize) void {
+        increfTarget(self, amount);
+    }
+};
+
+comptime {
+    if (@sizeOf(usize) == 8) {
+        if (@sizeOf(Target) != 72) @compileError("Target size mismatch");
+        if (@alignOf(Target) != 8) @compileError("Target alignment mismatch");
+        if (@offsetOf(Target, "tag") != 64) @compileError("Target tag offset mismatch");
+    }
+    if (@sizeOf(usize) == 4) {
+        if (@sizeOf(Target) != 36) @compileError("Target size mismatch");
+        if (@alignOf(Target) != 4) @compileError("Target alignment mismatch");
+        if (@offsetOf(Target, "tag") != 32) @compileError("Target tag offset mismatch");
     }
 }
 
@@ -1050,12 +1186,83 @@ pub const FuzzScope_startArgs = extern struct {
 pub const FuzzScope_finish = __AnonStruct_2466dab754f47a46;
 pub const FuzzScope_finish_return = __AnonStruct_b94d4088b4417d03;
 pub const FuzzScope_finish_returnStats = __AnonStruct_2466dab754f47a46;
+pub const Build_for_host = Target;
+pub const Build_for_hostPayload = TargetPayload;
+pub const Build_for_hostTag = TargetTag;
+pub const Build_for_hostTarget = __AnonStruct_3eb5366143d6ae75;
+pub const TargetTarget = __AnonStruct_3eb5366143d6ae75;
+pub const TargetTargets = Target;
+pub const TargetTargetsPayload = TargetPayload;
+pub const TargetTargetsTag = TargetTag;
+pub const TargetTargetsTarget = __AnonStruct_3eb5366143d6ae75;
+pub const Example_for_hostArg0 = Target;
+pub const Example_for_hostArg0Payload = TargetPayload;
+pub const Example_for_hostArg0Tag = TargetTag;
+pub const Example_for_hostArg0Target = __AnonStruct_3eb5366143d6ae75;
 pub const Example_for_host = __AnonStruct_fa4a9e94a9b0c16f;
+pub const Example_count_for_hostArg0 = Target;
+pub const Example_count_for_hostArg0Payload = TargetPayload;
+pub const Example_count_for_hostArg0Tag = TargetTag;
+pub const Example_count_for_hostArg0Target = __AnonStruct_3eb5366143d6ae75;
+pub const Goals_for_hostArg0 = Target;
+pub const Goals_for_hostArg0Payload = TargetPayload;
+pub const Goals_for_hostArg0Tag = TargetTag;
+pub const Goals_for_hostArg0Target = __AnonStruct_3eb5366143d6ae75;
+pub const Name_for_hostArg0 = Target;
+pub const Name_for_hostArg0Payload = TargetPayload;
+pub const Name_for_hostArg0Tag = TargetTag;
+pub const Name_for_hostArg0Target = __AnonStruct_3eb5366143d6ae75;
+pub const Run_for_hostArg0 = Target;
+pub const Run_for_hostArg0Payload = TargetPayload;
+pub const Run_for_hostArg0Tag = TargetTag;
+pub const Run_for_hostArg0Target = __AnonStruct_3eb5366143d6ae75;
+pub const Show_for_hostArg0 = Target;
+pub const Show_for_hostArg0Payload = TargetPayload;
+pub const Show_for_hostArg0Tag = TargetTag;
+pub const Show_for_hostArg0Target = __AnonStruct_3eb5366143d6ae75;
+pub const Target_count_for_hostArg0 = Target;
+pub const Target_count_for_hostArg0Payload = TargetPayload;
+pub const Target_count_for_hostArg0Tag = TargetTag;
+pub const Target_count_for_hostArg0Target = __AnonStruct_3eb5366143d6ae75;
 
 // Generated Refcount Helpers
 
 pub const __AnonStruct_2466dab754f47a46Release = struct {
     pub fn release(value: __AnonStruct_2466dab754f47a46, roc_host: *RocHost) void {
+        value.decref(roc_host);
+    }
+};
+
+fn decrefTarget(value: Target, roc_host: *RocHost) void {
+    switch (value.tag) {
+        .Target => {
+            value.payload_target().decref(roc_host);
+        },
+        .Targets => {
+            decrefListOfTarget(value.payload_targets(), roc_host);
+        },
+    }
+}
+
+fn increfTarget(value: Target, amount: isize) void {
+    switch (value.tag) {
+        .Target => {
+            value.payload_target().incref(amount);
+        },
+        .Targets => {
+            value.payload_targets().incref(amount);
+        },
+    }
+}
+
+pub const TargetRelease = struct {
+    pub fn release(value: Target, roc_host: *RocHost) void {
+        value.decref(roc_host);
+    }
+};
+
+pub const __AnonStruct_3eb5366143d6ae75Release = struct {
+    pub fn release(value: __AnonStruct_3eb5366143d6ae75, roc_host: *RocHost) void {
         value.decref(roc_host);
     }
 };
@@ -1066,10 +1273,37 @@ pub const __AnonStruct_fa4a9e94a9b0c16fRelease = struct {
     }
 };
 
+/// Release one owned reference to a `RocList(RocStr)`.
+///
+/// The allocation's final reference is claimed atomically before any element
+/// is read, so concurrent owners cannot skip or duplicate element teardown.
+pub fn decrefListOfStr(value: RocList(RocStr), roc_host: *RocHost) void {
+    value.deinitWith(RocStrRelease, roc_host);
+}
+
+/// Release one owned reference to a `RocList(Target)`.
+///
+/// The allocation's final reference is claimed atomically before any element
+/// is read, so concurrent owners cannot skip or duplicate element teardown.
+pub fn decrefListOfTarget(value: RocList(Target), roc_host: *RocHost) void {
+    value.deinitWith(TargetRelease, roc_host);
+}
+
+fn decrefBoxPayloadType9(data_ptr: ?*anyopaque, roc_host: *RocHost) callconv(.c) void {
+    const payload: *Target = @ptrCast(@alignCast(data_ptr orelse return));
+    payload.*.decref(roc_host);
+}
+
 fn rocReleasePolicy(comptime T: type) type {
     if (T == RocStr) return RocStrRelease;
+    if (T == *Target) return RocBoxRelease(*Target, Target, TargetRelease);
+    if (T == Target) return TargetRelease;
+    if (T == __AnonStruct_3eb5366143d6ae75) return __AnonStruct_3eb5366143d6ae75Release;
+    if (T == RocErasedCallable) return RocErasedCallableRelease;
     if (T == __AnonStruct_fa4a9e94a9b0c16f) return __AnonStruct_fa4a9e94a9b0c16fRelease;
     if (T == RocListWith(u8, false)) return RocListSpineRelease(RocListWith(u8, false));
+    if (T == RocList(RocStr)) return RocListRelease(RocList(RocStr), RocStrRelease);
+    if (T == RocList(Target)) return RocListRelease(RocList(Target), TargetRelease);
     @compileError("generated glue has no recursive release policy for " ++ @typeName(T));
 }
 
@@ -1306,20 +1540,26 @@ pub fn makeRocHost(env: *RocEnv) RocHost {
 //
 // Roc exports these symbols from the app with their natural C ABI signatures.
 
+/// Entrypoint: build_for_host
+pub extern fn roc_fuzz_build() callconv(.c) *Target;
+
 /// Entrypoint: example_for_host
-pub extern fn roc_fuzz_example(arg0: u64, arg1: u64) callconv(.c) __AnonStruct_fa4a9e94a9b0c16f;
+pub extern fn roc_fuzz_example(arg0: *Target, arg1: u64, arg2: u64) callconv(.c) __AnonStruct_fa4a9e94a9b0c16f;
 
 /// Entrypoint: example_count_for_host
-pub extern fn roc_fuzz_example_count(arg0: u64) callconv(.c) u64;
+pub extern fn roc_fuzz_example_count(arg0: *Target, arg1: u64) callconv(.c) u64;
+
+/// Entrypoint: goals_for_host
+pub extern fn roc_fuzz_goals(arg0: *Target, arg1: u64) callconv(.c) RocList(RocStr);
 
 /// Entrypoint: name_for_host
-pub extern fn roc_fuzz_name(arg0: u64) callconv(.c) RocStr;
+pub extern fn roc_fuzz_name(arg0: *Target, arg1: u64) callconv(.c) RocStr;
 
 /// Entrypoint: run_for_host!
-pub extern fn roc_fuzz_run(arg0: u64, arg1: RocListWith(u8, false)) callconv(.c) u8;
+pub extern fn roc_fuzz_run(arg0: *Target, arg1: u64, arg2: RocListWith(u8, false)) callconv(.c) u8;
 
 /// Entrypoint: show_for_host
-pub extern fn roc_fuzz_show(arg0: u64, arg1: RocListWith(u8, false)) callconv(.c) RocStr;
+pub extern fn roc_fuzz_show(arg0: *Target, arg1: u64, arg2: RocListWith(u8, false)) callconv(.c) RocStr;
 
 /// Entrypoint: target_count_for_host
-pub extern fn roc_fuzz_target_count() callconv(.c) u64;
+pub extern fn roc_fuzz_target_count(arg0: *Target) callconv(.c) u64;

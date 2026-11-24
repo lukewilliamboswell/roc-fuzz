@@ -1,13 +1,108 @@
-= Why fuzz a Roc application?
+[#why-fuzz-a-roc-application]
+= Test a Roc application with roc-fuzz
 
 Suppose a decoder passes every example you wrote, but one unusual combination
-of lengths and Unicode text still makes it fail. Adding more example tests helps
-only when you can imagine the troublesome input in advance.
+of lengths and Unicode text still makes it fail. An `expect` checks the cases
+you thought of; adding more of them helps only when you can imagine the
+troublesome input in advance.
 
-Fuzzing repeatedly runs part of your application with varied inputs. It watches
-which inputs reach new behavior and uses those discoveries to guide the search.
-You describe what valid inputs look like and what must always be true. roc-fuzz
-does the repetitive search and saves any input that exposes a failure.
+roc-fuzz adds techniques for the cases you did not think of. Each answers a
+different question about the same code, and their results feed one another:
+
+. A *fuzz target* states a property over typed, generated inputs. Coverage
+  guidance searches for inputs that break it, and any failure is saved so you
+  can show, replay, minimize and keep it as a regression.
+. Passing is not the same as having exercised anything. *Goals* say what a
+  campaign must have reached, and *trace rules* and *allocation measurements*
+  check behavior that the returned value does not show.
+. A stateful component breaks in sequences of calls. A *model* describes it as
+  a state machine with rules, searches a small world exhaustively under
+  `roc test`, and fuzzes the same machine over a large one.
+. Some properties of fixed-width integer arithmetic can be *proved* for every
+  value, or refuted with the values that break them.
+. *Campaigns* run these targets for longer, keep a corpus of useful inputs,
+  and leave a report that CI can keep as evidence.
+
+This chapter explains what each technique is for and where it stops, then
+what a fuzz target is. xref:getting-started.adoc#fuzz-your-first-function[Fuzz your first function]
+is the hands-on start.
+
+== Choose a technique
+
+[cols="3,2,3,4",options="header"]
+|===
+|Question |Technique |You supply |You get back
+
+|Does this case give the right answer?
+|An `expect` under `roc test`
+|A case and its expected result
+|Pass or fail for that one case
+
+|Does a rule hold for inputs I did not think of?
+|A xref:getting-started.adoc#fuzz-your-first-function[fuzz target]
+|A generator, an operation and a property
+|Saved failures to show, replay and minimize; a corpus of useful inputs
+
+|Did a passing campaign reach the cases that matter, and behave as it should on the way?
+|xref:observations.adoc#check-what-passing-does-not-show[Goals, trace rules and allocation measurements]
+|Named events, rules about them, and measured regions
+|The goals reached, each with its first witness; trace and allocation failures;
+an exact per-example allocation baseline
+
+|Does a stateful component survive every sequence of calls?
+|A xref:modelling.adoc#describe-the-machine[`Model`]
+|A state machine with rules and goals
+|From a search, a verdict and a shortest breaking trace; from a fuzz target,
+findings over a large world
+
+|Does this arithmetic hold for every value?
+|A xref:solve.adoc#state-unknowns-and-a-claim[`Solve`] claim
+|Unknown fixed-width integers and a claim about them
+|`Proved`, or values that refute the claim or make it crash
+
+|Does it keep holding as the code changes?
+|xref:campaigns.adoc#tune-a-run[Campaigns] and xref:quality.adoc#add-fuzzing-to-ci[CI]
+|Bounds, a corpus directory and a CI job
+|A report with the outcome, goals and findings, kept as evidence
+|===
+
+Each technique stops somewhere, and the chapters state where:
+
+* A campaign that finds no failure shows only that the inputs it explored
+  passed. It never proves the absence of bugs, and a weak property misses wrong
+  answers.
+* Goals grade a campaign; they do not steer it. A campaign with poor inputs can
+  pass every rule while reaching few goals, so a campaign that leaves a
+  declared goal unreached is reported as `inconclusive`, not passed.
+* A model search covers only the small world you list. A fuzz target over the
+  same machine reaches further, with no guarantee of completeness.
+* `Solve` works on integers of 1 to 64 bits. A claim that multiplies unknowns
+  gets several times harder with each bit, a `Proved` answer rests on the
+  solver, and as an input generator it is orders of magnitude slower than a
+  hand-written one.
+
+=== How results become examples
+
+Every technique ends in something you can keep. A fuzz finding, and the first
+input to reach each goal, are bytes that `TARGET retain` turns into a
+`Fuzz.saved` declaration in the target's examples, so every later check runs
+them. A model search's breaking trace replays with `Model.replay`, and its
+witness for a goal becomes an example of the model's fuzz target. A `Solve`
+answer is an ordinary Roc record, so an `expect` can pin it, and a fuzz target
+can check the claim's term against the compiled code.
+
+.How results become examples
+[mermaid]
+....
+flowchart LR
+    Solve["Solve claim"] -->|refuting values| Expect["expect in roc test"]
+    Search["Model search<br/>small world"] -->|breaking trace| Expect
+    Search -->|goal witness| Examples["Target examples"]
+    Examples --> Campaign["Fuzz campaign<br/>large world"]
+    Campaign -->|finding or goal witness| Retain["TARGET retain"]
+    Retain -->|Fuzz.saved| Examples
+    Campaign --> Report["Report:<br/>outcome and goals"]
+....
 
 == What a fuzz target is
 
@@ -42,7 +137,9 @@ new behavior in the compiled program, but only you can state application rules s
 
 A target is development and test code. It is separate from the application you
 ship, and it normally imports the module it exercises. Start with one operation
-and one property per target so failures remain easy to understand.
+and one property per target so failures remain easy to understand. A `Model`
+builds a fuzz target from a state machine, and the same runner commands apply
+to it.
 
 == How fuzzing complements tests
 
@@ -68,11 +165,9 @@ that can be shown, replayed, and minimized.
 real bugs.
 |===
 
-After roc-fuzz finds a bug, fix the code and retain its original bytes with
-`TARGET retain`. Add the printed `Fuzz.saved` declaration alongside typed source
-examples. Those regressions run independently of coverage retention, while
-exploration continues searching for new cases. Unit tests can share the same
-application invariants.
+Declared examples, including retained failures, run on every check
+independently of the corpus, while exploration continues searching for new
+cases. Unit tests can share the same application invariants.
 
 [#typed-and-coverage-guided]
 == What “typed” and “coverage-guided” mean
@@ -111,19 +206,16 @@ a percentage and not proof that the program is correct.
 
 roc-fuzz embeds a mature native fuzzing engine in the executable built by Roc.
 Normal users interact with roc-fuzz commands and Roc values; knowledge of that
-engine is needed only for the expert escape hatch described later.
+engine is needed only for the
+xref:internals.adoc#use-the-libfuzzer-interface[expert escape hatch].
 
 == What roc-fuzz provides
 
-For a Roc application author, the platform supplies:
-
-* typed generators for common Roc values and tools for combining them;
-* coverage feedback that directs the search toward new behavior;
-* a bounded local runner with sensible defaults;
-* saved inputs for crashes, failed properties, hangs, memory limits, and leaks;
-* commands to render a saved input as a Roc value, reproduce it, and minimize it;
-* a persistent corpus that makes later runs build on earlier discoveries; and
-* a supervised CI mode that records configuration, logs, hashes, and failures.
+Applications use three of the platform's modules. `Fuzz` builds targets from
+typed generators for common Roc values and tools for combining them, declared
+examples, marks, trace rules and allocation measurements. `Model` describes and
+checks state machines. `Solve` states and answers claims about fixed-width
+integers.
 
 A target builds into one self-contained executable:
 
@@ -133,8 +225,19 @@ roc build --fuzz fuzz/stack/main.roc --output=stack-fuzz
 ./stack-fuzz run
 ----
 
+That executable supplies:
+
+* coverage feedback that directs the search toward new behavior;
+* a bounded local runner with sensible defaults;
+* saved inputs for crashes, failed properties, hangs, memory limits, and leaks;
+* commands to render a saved input as a Roc value, reproduce it, and minimize it;
+* a persistent corpus that makes later runs build on earlier discoveries; and
+* a supervised CI mode that records configuration, logs, hashes, goals and
+  failures.
+
 The normal workflow needs no separate native project or fuzzing tool
-installation.
+installation. A `Model` search and a `Solve` claim are pure functions, so they
+also run in an ordinary `expect` under `roc test`.
 
 == Choose a good first target
 
@@ -174,7 +277,7 @@ benchmark tests for those jobs.
 
 Fuzzing consumes CPU time and stores a corpus and failure artifacts. More time
 can explore more behavior, but a clean run means only that no failure was found
-during that search. It never proves the absence of bugs.
+during that search.
 
 roc-fuzz currently supports Linux x86-64 with musl and Apple Silicon macOS 11 or
 newer. Continue with xref:getting-started.adoc[Fuzz your first function] to build

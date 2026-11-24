@@ -147,7 +147,9 @@ Fuzz := [].{
 		{ value: Box.unbox(finished.value), stats: finished.stats }
 	}
 
-	## Record a direct event in the current logical trace region.
+	## Record a direct event in the current logical trace region. An event
+	## named after a goal the target declares with `with_goals` also reaches
+	## that goal for this input; see [`Target.with_goals`](#Target.with_goals).
 	mark! : Str => {}
 
 	## Require both named events and every first occurrence before every second.

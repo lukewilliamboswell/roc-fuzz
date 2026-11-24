@@ -1,3 +1,5 @@
+import Script
+
 ## What Blueprint.roc says about the tooling environment, read as text. The
 ## check script holds every script header to these values, so Blueprint.roc
 ## stays the one place where the tooling compiler and its bundles are chosen.
@@ -34,6 +36,16 @@ Tooling := [].{
 			_ => Err(MissingRocPackages)
 		}
 
+	## The package URLs a platform header's `packages { ... }` names, in order.
+	platform_packages = |source|
+		match Str.split_on(source, "\n\tpackages {") {
+			[_, rest] => match Str.split_on(rest, "}") {
+				[listed, ..] => Ok(Str.split_on(listed, "\"").keep_if(|part| Script.starts_with(part, "https://")))
+				_ => Err(MissingPlatformPackages)
+			}
+			_ => Err(MissingPlatformPackages)
+		}
+
 	## The bundle URLs an application header names, in order.
 	header_urls = |source|
 		match Str.split_on(source, "}") {
@@ -49,3 +61,6 @@ expect Tooling.stable_tag("config = []") == Err(MissingToolingCompiler)
 expect Tooling.roc_packages(sample) == Ok(["https://example.org/one.tar.zst", "https://example.org/two.tar.zst"])
 expect Tooling.roc_packages("config = []") == Err(MissingRocPackages)
 expect Tooling.header_urls("app [main!] {\n\tcli: platform \"https://example.org/one.tar.zst\",\n\troc: \"nightly-2026-09-29-7f11a82\",\n}\nvalue = \"https://example.org/body\"\n") == ["https://example.org/one.tar.zst"]
+expect Tooling.platform_packages("platform \"p\"\n\trequires {\n\t\ttarget : Target\n\t}\n\texposes [A]\n\tpackages { sat: \"https://example.org/sat.tar.zst\", other: \"https://example.org/other.tar.zst\" }\n\tprovides {}\n") == Ok(["https://example.org/sat.tar.zst", "https://example.org/other.tar.zst"])
+expect Tooling.platform_packages("platform \"p\"\n\texposes [A]\n\tpackages {}\n") == Ok([])
+expect Tooling.platform_packages("app [main!] { cli: platform \"https://example.org/cli.tar.zst\" }\n") == Err(MissingPlatformPackages)
