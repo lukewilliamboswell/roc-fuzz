@@ -7,6 +7,12 @@ its best on the questions fuzzing rarely settles: does this sum overflow for
 some pair of `U64`s, does this bounds check let a table past the end, is this
 bit trick the same as its definition.
 
+A claim covers only what it says, in fixed-width integers. Use `Solve` for the
+arithmetic at the heart of a check, such as a guard or a calculation, and fuzz
+the code around it. Use both on the same definition when you can: the proof
+covers every value of the term, and a fuzz target that compares the term with
+the compiled code checks that the term means what the code does.
+
 `Solve` is part of the platform, so an application that imports `fuzz.Solve`
 needs nothing else, and an application that does not pays nothing for it.
 
@@ -191,39 +197,14 @@ three counters that must stay in order with at most eight messages in flight,
 and asks for states whose window crosses the wrap of the 16-bit wire numbers.
 Almost no random triple of numbers is such a state.
 
-== Where it fits beside fuzzing and modelling
-
-[cols="1,2,2",options="header"]
-|===
-|Tool |Covers |Checks
-
-|`Fuzz`
-|Many inputs, chosen by coverage
-|The compiled code itself, including everything `Solve` cannot express
-
-|`Model`
-|Every state of a state machine within a depth, or paths chosen by a fuzzer
-|Rules about states and steps
-
-|`Solve`
-|Every value of a few fixed-width integers
-|A term written for the question, usually a guard or a calculation
-|===
-
-Use `Solve` for the arithmetic at the heart of a check, and fuzz the code
-around it. Use both on the same definition when you can: the proof covers every
-value of the term, and a fuzz target that compares the term with the compiled
-code, as `examples/midpoint.roc` does, checks that the term means what the code
-does.
-
-As an input generator `Solve` is a complement to a hand-written generator, not a
-replacement. Each input costs a solver query. `examples/slidingWindow.roc`,
+As an input generator `Solve` complements a hand-written generator; it does not
+replace one. Each input costs a solver query. `examples/slidingWindow.roc`,
 three counters and one optional extra claim, runs about 200 inputs a second on
 an Apple Silicon Mac. A larger state, a whole link with its frames and
 acknowledgements, ran about 15 to 23 inputs a second built by the solver, where
-a hand-written generator for the same states ran about 138,000. Reach for it to build states
-that satisfy rules you have already written as a claim, and that a generator
-would need its own careful code to reach.
+a hand-written generator for the same states ran about 138,000. Reach for it to
+build states that satisfy rules you have already written as a claim, and that a
+generator would need its own careful code to reach.
 
 == Limits
 

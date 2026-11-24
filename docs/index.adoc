@@ -11,10 +11,14 @@
 :source-highlighter: rouge
 
 [.lead]
-roc-fuzz checks pure Roc code through correctness assertions, declared examples,
-allocation measurements, logical trace rules and coverage-guided exploration.
-One target executable checks exact accepted observations and preserves original
-findings for inspection, replay, retention and minimization.
+roc-fuzz is a Roc platform for testing pure Roc code past the examples you
+write. Fuzz targets check properties over typed inputs with coverage-guided
+search; goals, trace rules and allocation measurements check what a passing
+campaign exercised; `Model` searches and fuzzes a stateful component described
+as a state machine; and `Solve` proves or refutes claims about fixed-width
+integer arithmetic. Each target builds into one self-contained executable that
+checks declared examples, explores, and keeps findings for inspection, replay,
+retention and minimization.
 
 ifdef::backend-html5[]
 link:api/index.html[Browse the generated API reference] ·
@@ -24,23 +28,25 @@ endif::[]
 
 .How to use this manual
 ****
-New to fuzzing:: Start with <<why-fuzz-a-roc-application>> to learn what a fuzz
-target is, how guided search differs from random input, and when fuzzing fits.
-Ready to try it:: Follow <<fuzz-your-first-function>> to test a small Roc module
-and work through a saved failure.
+New to roc-fuzz:: Start with <<why-fuzz-a-roc-application>> to see which
+technique answers which question about your code, and where each one stops.
+Ready to try it:: Follow <<fuzz-your-first-function>> to fuzz a small Roc
+module and work through a saved failure.
+Writing targets:: Read <<design-effective-targets>> for generators, examples
+and suites, then <<check-what-passing-does-not-show>> to declare goals, trace
+rules and allocation checks.
 Stateful code:: Read <<model-a-component-and-check-it>> to describe a component
 as a state machine, search it under `roc test`, and fuzz the same model.
-Arithmetic proofs:: Read <<prove-facts-about-integer-arithmetic>> to prove a
+Integer arithmetic:: Read <<prove-facts-about-integer-arithmetic>> to prove a
 claim about fixed-width integers for every value, or find the values that
 break it.
-Longer campaign:: Continue with <<run-and-maintain-fuzzing-campaigns>> for
-bounds, corpora, status output, and failure diagnosis.
-Goals and allocations:: Read <<check-what-passing-does-not-show>> to declare
-campaign goals, trace rules and allocation checks.
-Advanced use:: Read <<understand-roc-fuzz-internals-and-advanced-features>> for the
-runtime model, generator dispatch, and raw engine options.
-Downstream maintainer:: Read <<add-fuzzing-to-ci>> for a bounded GitHub Actions
-pattern and its report contract.
+Running campaigns:: Continue with <<run-and-maintain-fuzzing-campaigns>> for
+bounds, corpora, status output, failure diagnosis and the command reference.
+CI maintainer:: Read <<add-fuzzing-to-ci>> for a bounded GitHub Actions
+pattern and the report it leaves.
+How it works:: Read <<understand-roc-fuzz-internals-and-advanced-features>> for
+the runtime model, generator dispatch, the binary input format and raw engine
+options.
 Release verifier:: Read <<release-bundle-provenance>>.
 Platform contributor:: Read <<contributing-to-roc-fuzz>> for toolchains,
 validation, packaging, and release behavior.

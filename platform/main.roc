@@ -1,6 +1,8 @@
-## A typed, coverage-guided fuzzing platform with a self-contained libFuzzer
-## runner. Start with the `Fuzz` module; `Arbitrary` and `Target` are advanced
-## interfaces retained for custom generators and legacy targets.
+## A platform for testing Roc code: typed, coverage-guided fuzz targets with a
+## self-contained libFuzzer runner, state machines searched and fuzzed with
+## `Model`, and proofs about fixed-width integer arithmetic with `Solve`. Start
+## with the `Fuzz` module; `Arbitrary` and `Target` are advanced interfaces
+## retained for custom generators and legacy targets.
 platform "roc-fuzz"
 	requires {
 		target : Target
