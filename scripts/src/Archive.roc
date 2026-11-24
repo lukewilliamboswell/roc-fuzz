@@ -1,5 +1,4 @@
 import cli.Env
-import cli.System
 import cli.Path
 import AutomationIO
 import Script
@@ -37,38 +36,59 @@ Archive := [].{
 	entries! = |format, archive, limit| {
 		root = Env.cwd!()?
 		file = Path.display(Path.absolute!(archive)?)
-		is_mac = is_mac!()
 		listing = match format {
 			Tar => AutomationIO.text!("tar", ["-tvf", file], root)?
 			Zip => AutomationIO.text!("unzip", ["-Z", "-l", file], root)?
 		}
-		lines = AutomationIO.lines(listing)
+		layout = match format {
+			Tar => tar_flavor!()?
+			Zip => Zipinfo
+		}
+		Archive.validate(Archive.listed(layout, listing)?, limit)
+	}
+
+	## Parse a verbose listing. GNU tar prints `mode owner/group size date time
+	## name`, bsdtar prints `mode links owner group size date time name`, and
+	## zipinfo adds header and summary lines around `mode version os size ...`.
+	listed : [GnuTar, BsdTar, Zipinfo], Str -> Try(List(Entry), _)
+	listed = |layout, listing| {
 		var $entries = []
-		for line in lines {
-			# Zipinfo has summary/header lines
-			# Tar lists only entries.
-			if (
-				match format {
-					Tar => Bool.True
-					Zip => Bool.False
-				}
-			) or Script.starts_with(line, "-") or Script.starts_with(line, "d") or Script.starts_with(line, "l") or Script.starts_with(line, "c") or Script.starts_with(line, "b") or Script.starts_with(line, "p") or Script.starts_with(line, "s") {
+		for line in AutomationIO.lines(listing) {
+			is_entry = match layout {
+				Zipinfo => ["-", "d", "l", "c", "b", "p", "s"].any(|kind| Script.starts_with(line, kind))
+				_ => Bool.True
+			}
+			if is_entry {
 				fields = AutomationIO.words(line)
 				mode = fields.first().map_err(|_| InvalidArchiveListing)?
 				if !Script.starts_with(mode, "-") and !Script.starts_with(mode, "d") {
 					return Err(ArchiveLinksForbidden)
 				}
-				index = match format {
-					Zip => 3
-					Tar => if (is_mac) 4 else 2
+				index = match layout {
+					Zipinfo => 3
+					GnuTar => 2
+					BsdTar => 4
 				}
 				size = U64.from_str(fields.get(index).map_err(|_| InvalidArchiveListing)?).map_err(|_| InvalidArchiveListing)?
 				name = fields.last().map_err(|_| InvalidArchiveListing)?
 				$entries = $entries.append({ name, size, directory: Script.starts_with(mode, "d") })
 			}
 		}
-		Archive.validate($entries, limit)
+		Ok($entries)
 	}
+
+	## The options that make a tar archive independent of who packed it.
+	ownership_options : [GnuTar, BsdTar] -> List(Str)
+	ownership_options = |tar|
+		match tar {
+			GnuTar => ["--owner=0", "--group=0", "--numeric-owner"]
+			BsdTar => ["--uid", "0", "--gid", "0", "--uname", "", "--gname", ""]
+		}
+
+	## Which tar a `tar --version` banner names.
+	flavor : Str -> [GnuTar, BsdTar]
+	flavor = |banner| if (banner.contains("GNU tar")) GnuTar else BsdTar
+
 	extract! : Format, Path, Path, U64 => Try(List(Entry), _)
 	extract! = |format, archive, destination, limit| {
 		entries = Archive.entries!(format, archive, limit)?
@@ -108,7 +128,7 @@ Archive := [].{
 		match format {
 			Zip => AutomationIO.run!("zip", ["-X", "-q", Path.display(output_absolute)].concat(names), source)
 			Tar => {
-				ownership = if (is_mac!()) ["--uid", "0", "--gid", "0", "--uname", "", "--gname", ""] else ["--owner=0", "--group=0", "--numeric-owner"]
+				ownership = Archive.ownership_options(tar_flavor!()?)
 				AutomationIO.run!("tar", ["--format=ustar"].concat(ownership).concat(["-cf", Path.display(output_absolute)]).concat(names), source)
 			}
 		}
@@ -122,9 +142,15 @@ expect Archive.safe_name("examples/stack/main.roc")
 expect Archive.validate([{ name: "a", size: 1, directory: Bool.False }, { name: "a", size: 1, directory: Bool.False }], 100) |> Try.is_err
 expect Archive.validate([{ name: "a", size: 101, directory: Bool.False }], 100) |> Try.is_err
 
-## BSD tar on macOS spells listings and ownership differently from GNU tar.
-is_mac! = ||
-	match System.target!().os() {
-		MacOS(_) => True
-		_ => False
-	}
+expect Archive.flavor("tar (GNU tar) 1.35\nCopyright (C) 2023 Free Software Foundation, Inc.\n") == GnuTar
+expect Archive.flavor("bsdtar 3.5.3 - libarchive 3.7.4 zlib/1.2.12 liblzma/5.4.3 bz2lib/1.0.8 \n") == BsdTar
+expect Archive.listed(GnuTar, "-rw-r--r-- 0/0               6 2026-11-24 10:54 a.txt\ndrwxr-xr-x 0/0               0 2026-11-24 10:54 dir/\n") == Ok([{ name: "a.txt", size: 6, directory: Bool.False }, { name: "dir/", size: 0, directory: Bool.True }])
+expect Archive.listed(BsdTar, "-rw-r--r--  0 0      0           6 24 Nov 10:54 a.txt\n") == Ok([{ name: "a.txt", size: 6, directory: Bool.False }])
+# The layouts are not interchangeable: GNU's time column is not a size.
+expect Archive.listed(BsdTar, "-rw-r--r-- 0/0               6 2026-11-24 10:54 a.txt\n") |> Try.is_err
+expect Archive.listed(GnuTar, "lrwxr-xr-x 0/0               0 2026-11-24 10:54 link -> missing\n") |> Try.is_err
+expect Archive.listed(Zipinfo, "Archive:  x.zip\nZip file size: 1 bytes, number of entries: 1\n-rw-r--r--  3.0 unx        6 tx defX 26-Nov-24 10:54 a.txt\n1 file, 6 bytes uncompressed\n") == Ok([{ name: "a.txt", size: 6, directory: Bool.False }])
+
+## The archiver on PATH decides the listing layout and the ownership options,
+## not the operating system: a Nix environment on macOS provides GNU tar.
+tar_flavor! = || AutomationIO.text!("tar", ["--version"], Env.cwd!()?).map_ok(Archive.flavor)

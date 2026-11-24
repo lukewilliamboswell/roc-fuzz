@@ -107,6 +107,13 @@ Update a script dependency:: Change the release URL in each script header and
 under `RocPackages` in `Blueprint.roc`, adding any new dependency of that
 dependency (`roc-stable deps scripts/check_all.roc` lists them), then run
 `blueprint update`.
+Update a platform package:: Every application built against the platform
+fetches and compiles the packages under `packages` in `platform/main.roc`. Give
+each release URL a reviewed component in `sbom/composition.json`, with that URL
+as its `download`, its SHA-256 and license, and a `dependsOn` relationship from
+`Subject` with scope `runtime`. The supply-chain check refuses a URL without
+one. `THIRD_PARTY_LICENSES.md` lists only what the bundle contains or links, and
+editing it changes the linker-input fingerprint.
 Keep the SBOM composition current:: `sbom/composition.json` gives every input
 `Blueprint.roc` declares (each source, tool, fetched program, script package
 and task) a disposition. A new task or tool needs an entry there too, or the
@@ -284,6 +291,18 @@ The macOS target includes `FuzzerInterceptors.cpp`: its `dlsym` lookups
 work with macOS's dynamic `libSystem`. Its deployment target is macOS
 11.0, and its only allowed dynamic dependencies are system libraries.
 
+The host makes a goal's first reach new coverage. For a target that declares
+goals it registers one inline 8-bit counter for each, and a PC table of the same
+length, through libFuzzer's `__sanitizer_cov_8bit_counters_init` and
+`__sanitizer_cov_pcs_init`: the entry points instrumented code calls on both
+targets. The region therefore lives in `libhost.a` and needs no linker section
+and no change to `libfuzzer.a`; on x64musl they are the only sanitizer symbols
+`libhost.a` leaves undefined. A target without goals registers nothing, so
+libFuzzer's `Loaded N modules` line gains one module of G counters for G goals
+and none otherwise; `test-targets` checks both on each host.
+libFuzzer's extra counters are not an option: the pinned source reads them on
+Linux only.
+
 `src/macos_sancov.c` supplies the public TLS slot required by Roc's
 macOS stack-depth coverage instrumentation.
 `src/macos_fuzzer_ext_functions.cpp` binds the standalone runner hooks
@@ -353,6 +372,15 @@ For an application built with `Fuzz.suite`, add a `suites` entry in
 `tests/targets.json` with the case name and its `members`, each containing
 `name` and `expected_failure`. Both the target driver and release archive use
 this inventory to select every member while sharing one executable.
+
+A case is judged by its exit codes: `expected_failure` makes replay and the
+campaign exit `1`, and `check` must pass. To require more, such as a target
+whose goals leave `check` or its campaign `inconclusive`, add an entry to the
+`outcomes` list. Its `target` is the case name, or `case/member` for a suite
+member; `check` and `fuzz` each give the `outcome` (`passed`, `finding` or
+`inconclusive`) and the goals `status` (`goals`: `reached`, `unreached` or
+`none_declared`) that the quality and fuzz stages require of `report.json`.
+Seed replay and measurement still follow `expected_failure`.
 
 `test-targets` runs each stage of the operation (check, test, build, seed,
 measure, quality, fuzz) over every selected case and prints one line per step as it
@@ -492,6 +520,42 @@ prefer `Fuzz.target`, typed generators, and the `.Fuzz` record builder.
 A multi-file example must live in its own directory with `main.roc` as
 its app root; the test driver enforces this so editor tooling can
 discover the project naturally.
+
+=== Arctangent builtin properties
+
+The `tests/targets/builtins/arctangentDec.roc`, `arctangentF32.roc`, and
+`arctangentF64.roc` targets check `atan` and `atan2` with composed numeric
+generators. They also assert that the numeric checks allocate no heap memory;
+input generation and diagnostic rendering are outside that measurement.
+
+The float targets check NaN propagation, signed zeros, infinities, range,
+quadrants, and odd symmetry. F32 results are compared with F64 results rounded
+to F32, allowing two ULP. F64 angles are checked against normalized input
+coordinates using sine and cosine, with absolute tolerance `3e-15`. Quadrant
+checks allow two ULP at the rounded half-pi boundary, while zero and infinity
+cases require exact result bits.
+
+The Dec generator composes two U64 values into a signed 128-bit attosecond
+payload and varies its magnitude with a shift. It checks axes, range, symmetry,
+and agreement between `atan(y)` and `atan2({ x: 1, y })`, allowing 128 attoseconds.
+Comparison with the separate F64 implementation allows `4e-15` for conversion
+and floating-point error. `Dec.lowest` is tested but excluded from negation
+checks because its negation overflows.
+
+These checks supplement the compiler's high-precision unit tests; shared
+algorithms and finite tolerances mean they do not prove correct rounding.
+To run just these inventory entries, with a `roc` on `PATH` that includes the
+`atan2` builtins:
+
+[source,sh]
+----
+blueprint run test-targets -- --operation all --max-total-time 60 \
+  --target arctangentDec --target arctangentF32 --target arctangentF64
+----
+
+Use the normal runner's `show`, `replay`, and `minimize` commands to investigate
+saved failures, as
+xref:campaigns.adoc#diagnose-an-unstable-failure[the campaign chapter] describes.
 
 == Release bundle
 

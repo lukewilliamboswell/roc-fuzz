@@ -3,13 +3,20 @@
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/lukewilliamboswell/roc-fuzz/badge)](https://scorecard.dev/viewer/?uri=github.com/lukewilliamboswell/roc-fuzz)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/14753/badge)](https://www.bestpractices.dev/projects/14753)
 
-`roc-fuzz` checks pure Roc code through one self-contained executable. Declare
-known examples, assert on results and allocation costs, validate logical traces,
-and explore nearby inputs with coverage feedback. Saved failures can be rendered,
-replayed, retained as source regressions, and minimized.
+`roc-fuzz` is a Roc platform for testing pure Roc code past the examples you
+write:
 
-Each declared example runs once in a fresh process. Exact allocation baselines
-require explicit acceptance; ordinary checks never update them.
+- **Fuzz targets** check a property over typed, generated inputs with
+  coverage-guided search, and save any failure so it can be shown, replayed,
+  minimized and kept as a source regression.
+- **Goals, trace rules and allocation measurements** check what a passing
+  campaign reached and how the code behaved, with exact allocation baselines
+  that change only by explicit acceptance.
+- **`Model`** describes a stateful component as a state machine, searches a small
+  world exhaustively under `roc test`, and fuzzes the same machine over a large
+  one.
+- **`Solve`** proves a claim about fixed-width integer arithmetic for every
+  value, or returns the values that break it.
 
 The platform supports Linux x86-64 with musl and Apple Silicon macOS 11 or newer.
 
@@ -23,9 +30,11 @@ roc build --fuzz my_target_app.roc
 ```
 
 For example, the core of this target generates `U64` values and checks that JSON
-encoding and decoding always returns the original value; the
-[first-target tutorial](docs/getting-started.adoc) includes a complete app
-header and runnable files:
+encoding and decoding always returns the original value.
+[`examples/jsonRoundTrip.roc`](examples/jsonRoundTrip.roc) is a complete
+application of this kind, and the
+[first-target tutorial](docs/getting-started.adoc) builds one from an empty
+file:
 
 ```roc
 import fuzz.Fuzz
@@ -52,37 +61,21 @@ target = Fuzz.target_with({
 })
 ```
 
-See the [CI guide](docs/quality.adoc) for verification commands and evidence
-collection.
-
-The [roc-fuzz manual](https://lukewilliamboswell.github.io/roc-fuzz/) covers
-target design, failure investigation, campaign tuning, corpora, CI evidence,
-release verification, and platform development. The site also provides the
+The [roc-fuzz manual](https://lukewilliamboswell.github.io/roc-fuzz/) starts by
+[choosing a technique](docs/overview.adoc) and covers target design, models,
+proofs, campaigns, CI evidence, release verification, and platform development.
+The site also provides the
 [generated API reference](https://lukewilliamboswell.github.io/roc-fuzz/api/)
 and a downloadable PDF manual.
 
-Repository examples use relative paths to the local platform. For applications
-using a published platform, download the examples archive attached to that
-release. Each released application names that release's platform URL. Neither
-the platform nor its examples pin a compiler.
-
 Examples under [`examples/`](examples/) demonstrate round trips, parser
-robustness, collection invariants, structured inputs, and multi-file targets.
-The focused compiler and builtin regression targets are tests, not examples,
-and live under [`tests/targets/`](tests/targets/). The
+robustness, collection invariants, structured inputs, multi-target and
+multi-file applications, state-machine models and proofs. Repository examples
+use relative paths to the local platform; for a published platform, download
+the examples archive attached to that release, whose applications name that
+release's platform URL. The focused compiler and builtin regression targets are
+tests, not examples, and live under [`tests/targets/`](tests/targets/). The
 [trophy case](trophy-case/README.md) records bugs found through fuzzing.
 
 Repository development begins in [the contributor guide](CONTRIBUTING.md).
 Security reports follow [the private reporting policy](SECURITY.md).
-
-Multi-target examples compile several independent properties into one binary:
-[`multipleTargets`](examples/multipleTargets/main.roc) groups list and text
-properties in reusable modules; [`numberFormats`](examples/numberFormats.roc)
-groups signed and unsigned decimal round trips. For example:
-
-```sh
-roc build --fuzz examples/multipleTargets/main.roc --output=multiple-targets
-./multiple-targets --list-targets
-./multiple-targets --target=list-concat check
-./multiple-targets --target=text-roundtrip explore corpus/text --runs=1000
-```

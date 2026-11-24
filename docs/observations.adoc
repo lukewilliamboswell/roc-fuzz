@@ -1,0 +1,295 @@
+= Check what passing does not show
+
+A property sees the value an operation returns. A campaign that passes shows
+that no input it ran broke the property; it does not show which cases those
+inputs reached, or how the code arrived at its answers. A target can check
+three more things:
+
+* *Goals* name events that some input in a campaign must reach. They are judged
+  once, over the whole campaign, and a campaign that misses one is
+  `inconclusive` rather than passed.
+* *Trace rules* constrain the order and number of named events within one
+  input, such as "decode before check, and check exactly once".
+* *Allocation measurements* report allocator statistics for named regions of
+  the property. Assert on them in the property, and fix each declared example's
+  observations with an accepted baseline that CI compares exactly.
+
+Marking an event, registering trace rules and measuring are effects, so a
+target that uses them has an effectful `test!` and is built with
+`Fuzz.target_with!`. A target made from a
+`Model` declares and marks its machine's goals itself;
+xref:modelling.adoc#read-goals-in-the-campaign-report[Read goals in the campaign report]
+shows what that adds.
+
+[#campaign-goals]
+== Declare campaign goals
+
+A goal is a named event that some kept input must reach, among the declared
+examples, the saved corpus and exploration. A trace rule is judged on every
+input; a goal is judged once, over a campaign.
+
+[source,roc]
+----
+target = Fuzz.target_with!({
+    name: "parse",
+    examples: [],
+    generator: Fuzz.bytes,
+    test!: |input| {
+        match parse(input) {
+            Ok(_) => Fuzz.mark!("parsed a document")
+            Err(_) => Fuzz.mark!("refused a document")
+        }
+        Fuzz.keep
+    },
+    show: Str.inspect,
+}).with_goals(["parsed a document", "refused a document"])
+----
+
+`with_goals` puts the inventory on the target, so the runner knows every goal
+before any input runs and can name the ones no input reached.
+
+An input reaches a goal when an event of that name occurs anywhere in its
+property: a `Fuzz.mark!`, or the completion of a `Fuzz.measure!` region. The
+event is an ordinary one, so
+xref:observations.adoc#declare-logical-trace-rules[trace rules] apply to it in its region. Only a
+kept input counts: an input that marks a goal and then returns `Fuzz.reject`,
+or that fails, reaches nothing.
+
+Names are unique, nonempty and at most 128 bytes, the limit of an event name,
+and a target declares at most 1024. A command run on a target whose inventory
+breaks these rules stops before any input with exit status `2`, and the
+message names the goal at fault. In a suite, each member declares its own goals
+before `Fuzz.suite` combines them; calling `with_goals` on the combined suite
+crashes.
+
+Goals grade a campaign; they do not steer it. During exploration the first
+input to reach a goal counts as new coverage, so the corpus keeps a witness for
+every goal reached and `reduce-corpus` preserves one. Nothing directs
+exploration toward a goal no input has reached. A target without goals has
+exactly the coverage it would have otherwise.
+
+[#grade-goals]
+== Grade a campaign with goals
+
+Each command grades the inputs it runs:
+
+* `check` grades the declared examples;
+* `explore` grades the corpus it starts from, which includes copies of the
+  examples, and the inputs the search makes; and
+* `run` grades the examples, then exploration.
+
+[source,sh]
+----
+./fuzz-target run .roc-fuzz/corpus --report-dir=.roc-fuzz/evidence --time=60
+----
+
+The console line ends with `reached 2 of 3 goals` and names up to eight goals
+never reached. The report's `goals` object holds the tally: `status`
+(`reached`, `unreached`, or `none_declared`), `required`, the counts, the names
+in `unreached`, and an `inventory` entry per goal, in declaration order. An entry
+gives `inputs`, the number of kept executions that reached the goal, and
+`first`, its witness: the first input that reached it. A witness's `source` is
+`example`, `corpus` for an input exploration started from, or `exploration`
+for one the search made, with `attempt` counting exploration's executions from
+one. `summary.md` lists the goals never reached and then a table of the reached
+ones with their witnesses.
+
+A campaign that breaks no rule and leaves a goal unreached is `inconclusive`,
+with exit status `1`. It lacks evidence the target asked for, as an exploration
+that keeps no input does. Reaching a goal is never a finding, and neither is
+missing one. A campaign with poor inputs can pass every property and rule while
+reaching few goals; fix it by changing the generator or by declaring an example
+that reaches the missing goal.
+
+Pass `--allow-unreached-goals` where partial evidence is expected, such as a
+`check` whose goals are left to exploration: the outcome then ignores goals,
+and the report still lists them, with `required` false. `accept` reports goals
+and its result does not depend on them.
+
+=== Keep a goal's witness
+
+Exploration saves the first input it ran that reached each goal as
+`goals/goal-N.bin` in the report directory, where `N` is the goal's position in
+the inventory, counted from zero. Make that input an example, so that every
+`check` reaches the goal without exploring:
+
+[source,sh]
+----
+./fuzz-target replay .roc-fuzz/evidence/goals/goal-2.bin
+./fuzz-target retain .roc-fuzz/evidence/goals/goal-2.bin --name reaches-fork --output=fuzz/regressions
+----
+
+`replay` runs the one input and names the goals it reached; its report's
+`goals` has status `not_graded`, because one input is not a campaign. `retain`
+copies the bytes to `fuzz/regressions/reaches-fork.bin` and prints a
+`Fuzz.saved` declaration. Add that declaration to the target's examples and
+rebuild: the witness is now a declared example, and `check` reaches that goal
+on every run.
+
+== Measure allocations and validate traces
+
+Every property callback has an automatic `$property` region. Decoding and
+entropy generation finish before that region starts. Named regions use one
+native engine:
+
+[source,roc]
+----
+Fuzz.measure! : Str, (() => a) => { value : a, stats : Fuzz.Stats }
+Fuzz.start_measure! : Str => Fuzz.Measurement
+Fuzz.Measurement.finish! : Fuzz.Measurement => Fuzz.Stats
+----
+
+Use `test!` with `Fuzz.target_with!` when adding measurements or trace marks to
+a target that previously used a pure `test`. This complete target checks a
+prepend operation and its allocation behavior:
+
+[source,roc]
+----
+app [target] { fuzz: platform "PLATFORM_URL" }
+
+import fuzz.Fuzz
+
+test! : List(U8) => Fuzz.Outcome
+test! = |input| {
+    if input.len() > 32 { return Fuzz.reject }
+    Fuzz.trace_rules!([Before("prepend", "checked"), Count("checked", 1)])
+    measured = Fuzz.measure!("prepend", || List.prepend(input, 0))
+    if measured.value.first() != Ok(0) or measured.value.drop_first(1) != input {
+        crash "prepend changed the input or inserted the wrong item"
+    }
+    if measured.stats.reallocs != 0 { crash "prepend unexpectedly reallocated" }
+    Fuzz.mark!("checked")
+    Fuzz.keep
+}
+
+target = Fuzz.target_with!({
+    name: "prepend-quality",
+    examples: [
+        Fuzz.example({ name: "empty", revision: "1", make: || [] }),
+        Fuzz.example({ name: "several", revision: "1", make: || [1.U8, 2, 3] }),
+    ],
+    generator: Fuzz.list(Fuzz.u8, 32),
+    test!,
+    show: Str.inspect,
+})
+----
+
+Replace `PLATFORM_URL` with the release's platform URL. The property enforces its
+size bound for encoded mutations as well as generated values. Inside an
+effectful `test!`, a manual window uses the same engine:
+
+[source,roc]
+----
+window = Fuzz.start_measure!("manual")
+value = List.prepend(input, 0)
+stats = window.finish!()
+if value.first() != Ok(0) or value.drop_first(1) != input {
+    crash "prepend changed the input or inserted the wrong item"
+}
+if stats.reallocs != 0 { crash "prepend unexpectedly reallocated" }
+----
+
+Finish manual windows exactly once, in nesting order. Invalid handles, abandoned
+windows, instrumentation limits and arithmetic overflow fail explicitly. The
+returned value is still alive at the measurement boundary. Nested windows are
+inclusive: a parent contains its children's allocator operations.
+
+The platform transfers measured results through an opaque ownership container
+before finishing the region. This keeps every returned field alive even when
+the caller reads only `stats` or discards the result. The private container is
+measurement bookkeeping and is excluded from allocator statistics and explicit
+counters in every enclosing region. Ordinary application `Box.box` allocations
+remain counted. The invocation-wide leak check includes both kinds of storage.
+
+What the application's `target` expression allocates is bookkeeping in the same
+way. The runner
+xref:internals.adoc#understand-the-in-process-model[evaluates it once in a process],
+so it is in no region's statistics and no counter, and each input's leak check
+starts with it already live.
+
+[#separate-counts]
+=== Understand the statistics
+
+`allocs`, `reallocs`, `deallocs`:: Separate Roc allocator hook counts. A realloc
+counts once as a realloc; its internal allocation and release are not counted
+again. `allocs + reallocs` gives the number of allocation requests.
+`requested_bytes`:: Sum of each allocation's requested length and each realloc's
+full new length. This includes Roc's own allocation headers and excludes the
+host's bookkeeping header. It measures traffic, rather than RSS or copied bytes.
+`entry_live_allocs`, `entry_live_bytes`:: Roc allocations already live at entry,
+including input storage. Allocations made before a window contribute its entry
+and peak memory, rather than its allocation count.
+`exit_live_allocs`, `exit_live_bytes`:: Memory alive when the window finishes.
+This can include a returned value and is not itself a leak.
+`peak_live_bytes`:: Actual maximum live requested bytes during the window,
+including entry-live memory and simultaneous old/new blocks during realloc.
+
+The broader invocation leak check runs after the complete target adapter returns.
+It includes input preparation and teardown, which the property region excludes.
+`--no-detect-leaks` disables that check. Metrics remain separate from trace rules
+and from diagnostic capture completeness.
+
+Ordinary Roc assertions can inspect any statistic. The allocation assertion
+helpers `expect_allocs_at_most!` and `expect_allocs_at_least!` take zero-argument
+callbacks (`|| operation(input)`) and count allocations plus reallocations.
+Low-level process counters remain available for tightly focused assertions;
+assert on differences, never their absolute process-wide totals.
+
+=== Declare logical trace rules
+
+[source,roc]
+----
+Fuzz.trace_rules!([
+    Before("decode", "checked"),
+    Count("checked", 1),
+    Forbidden("fallback"),
+])
+measured = Fuzz.measure!("decode", || decode(input))
+check_result(measured.value)
+Fuzz.mark!("checked")
+----
+
+Register rules before the region's first event. Events are direct marks and
+completed immediate-child regions. `Before(a, b)` requires both events and every
+`a` before every `b`; `Count(event, n)` requires exactly `n`; `Forbidden(event)`
+requires none. A grandchild completion is an event of its immediate parent.
+
+Rules are evaluated online even after diagnostic capture fills. Detailed replay
+exports ordered events, explicit gaps and unfinished regions. Parent identifiers
+and occurrence numbers distinguish repeated names. Neither traces nor assertions
+contain timestamps. Capture truncation does not turn an invalid trace into a
+passing one and does not invalidate completed allocation statistics.
+
+[#allocation-ratchets]
+== Accept an exact allocation baseline
+
+Allocation observations are deterministic, so each declared example's
+observations can be accepted once and compared exactly on every later check.
+`TARGET check` runs each declared example once in a fresh process.
+`TARGET accept` runs the same complete inventory once and atomically accepts
+valid observations. No warm-up or statistical repetition is needed.
+
+The default file is `<declared-target-name>_baseline.json` in the working
+directory: a target named `my_target` uses `my_target_baseline.json`. Override it
+with `--baseline=PATH`. Entries are separate by host target and `--profile=NAME`.
+An absent entry reports `unbaselined` and permits normal execution.
+
+Every example name, revision, exact input SHA-256, region inventory, metric
+version and statistic must match. Reductions and increases both need explicit
+acceptance. Failed or rejected examples, assertions, crashes, timeouts,
+incomplete observations and failed baseline writes preserve the existing
+accepted file. Check and acceptance never repeat examples to produce a more
+convenient result.
+
+=== Review and accept allocation observations
+
+[source,sh]
+----
+./fuzz-target check
+./fuzz-target accept --profile=default
+./fuzz-target check
+----
+
+Commit the accepted file after reviewing it. CI runs `check` or `run` and never
+accepts changes automatically; `TARGET measure INPUT` prints one input's named
+observations as JSON for review.

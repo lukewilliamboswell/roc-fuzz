@@ -1,8 +1,10 @@
-= Understand roc-fuzz internals and advanced features
+[#understand-roc-fuzz-internals-and-advanced-features]
+= Understand roc-fuzz internals
 
-This chapter explains the runtime model, reusable generator dispatch,
-allocation assertions, and the low-level libFuzzer escape hatch. Application
-authors do not need this material for the normal target workflow.
+This chapter explains how the runner executes a target, how Roc resolves
+`generator_for`, the binary input format behind saved witnesses, and the
+low-level libFuzzer escape hatch. Application authors do not need this material
+for the normal target workflow.
 
 == Understand the in-process model
 
@@ -24,6 +26,12 @@ The runner is a poor fit when one test takes a significant fraction of a
 second, can grow without a practical memory bound, or is expected to
 terminate the process for invalid input. If a crash, timeout, or memory
 blow-up would be a bug, it remains a useful fuzzing failure.
+
+The runner evaluates the application's `target` once in a process, before any
+input, and holds the result until the process exits. Work done in the target
+expression, outside the property, is done once in a process; work done in the
+property is done for every input. What that expression allocates is outside
+every xref:observations.adoc#measure-allocations-and-validate-traces[allocation measurement].
 
 A saved entropy input produces the same typed value and result when the
 target and generator are unchanged. Encoded examples use the binary parser and
@@ -64,154 +72,7 @@ type. Use `Fuzz.target_with` with an explicit `Generator(a)` for a local
 structural input or when choosing between generators for the same type
 in different targets.
 
-== Measure allocations and validate traces
-
-Every property callback has an automatic `$property` region. Decoding and
-entropy generation finish before that region starts. Named regions use one
-native engine:
-
-[source,roc]
-----
-Fuzz.measure! : Str, (() => a) => { value : a, stats : Fuzz.Stats }
-Fuzz.start_measure! : Str => Fuzz.Measurement
-Fuzz.Measurement.finish! : Fuzz.Measurement => Fuzz.Stats
-----
-
-Measurements and trace marks are effects. Use `test!` with `Fuzz.target_with!`
-when adding them to a target that previously used a pure `test`. This complete
-target checks a prepend operation and its allocation behavior:
-
-[source,roc]
-----
-app [target] { fuzz: platform "PLATFORM_URL" }
-
-import fuzz.Fuzz
-
-test! : List(U8) => Fuzz.Outcome
-test! = |input| {
-    if input.len() > 32 { return Fuzz.reject }
-    Fuzz.trace_rules!([Before("prepend", "checked"), Count("checked", 1)])
-    measured = Fuzz.measure!("prepend", || List.prepend(input, 0))
-    if measured.value.first() != Ok(0) or measured.value.drop_first(1) != input {
-        crash "prepend changed the input or inserted the wrong item"
-    }
-    if measured.stats.reallocs != 0 { crash "prepend unexpectedly reallocated" }
-    Fuzz.mark!("checked")
-    Fuzz.keep
-}
-
-target = Fuzz.target_with!({
-    name: "prepend-quality",
-    examples: [
-        Fuzz.example({ name: "empty", revision: "1", make: || [] }),
-        Fuzz.example({ name: "several", revision: "1", make: || [1.U8, 2, 3] }),
-    ],
-    generator: Fuzz.list(Fuzz.u8, 32),
-    test!,
-    show: Str.inspect,
-})
-----
-
-Replace `PLATFORM_URL` with the release's platform URL. The property enforces its
-size bound for encoded mutations as well as generated values. Inside an
-effectful `test!`, a manual window uses the same engine:
-
-[source,roc]
-----
-window = Fuzz.start_measure!("manual")
-value = List.prepend(input, 0)
-stats = window.finish!()
-if value.first() != Ok(0) or value.drop_first(1) != input {
-    crash "prepend changed the input or inserted the wrong item"
-}
-if stats.reallocs != 0 { crash "prepend unexpectedly reallocated" }
-----
-
-Finish manual windows exactly once, in nesting order. Invalid handles, abandoned
-windows, instrumentation limits and arithmetic overflow fail explicitly. The
-returned value is still alive at the measurement boundary. Nested windows are
-inclusive: a parent contains its children's allocator operations.
-
-The platform transfers measured results through an opaque ownership container
-before finishing the region. This keeps every returned field alive even when
-the caller reads only `stats` or discards the result. The private container is
-measurement bookkeeping and is excluded from allocator statistics and explicit
-counters in every enclosing region. Ordinary application `Box.box` allocations
-remain counted. The invocation-wide leak check includes both kinds of storage.
-
-[[separate-counts]]
-=== Understand the statistics
-
-`allocs`, `reallocs`, `deallocs`:: Separate Roc allocator hook counts. A realloc
-counts once as a realloc; its internal allocation and release are not counted
-again. `allocs + reallocs` gives the number of allocation requests.
-`requested_bytes`:: Sum of each allocation's requested length and each realloc's
-full new length. This includes Roc's own allocation headers and excludes the
-host's bookkeeping header. It measures traffic, rather than RSS or copied bytes.
-`entry_live_allocs`, `entry_live_bytes`:: Roc allocations already live at entry,
-including input storage. Allocations made before a window contribute its entry
-and peak memory, rather than its allocation count.
-`exit_live_allocs`, `exit_live_bytes`:: Memory alive when the window finishes.
-This can include a returned value and is not itself a leak.
-`peak_live_bytes`:: Actual maximum live requested bytes during the window,
-including entry-live memory and simultaneous old/new blocks during realloc.
-
-The broader invocation leak check runs after the complete target adapter returns.
-It includes input preparation and teardown, which the property region excludes.
-`--no-detect-leaks` disables that check. Metrics remain separate from trace rules
-and from diagnostic capture completeness.
-
-Ordinary Roc assertions can inspect any statistic. The allocation assertion
-helpers `expect_allocs_at_most!` and `expect_allocs_at_least!` take zero-argument
-callbacks (`|| operation(input)`) and count allocations plus reallocations.
-Low-level process counters remain available for tightly focused assertions;
-assert on differences, never their absolute process-wide totals.
-
-=== Declare logical trace rules
-
-[source,roc]
-----
-Fuzz.trace_rules!([
-    Before("decode", "checked"),
-    Count("checked", 1),
-    Forbidden("fallback"),
-])
-measured = Fuzz.measure!("decode", || decode(input))
-check_result(measured.value)
-Fuzz.mark!("checked")
-----
-
-Register rules before the region's first event. Events are direct marks and
-completed immediate-child regions. `Before(a, b)` requires both events and every
-`a` before every `b`; `Count(event, n)` requires exactly `n`; `Forbidden(event)`
-requires none. A grandchild completion is an event of its immediate parent.
-
-Rules are evaluated online even after diagnostic capture fills. Detailed replay
-exports ordered events, explicit gaps and unfinished regions. Parent identifiers
-and occurrence numbers distinguish repeated names. Neither traces nor assertions
-contain timestamps. Capture truncation does not turn an invalid trace into a
-passing one and does not invalidate completed allocation statistics.
-
-[[allocation-ratchets]]
-=== Accept an exact allocation baseline
-
-Declare examples with names, revisions and `make: || value`, alongside saved
-artifacts. `TARGET check` runs each once in a fresh process. `TARGET accept` runs
-the same complete inventory once and atomically accepts valid observations.
-No warm-up or statistical repetition is needed for these deterministic metrics.
-
-The default file is `<declared-target-name>_baseline.json` in the working
-directory: a target named `my_target` uses `my_target_baseline.json`. Override it
-with `--baseline=PATH`. Entries are separate by host target and `--profile=NAME`.
-An absent entry reports `unbaselined` and permits normal execution.
-
-Every example name, revision, exact input SHA-256, region inventory, metric
-version and statistic must match. Reductions and increases both need explicit
-acceptance. Failed or rejected examples, incomplete observations and failed
-baseline writes preserve the existing accepted file. Check and acceptance never
-repeat examples to produce a more convenient result.
-
-=== Binary inputs and witness identity
+== Binary inputs and witness identity
 
 Structural values use the platform-owned binary format through Roc's existing
 `encoder_for` and `parser_for` derivation. Nominal inputs opt in with both methods.
@@ -253,9 +114,10 @@ TARGET raw -help=1
 
 Prefer `run`, `show`, `replay`, `minimize`, and `reduce-corpus` for the
 normal workflow. Low-level flags such as `-max_total_time` and
-`-max_len` belong behind `raw`; `run` accepts the stable friendly
-options listed above. `raw` is an escape hatch for libFuzzer features
-the friendly command layer does not yet expose directly.
+`-max_len` belong behind `raw`; `run` accepts the stable
+xref:campaigns.adoc#command-reference[friendly options].
+`raw` is an escape hatch for libFuzzer features the friendly command layer does
+not yet expose directly.
 
 == Further reading
 

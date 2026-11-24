@@ -8,10 +8,13 @@ const Allocator = std.mem.Allocator;
 
 pub const worker_format = "roc-fuzz-worker/1";
 pub const baseline_format = "roc-fuzz-baseline/1";
-pub const report_format = "roc-fuzz-quality/1";
+pub const report_format = "roc-fuzz-quality/2";
 pub const preparation_format = "roc-fuzz-examples/1";
 pub const metric_version = "roc-fuzz-allocations/1";
 pub const max_input_len = 1024 * 1024;
+/// Keep equal to the host's goal inventory capacity.
+pub const max_goals = 1024;
+pub const max_goal_name_bytes = 128;
 const max_json_len = 32 * 1024 * 1024;
 const max_breadcrumb_len = 64 * 1024;
 
@@ -24,9 +27,14 @@ pub const WorkerResult = struct {
     capture_complete: bool,
     observations_json: []const u8,
     diagnostics_json: ?[]const u8 = null,
+    /// The size of the inventory this worker saw, and the goals its input reached.
+    goals_declared: u64 = 0,
+    goals_reached: []const []const u8 = &.{},
 };
 pub const Adapter = struct {
     prepare_examples: *const fn (Allocator) anyerror![]const Example,
+    /// The target's declared goals, in declaration order. Absent means none.
+    prepare_goals: ?*const fn (Allocator) anyerror![]const []const u8 = null,
     run_one: *const fn (Allocator, []const u8, Capture) anyerror!WorkerResult,
     show: *const fn (Allocator, []const u8) anyerror![]const u8,
     original_snapshot: ?*const fn (Allocator, []align(64) const u8) anyerror![]const u8 = null,
@@ -41,9 +49,11 @@ const WorkerWire = struct {
     capture_complete: bool,
     observations: std.json.Value,
     diagnostics: ?std.json.Value = null,
+    goals_declared: u64 = 0,
+    goals_reached: []const []const u8 = &.{},
 };
 
-const PreparationWire = struct { format: []const u8, examples: []const Example };
+const PreparationWire = struct { format: []const u8, examples: []const Example, goals: []const []const u8 = &.{} };
 
 pub const BaselineExample = struct {
     name: []const u8,
@@ -80,9 +90,60 @@ pub const Health = extern struct {
     observation_initialized: u64 = 0,
     observation_input_sequence: u64 = 0,
     observation_storage: [1024 * 1024]u8 align(64) = @splat(0),
+    /// The exploration worker's goal tally, indexed like the inventory.
+    goal_count: u64 = 0,
+    goals: [max_goals]GoalRecord = @splat(.{}),
+};
+
+/// What one exploration process knows about one goal. `inputs` is written
+/// last, so a record a killed writer left half made reads as not reached.
+pub const GoalRecord = extern struct {
+    inputs: u64 = 0,
+    first_attempt: u64 = 0,
+    first_length: u64 = 0,
+    first_sha256: [32]u8 = @splat(0),
+    witness_saved: u64 = 0,
 };
 var worker_health: ?*Health = null;
 var worker_leaks = true;
+var goal_directory: ?[]const u8 = null;
+
+/// Where the exploration worker keeps the first input that reaches each goal.
+pub fn setGoalDirectory(path: []const u8) void {
+    goal_directory = path;
+}
+
+pub fn healthGoalInventory(count: usize) void {
+    const health = worker_health orelse return;
+    health.goal_count = count;
+}
+
+fn goalWitnessPath(allocator: Allocator, directory: []const u8, index: usize) ![]const u8 {
+    return std.fmt.allocPrint(allocator, "{s}/goal-{d}.bin", .{ directory, index });
+}
+
+/// Count a kept input toward each goal it reached. The first input to reach a
+/// goal is its witness: its bytes are saved before the goal counts as reached,
+/// so the supervisor can name them even if this process dies on a later input.
+pub fn healthGoalsReached(indexes: []const u16, input: []const u8) void {
+    const health = worker_health orelse return;
+    for (indexes) |index| {
+        const record = &health.goals[index];
+        if (record.inputs == 0) {
+            record.first_attempt = @atomicLoad(u64, &health.attempted, .monotonic);
+            record.first_length = input.len;
+            record.first_sha256 = health.input_sha256;
+            if (goal_directory) |directory| {
+                var buffer: [4200]u8 = undefined;
+                var fixed = std.heap.FixedBufferAllocator.init(&buffer);
+                if (goalWitnessPath(fixed.allocator(), directory, index)) |path| {
+                    record.witness_saved = @intFromBool(if (atomicWrite(std.heap.c_allocator, path, input)) |_| true else |_| false);
+                } else |_| {}
+            }
+        }
+        _ = @atomicRmw(u64, &record.inputs, .Add, 1, .release);
+    }
+}
 
 pub fn workerLeakDetection() bool {
     return worker_leaks;
@@ -195,6 +256,12 @@ pub fn atomicWrite(allocator: Allocator, path: []const u8, bytes: []const u8) !v
     try std.Io.Dir.rename(.cwd(), temporary, .cwd(), path, io());
 }
 
+fn hashBytes(bytes: []const u8) ![32]u8 {
+    var digest: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(bytes, &digest, .{});
+    return digest;
+}
+
 fn hash(allocator: Allocator, bytes: []const u8) ![]const u8 {
     var digest: [32]u8 = undefined;
     std.crypto.hash.sha2.Sha256.hash(bytes, &digest, .{});
@@ -258,6 +325,14 @@ fn validateExamples(examples: []const Example) !void {
     for (examples, 0..) |example, index| {
         if (example.name.len == 0 or example.revision.len == 0 or example.bytes.len > max_input_len) return error.InvalidExample;
         for (examples[0..index]) |other| if (std.mem.eql(u8, example.name, other.name)) return error.DuplicateExampleName;
+    }
+}
+
+fn validateGoals(goals: []const []const u8) !void {
+    if (goals.len > max_goals) return error.TooManyGoals;
+    for (goals, 0..) |goal, index| {
+        if (goal.len == 0 or goal.len > max_goal_name_bytes) return error.InvalidGoalName;
+        for (goals[0..index]) |other| if (std.mem.eql(u8, goal, other)) return error.DuplicateGoalName;
     }
 }
 
@@ -493,6 +568,80 @@ const ExampleReport = struct {
     capture_complete: ?bool = null,
     observations: ?std.json.Value = null,
     diagnostics: ?std.json.Value = null,
+    /// The declared goals this input reached, when it was kept.
+    goals_reached: ?[]const []const u8 = null,
+};
+
+/// The first input that reached a goal: a declared example, an input of the
+/// corpus exploration started from (which includes copies of the examples), or
+/// one the search made. `replay`, `show` and `retain` take `input_path`; it is
+/// null only when the bytes could not be saved.
+const GoalWitness = struct {
+    source: []const u8,
+    example: ?[]const u8 = null,
+    attempt: ?u64 = null,
+    input_path: ?[]const u8 = null,
+    input_sha256: []const u8,
+    input_length: u64,
+};
+const GoalReport = struct {
+    name: []const u8,
+    reached: bool = false,
+    /// Kept executions that reached it: each passing example, and each kept
+    /// exploration execution, the corpus replayed at its start included.
+    inputs: u64 = 0,
+    first: ?GoalWitness = null,
+};
+const GoalsReport = struct {
+    status: []const u8 = "not_graded",
+    required: bool = false,
+    declared: u64 = 0,
+    reached: u64 = 0,
+    unreached: []const []const u8 = &.{},
+    inventory: []const GoalReport = &.{},
+};
+
+/// The campaign's goal tally. Examples are counted first, in declaration
+/// order, then exploration, so a goal's witness is the earliest input of the
+/// campaign that reached it.
+const GoalTally = struct {
+    goals: []GoalReport,
+
+    fn init(allocator: Allocator, names: []const []const u8) !GoalTally {
+        const goals = try allocator.alloc(GoalReport, names.len);
+        for (goals, names) |*goal, name| goal.* = .{ .name = name };
+        return .{ .goals = goals };
+    }
+
+    fn count(self: GoalTally, name: []const u8, witness: GoalWitness, inputs: u64) void {
+        for (self.goals) |*goal| {
+            if (!std.mem.eql(u8, goal.name, name)) continue;
+            goal.reached = true;
+            goal.inputs += inputs;
+            if (goal.first == null) goal.first = witness;
+            return;
+        }
+    }
+
+    fn example(self: GoalTally, result: ExampleReport, length: u64) void {
+        if (!commandIs(result.outcome, "passed")) return;
+        for (result.goals_reached orelse return) |name| {
+            self.count(name, .{ .source = "example", .example = result.name, .input_path = result.input_path, .input_sha256 = result.input_sha256, .input_length = length }, 1);
+        }
+    }
+
+    fn report(self: GoalTally, allocator: Allocator, required: bool) !GoalsReport {
+        var unreached: std.ArrayList([]const u8) = .empty;
+        for (self.goals) |goal| if (!goal.reached) try unreached.append(allocator, goal.name);
+        return .{
+            .status = if (self.goals.len == 0) "none_declared" else if (unreached.items.len == 0) "reached" else "unreached",
+            .required = required,
+            .declared = self.goals.len,
+            .reached = self.goals.len - unreached.items.len,
+            .unreached = try unreached.toOwnedSlice(allocator),
+            .inventory = try allocator.dupe(GoalReport, self.goals),
+        };
+    }
 };
 const ExplorationReport = struct {
     status: []const u8 = "not_requested",
@@ -528,6 +677,7 @@ const Report = struct {
     provenance: Provenance = .{},
     preparation: PreparationReport = .{},
     configuration: Configuration = .{},
+    goals: GoalsReport = .{},
 };
 
 const Configuration = struct {
@@ -546,7 +696,7 @@ const PreparationReport = struct {
     log: ?LogSpan = null,
     error_message: ?[]const u8 = null,
 };
-const PreparedInventory = struct { examples: []const Example = &.{}, evidence: PreparationReport };
+const PreparedInventory = struct { examples: []const Example = &.{}, goals: []const []const u8 = &.{}, evidence: PreparationReport };
 
 const Provenance = struct {
     source_revision: ?[]const u8 = null,
@@ -564,6 +714,7 @@ const Options = struct {
     timeout_ms: u64 = 10_000,
     detailed: bool = false,
     no_detect_leaks: bool = false,
+    allow_unreached_goals: bool = false,
     corpus: []const u8 = ".roc-fuzz/corpus",
     exploration_options: []const []const u8 = &.{},
     campaign_deadline_ms: ?u64 = 75_000,
@@ -610,6 +761,8 @@ fn parseOptions(allocator: Allocator, argc: usize, argv: [*][*:0]u8) !Options {
         } else if (std.mem.eql(u8, arg, "--no-detect-leaks")) {
             options.no_detect_leaks = true;
             try exploration_args.append(allocator, arg);
+        } else if (std.mem.eql(u8, arg, "--allow-unreached-goals")) {
+            options.allow_unreached_goals = true;
         } else if (valueAfter(arg, "--max-input-size=")) |value| {
             const length = try std.fmt.parseUnsigned(usize, value, 10);
             if (length == 0 or length > max_input_len) return error.InvalidMaximumInputSize;
@@ -737,6 +890,8 @@ fn worker(allocator: Allocator, argc: usize, argv: [*][*:0]u8, adapter: Adapter)
         .capture_complete = result.capture_complete,
         .observations = observations.value,
         .diagnostics = diagnostic,
+        .goals_declared = result.goals_declared,
+        .goals_reached = result.goals_reached,
     };
     const encoded = json(allocator, wire) catch |err| failError(err);
     atomicWrite(allocator, output, encoded) catch |err| failError(err);
@@ -747,7 +902,9 @@ fn prepareWorker(allocator: Allocator, argc: usize, argv: [*][*:0]u8, adapter: A
     if (argc != 3) fail("invalid preparation protocol");
     const examples = adapter.prepare_examples(allocator) catch |err| failError(err);
     validateExamples(examples) catch |err| failError(err);
-    const encoded = json(allocator, PreparationWire{ .format = preparation_format, .examples = examples }) catch |err| failError(err);
+    const goals: []const []const u8 = if (adapter.prepare_goals) |prepare| prepare(allocator) catch |err| failError(err) else &.{};
+    validateGoals(goals) catch |err| failError(err);
+    const encoded = json(allocator, PreparationWire{ .format = preparation_format, .examples = examples, .goals = goals }) catch |err| failError(err);
     if (encoded.len > max_json_len) fail("prepared example inventory exceeds transport budget");
     atomicWrite(allocator, std.mem.span(argv[2]), encoded) catch |err| failError(err);
     std.c._exit(0);
@@ -765,7 +922,8 @@ fn prepareSupervised(allocator: Allocator, executable: []const u8, report_dir: [
     const prepared = try std.json.parseFromSlice(PreparationWire, allocator, bytes, .{ .allocate = .alloc_always });
     if (!std.mem.eql(u8, prepared.value.format, preparation_format)) return error.UnsupportedPreparationFormat;
     try validateExamples(prepared.value.examples);
-    return .{ .examples = prepared.value.examples, .evidence = evidence };
+    try validateGoals(prepared.value.goals);
+    return .{ .examples = prepared.value.examples, .goals = prepared.value.goals, .evidence = evidence };
 }
 
 fn unsigned(value: std.json.Value) ?u64 {
@@ -817,7 +975,9 @@ fn wireValid(wire: WorkerWire) bool {
     return true;
 }
 
-fn runExample(allocator: Allocator, executable: []const u8, example: Example, index: usize, report_dir: []const u8, log_path: []const u8, options: Options, adapter: Adapter) !ExampleReport {
+/// `goals_declared` receives the size of the inventory the worker saw, when
+/// it returned a result.
+fn runExample(allocator: Allocator, executable: []const u8, example: Example, index: usize, report_dir: []const u8, log_path: []const u8, options: Options, adapter: Adapter, goals_declared: ?*u64) !ExampleReport {
     const input_path = try std.fmt.allocPrint(allocator, "{s}/example-{d}.bin", .{ report_dir, index });
     const result_path = try std.fmt.allocPrint(allocator, "{s}/example-{d}.json", .{ report_dir, index });
     try writeFile(allocator, input_path, example.bytes);
@@ -852,12 +1012,37 @@ fn runExample(allocator: Allocator, executable: []const u8, example: Example, in
     report.capture_complete = wire.capture_complete;
     report.observations = wire.observations;
     if (wire.diagnostics != null) report.diagnostics = wire.diagnostics;
+    // Only a kept input reaches a goal; a rejected one is outside the domain.
+    report.goals_reached = if (wire.accepted) wire.goals_reached else &.{};
+    if (goals_declared) |declared| declared.* = wire.goals_declared;
     report.outcome = if (!wire.accepted) "rejected" else if (!wire.metric_valid) "invalid_metrics" else if (!wire.trace_rules_passed) "trace_violation" else if (!wireValid(wire)) "incomplete_observations" else "passed";
     report.finding_kind = if (!wire.accepted) null else if (!wire.metric_valid) "invalid_observation" else if (!wire.trace_rules_passed) "trace_violation" else if (!wireValid(wire)) "invalid_observation" else null;
     return report;
 }
 
-fn exploration(allocator: Allocator, executable: []const u8, report_dir: []const u8, log_path: []const u8, options: Options, examples: []const Example, adapter: Adapter) !ExplorationReport {
+/// The SHA-256 of each input exploration starts from, so a goal the saved
+/// corpus reached is not reported as one the search found.
+fn corpusDigests(allocator: Allocator, corpus: []const u8) ![]const [32]u8 {
+    var digests: std.ArrayList([32]u8) = .empty;
+    var directory = try std.Io.Dir.cwd().openDir(io(), corpus, .{ .iterate = true });
+    defer directory.close(io());
+    var iterator = directory.iterate();
+    while (try iterator.next(io())) |entry| {
+        if (entry.kind != .file) continue;
+        const path = try std.fs.path.join(allocator, &.{ corpus, entry.name });
+        const bytes = readFile(std.heap.c_allocator, path, max_input_len) catch continue;
+        defer std.heap.c_allocator.free(bytes);
+        try digests.append(allocator, try hashBytes(bytes));
+    }
+    return digests.toOwnedSlice(allocator);
+}
+
+fn containsDigest(digests: []const [32]u8, digest: [32]u8) bool {
+    for (digests) |candidate| if (std.mem.eql(u8, &candidate, &digest)) return true;
+    return false;
+}
+
+fn exploration(allocator: Allocator, executable: []const u8, report_dir: []const u8, log_path: []const u8, options: Options, examples: []const Example, tally: GoalTally, adapter: Adapter) !ExplorationReport {
     try std.Io.Dir.createDirPath(.cwd(), io(), options.corpus);
     // Source-authored examples are real seeds. Their declarations are checked
     // independently, so a corpus merge may drop these copies without losing tests.
@@ -875,6 +1060,13 @@ fn exploration(allocator: Allocator, executable: []const u8, report_dir: []const
     if (options.timeout_ms == 10_000) try argv.append(allocator, "--timeout=10");
     const failures = try std.fs.path.join(allocator, &.{ report_dir, "failures" });
     try argv.append(allocator, try std.fmt.allocPrint(allocator, "--artifact-dir={s}", .{failures}));
+    const witnesses = try std.fs.path.join(allocator, &.{ report_dir, "goals" });
+    var corpus: []const [32]u8 = &.{};
+    if (tally.goals.len != 0) {
+        try std.Io.Dir.createDirPath(.cwd(), io(), witnesses);
+        try argv.append(allocator, try std.fmt.allocPrint(allocator, "--goal-dir={s}", .{witnesses}));
+        corpus = try corpusDigests(allocator, options.corpus);
+    }
     try argv.append(allocator, "--print-final-stats");
     const log_start = try logSize(log_path);
     const termination = try runChild(allocator, argv.items, log_path, options.campaign_deadline_ms);
@@ -888,6 +1080,22 @@ fn exploration(allocator: Allocator, executable: []const u8, report_dir: []const
         .log = log_span,
     };
     report.status = if (!termination.passed()) "finding" else if (report.accepted == 0) "inconclusive" else "passed";
+    // The worker counted inputs it kept, so the tally stands however it ended.
+    // An inventory of another size means it never reached its first input.
+    if (health.goal_count == tally.goals.len) for (tally.goals, 0..) |goal, index| {
+        const record = health.goals[index];
+        const inputs = @atomicLoad(u64, &health.goals[index].inputs, .acquire);
+        if (inputs == 0) continue;
+        const path = try goalWitnessPath(allocator, witnesses, index);
+        const saved = record.witness_saved != 0 and if (readFile(allocator, path, max_input_len)) |bytes| std.mem.eql(u8, &(try hashBytes(bytes)), &record.first_sha256) else |_| false;
+        tally.count(goal.name, .{
+            .source = if (containsDigest(corpus, record.first_sha256)) "corpus" else "exploration",
+            .attempt = record.first_attempt,
+            .input_path = if (saved) path else null,
+            .input_sha256 = try allocator.dupe(u8, &std.fmt.bytesToHex(record.first_sha256, .lower)),
+            .input_length = record.first_length,
+        }, inputs);
+    };
     if (health.observation_initialized != 0) if (adapter.original_snapshot) |snapshot| {
         const original_path = try std.fs.path.join(allocator, &.{ report_dir, "original-trace.json" });
         try atomicWrite(allocator, original_path, try snapshot(allocator, &health.observation_storage));
@@ -921,16 +1129,73 @@ fn exploration(allocator: Allocator, executable: []const u8, report_dir: []const
     return report;
 }
 
+/// How many unreached goals the console names; the report names them all.
+const printed_goal_limit = 8;
+
 fn printResult(allocator: Allocator, report: Report, report_dir: []const u8) !void {
-    const message = try std.fmt.allocPrint(allocator, "{s}: {s}; baseline {s}; examples {d}; exploration {s} (attempted {d}, accepted {d}, rejected {d})\nReport: {s}/report.json\n", .{ report.target, report.outcome, report.baseline_status, report.examples.len, report.exploration.status, report.exploration.attempted, report.exploration.accepted, report.exploration.rejected, report_dir });
-    writeFd(2, message);
+    var message: std.ArrayList(u8) = .empty;
+    try message.print(allocator, "{s}: {s}; baseline {s}; examples {d}; exploration {s} (attempted {d}, accepted {d}, rejected {d})", .{ report.target, report.outcome, report.baseline_status, report.examples.len, report.exploration.status, report.exploration.attempted, report.exploration.accepted, report.exploration.rejected });
+    if (report.goals.declared != 0) try message.print(allocator, "; {s} {d} of {d} goals", .{ if (commandIs(report.goals.status, "not_graded")) "this input reached" else "reached", report.goals.reached, report.goals.declared });
+    try message.append(allocator, '\n');
+    if (report.goals.unreached.len != 0) try message.print(allocator, "Never reached ({d}):\n", .{report.goals.unreached.len});
+    for (report.goals.unreached, 0..) |goal, index| {
+        if (index == printed_goal_limit) {
+            try message.print(allocator, "  and {d} more, listed in summary.md\n", .{report.goals.unreached.len - index});
+            break;
+        }
+        try message.print(allocator, "  {s}\n", .{goal});
+    }
+    // One replayed input is no campaign, so it is told what it reached.
+    if (commandIs(report.goals.status, "not_graded") and report.examples.len == 1) {
+        const reached = report.examples[0].goals_reached orelse &.{};
+        if (reached.len != 0) try message.appendSlice(allocator, "Reached:\n");
+        for (reached) |goal| try message.print(allocator, "  {s}\n", .{goal});
+    }
+    try message.print(allocator, "Report: {s}/report.json\n", .{report_dir});
+    writeFd(2, message.items);
+}
+
+/// A goal name inside a Markdown table cell or list item.
+fn markdownText(allocator: Allocator, text: []const u8) ![]const u8 {
+    var escaped: std.ArrayList(u8) = .empty;
+    for (text) |byte| {
+        if (byte == '|' or byte == '`' or byte == '\\') try escaped.append(allocator, '\\');
+        try escaped.append(allocator, if (byte == '\n' or byte == '\r') ' ' else byte);
+    }
+    return escaped.toOwnedSlice(allocator);
+}
+
+/// The Goals section of `summary.md`. Goals never reached come first, as the
+/// part a reader acts on, and each goal appears once: unreached ones in the
+/// list, reached ones in the table.
+fn goalSummary(allocator: Allocator, goals: GoalsReport) ![]const u8 {
+    if (goals.declared == 0) return "";
+    var text: std.ArrayList(u8) = .empty;
+    try text.print(allocator, "\n## Goals\n\nReached {d} of {d} declared {s}.", .{ goals.reached, goals.declared, if (goals.declared == 1) "goal" else "goals" });
+    if (goals.unreached.len != 0) {
+        try text.appendSlice(allocator, if (goals.required) " A campaign that breaks no rule and leaves a goal unreached is `inconclusive`." else " Unreached goals do not change this outcome.");
+        try text.print(allocator, "\n\nNever reached ({d}):\n\n", .{goals.unreached.len});
+        for (goals.unreached) |goal| try text.print(allocator, "- {s}\n", .{try markdownText(allocator, goal)});
+    } else try text.append(allocator, '\n');
+    if (goals.reached == 0) return text.toOwnedSlice(allocator);
+    try text.appendSlice(allocator, "\n| Reached goal | Kept inputs | First reached by | Witness |\n| --- | ---: | --- | --- |\n");
+    for (goals.inventory) |goal| {
+        const first = goal.first orelse continue;
+        const by = if (first.example) |example|
+            try std.fmt.allocPrint(allocator, "example {s}", .{try markdownText(allocator, example)})
+        else
+            try std.fmt.allocPrint(allocator, "{s} input {d}", .{ if (commandIs(first.source, "corpus")) "corpus" else "exploration", first.attempt orelse 0 });
+        const witness = if (first.input_path) |path| try std.fmt.allocPrint(allocator, "`{s}`", .{try markdownText(allocator, path)}) else "not saved";
+        try text.print(allocator, "| {s} | {d} | {s} | {s} |\n", .{ try markdownText(allocator, goal.name), goal.inputs, by, witness });
+    }
+    return text.toOwnedSlice(allocator);
 }
 
 fn writeReportFiles(allocator: Allocator, report: Report, report_dir: []const u8) !void {
     const path = try std.fs.path.join(allocator, &.{ report_dir, "report.json" });
     try atomicWrite(allocator, path, try json(allocator, report));
     const summary_path = try std.fs.path.join(allocator, &.{ report_dir, "summary.md" });
-    const summary = try std.fmt.allocPrint(allocator, "# roc-fuzz: {s}\n\nOutcome: **{s}**. Baseline: **{s}**.\n\nDeclared examples: {d}. Exploration: **{s}**.\n\nAttempted: {d}; accepted: {d}; rejected: {d}.\n", .{ report.target, report.outcome, report.baseline_status, report.examples.len, report.exploration.status, report.exploration.attempted, report.exploration.accepted, report.exploration.rejected });
+    const summary = try std.fmt.allocPrint(allocator, "# roc-fuzz: {s}\n\nOutcome: **{s}**. Baseline: **{s}**.\n\nDeclared examples: {d}. Exploration: **{s}**.\n\nAttempted: {d}; accepted: {d}; rejected: {d}.\n{s}", .{ report.target, report.outcome, report.baseline_status, report.examples.len, report.exploration.status, report.exploration.attempted, report.exploration.accepted, report.exploration.rejected, try goalSummary(allocator, report.goals) });
     try atomicWrite(allocator, summary_path, summary);
 }
 
@@ -957,6 +1222,9 @@ fn checkAndExplore(allocator: Allocator, executable: []const u8, target: []const
     };
     report.preparation = prepared.evidence;
     if (commandIs(prepared.evidence.status, "failed")) {
+        // The reason, such as an invalid goal inventory, is in the child's
+        // output, which is all the log holds so far.
+        if (try logSize(log_path) <= 16 * 1024) printLog(log_path, allocator) catch {};
         report.outcome = "infrastructure_error";
         report.error_message = prepared.evidence.error_message;
         report.exploration = .{ .status = "skipped", .skipped_reason = "example_preparation_failed" };
@@ -971,17 +1239,24 @@ fn checkAndExplore(allocator: Allocator, executable: []const u8, target: []const
         try saveReport(allocator, report, report_dir);
         return 2;
     };
+    // Goals grade the campaign this command runs: its examples, then its
+    // exploration. Acceptance is about allocation observations alone.
+    const tally = try GoalTally.init(allocator, prepared.goals);
+    const goals_required = !options.allow_unreached_goals and !commandIs(options.command, "accept");
+    report.goals = try tally.report(allocator, goals_required);
     const checking = !commandIs(options.command, "explore");
     if (checking) {
         var example_reports: std.ArrayList(ExampleReport) = .empty;
         var accepted: std.ArrayList(BaselineExample) = .empty;
         var valid = true;
         for (examples, 0..) |example, index| {
-            const result = try runExample(allocator, executable, example, index, report_dir, log_path, options, adapter);
+            const result = try runExample(allocator, executable, example, index, report_dir, log_path, options, adapter, null);
             try example_reports.append(allocator, result);
+            tally.example(result, example.bytes.len);
             if (!commandIs(result.outcome, "passed")) valid = false else try accepted.append(allocator, .{ .name = example.name, .revision = example.revision, .input_sha256 = result.input_sha256, .observations = result.observations.? });
         }
         report.examples = try example_reports.toOwnedSlice(allocator);
+        report.goals = try tally.report(allocator, goals_required);
         if (!valid) {
             report.outcome = "finding";
             report.baseline_status = "not_checked";
@@ -1048,9 +1323,13 @@ fn checkAndExplore(allocator: Allocator, executable: []const u8, target: []const
         }
     }
     if (commandIs(options.command, "run") or commandIs(options.command, "explore")) {
-        report.exploration = try exploration(allocator, executable, report_dir, log_path, options, examples, adapter);
+        report.exploration = try exploration(allocator, executable, report_dir, log_path, options, examples, tally, adapter);
+        report.goals = try tally.report(allocator, goals_required);
         if (!commandIs(report.exploration.status, "passed")) report.outcome = if (commandIs(report.exploration.status, "inconclusive")) "inconclusive" else "finding";
     }
+    // No rule broke, and the campaign did not exercise what the target says a
+    // campaign must. That is missing evidence, never a finding.
+    if (commandIs(report.outcome, "passed") and report.goals.required and commandIs(report.goals.status, "unreached")) report.outcome = "inconclusive";
     try saveReport(allocator, report, report_dir);
     return if (commandIs(report.outcome, "passed")) 0 else 1;
 }
@@ -1072,7 +1351,8 @@ fn runInputCommand(allocator: Allocator, executable: []const u8, target: []const
         writeFd(1, "\n");
         return 0;
     }
-    const result = try runExample(allocator, executable, example, 0, report_dir, log_path, options, adapter);
+    var goals_declared: u64 = 0;
+    const result = try runExample(allocator, executable, example, 0, report_dir, log_path, options, adapter, &goals_declared);
     if (commandIs(options.command, "measure")) {
         if (result.observations) |observations| {
             writeFd(1, try json(allocator, observations));
@@ -1086,7 +1366,23 @@ fn runInputCommand(allocator: Allocator, executable: []const u8, target: []const
     const passed = commandIs(result.outcome, "passed");
     const reports = try allocator.alloc(ExampleReport, 1);
     reports[0] = result;
-    const report = Report{ .target = target, .host_target = hostTarget(), .profile = options.profile, .command = options.command, .outcome = if (passed) "passed" else "finding", .baseline_path = try baselinePath(allocator, target, options.baseline), .examples = reports, .provenance = options.provenance, .configuration = try configuration(allocator, options) };
+    const report = Report{
+        .target = target,
+        .host_target = hostTarget(),
+        .profile = options.profile,
+        .command = options.command,
+        .outcome = if (passed) "passed" else "finding",
+        .baseline_path = try baselinePath(allocator, target, options.baseline),
+        .examples = reports,
+        .provenance = options.provenance,
+        .configuration = try configuration(allocator, options),
+        .goals = .{
+            // One input is not a campaign: `examples[0].goals_reached` names what
+            // it reached, and no goal is graded.
+            .declared = goals_declared,
+            .reached = if (result.goals_reached) |reached| reached.len else 0,
+        },
+    };
     try saveReport(allocator, report, report_dir);
     return if (passed) 0 else 1;
 }
@@ -1439,4 +1735,46 @@ test "campaign grace respects an explicitly increased invocation deadline" {
     const options = try parseOptions(arena.allocator(), arguments.len, &arguments);
     try std.testing.expectEqual(@as(u64, 30_000), options.timeout_ms);
     try std.testing.expectEqual(@as(?u64, 95_000), options.campaign_deadline_ms);
+}
+
+test "the goal summary names each goal once and reads well at any size" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    try std.testing.expectEqualStrings("", try goalSummary(allocator, .{ .status = "none_declared" }));
+    const witness = GoalWitness{ .source = "example", .example = "empty", .input_path = "r/example-0.bin", .input_sha256 = "", .input_length = 0 };
+    const one = try goalSummary(allocator, .{ .status = "reached", .required = true, .declared = 1, .reached = 1, .inventory = &.{.{ .name = "parsed", .reached = true, .inputs = 2, .first = witness }} });
+    try std.testing.expectEqualStrings("\n## Goals\n\nReached 1 of 1 declared goal.\n\n| Reached goal | Kept inputs | First reached by | Witness |\n| --- | ---: | --- | --- |\n| parsed | 2 | example empty | `r/example-0.bin` |\n", one);
+    for ([_]usize{ 11, 73 }) |count| {
+        var inventory: std.ArrayList(GoalReport) = .empty;
+        var unreached: std.ArrayList([]const u8) = .empty;
+        for (0..count) |index| {
+            const name = try std.fmt.allocPrint(allocator, "goal <{d}>", .{index});
+            // Every third goal is reached, by exploration from the corpus or the search.
+            if (index % 3 == 0) {
+                try inventory.append(allocator, .{ .name = name, .reached = true, .inputs = index + 1, .first = .{ .source = if (index % 2 == 0) "corpus" else "exploration", .attempt = index + 1, .input_path = null, .input_sha256 = "", .input_length = 1 } });
+            } else {
+                try inventory.append(allocator, .{ .name = name });
+                try unreached.append(allocator, name);
+            }
+        }
+        const reached = count - unreached.items.len;
+        const text = try goalSummary(allocator, .{ .status = "unreached", .required = true, .declared = count, .reached = reached, .unreached = unreached.items, .inventory = inventory.items });
+        try std.testing.expect(std.mem.indexOf(u8, text, try std.fmt.allocPrint(allocator, "Reached {d} of {d} declared goals. A campaign", .{ reached, count })) != null);
+        try std.testing.expect(std.mem.indexOf(u8, text, try std.fmt.allocPrint(allocator, "Never reached ({d}):\n\n- goal <1>\n", .{unreached.items.len})) != null);
+        try std.testing.expect(std.mem.indexOf(u8, text, "| goal <0> | 1 | corpus input 1 | not saved |\n") != null);
+        try std.testing.expect(std.mem.indexOf(u8, text, "| goal <3> | 4 | exploration input 4 | not saved |\n") != null);
+        for (0..count) |index| {
+            const needle = try std.fmt.allocPrint(allocator, "goal <{d}>", .{index});
+            var occurrences: usize = 0;
+            var at: usize = 0;
+            // Count whole names only: "goal <1>" must not match "goal <10>".
+            while (std.mem.indexOfPos(u8, text, at, needle)) |found| : (at = found + needle.len) occurrences += 1;
+            try std.testing.expectEqual(@as(usize, 1), occurrences);
+        }
+        // One table row per reached goal, after a two-line header.
+        try std.testing.expectEqual(reached + 2, std.mem.count(u8, text, "\n|"));
+    }
+    const none = try goalSummary(allocator, .{ .status = "unreached", .required = false, .declared = 2, .reached = 0, .unreached = &.{ "a|b", "c" }, .inventory = &.{ .{ .name = "a|b" }, .{ .name = "c" } } });
+    try std.testing.expectEqualStrings("\n## Goals\n\nReached 0 of 2 declared goals. Unreached goals do not change this outcome.\n\nNever reached (2):\n\n- a\\|b\n- c\n", none);
 }

@@ -84,6 +84,20 @@
       "modified": "",
       "target": "",
       "origin": "reviewed"
+    },
+    {
+      "id": "rocsat",
+      "name": "rocsat SAT solver Roc package",
+      "version": "0.0.2",
+      "producer": "Person: Luke Boswell",
+      "license": "Apache-2.0",
+      "license_url": "",
+      "identity": "pkg:generic/rocsat@0.0.2?download_url=https://github.com/lukewilliamboswell/rocsat/releases/download/0.0.2/3vAUWAXKSUvBxELd63BG4FjmGjgrJoHscu2GVFQTHhu.tar.zst",
+      "download": "https://github.com/lukewilliamboswell/rocsat/releases/download/0.0.2/3vAUWAXKSUvBxELd63BG4FjmGjgrJoHscu2GVFQTHhu.tar.zst",
+      "sha256": "14d4b5b9b1bffba544a21f841addeaf7854a919953c033ee927248d931a4d757",
+      "modified": "",
+      "target": "",
+      "origin": "reviewed"
     }
   ],
   "relationships": [
@@ -121,6 +135,13 @@
       "relation": "contains",
       "scope": "",
       "basis": "targets/*/libc++.a, libc++abi.a, libunwind.a and libcompiler_rt.a"
+    },
+    {
+      "from": "Subject",
+      "to": "rocsat",
+      "relation": "dependsOn",
+      "scope": "runtime",
+      "basis": "platform/main.roc names this package as `sat`; Roc fetches it when an application builds against the platform and compiles it into the application with the platform's Solve module. The bundle does not contain it"
     },
     {
       "from": "Subject",

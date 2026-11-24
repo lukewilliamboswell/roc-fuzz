@@ -54,6 +54,10 @@ build_bundles! = |root, specs, output, compression, roc| {
 			Path.create_all!(generated_dir)?
 			Path.copy_dir!(Path.join(root, "platform"), bundle_root)?
 
+			# The solver's internal package root serves tests/solve/validate
+			# alone. No application can import it, so it is not released.
+			Path.delete!(Path.join(bundle_root, "solver.roc"))?
+
 			# Begin with the complete platform tree, then remove unselected targets.
 			for spec in Project.target_specs {
 				if !specs.any(|selected| selected.target == spec.target) {

@@ -1,15 +1,20 @@
-## A typed, coverage-guided fuzzing platform with a self-contained libFuzzer
-## runner. Start with the `Fuzz` module; `Arbitrary` and `Target` are advanced
-## interfaces retained for custom generators and legacy targets.
+## A platform for testing Roc code: typed, coverage-guided fuzz targets with a
+## self-contained libFuzzer runner, state machines searched and fuzzed with
+## `Model`, and proofs about fixed-width integer arithmetic with `Solve`. Start
+## with the `Fuzz` module. `Target` is the value a target expression makes, and
+## its `with_goals` declares what a campaign must reach. `Arbitrary` is an
+## advanced interface for custom generators.
 platform "roc-fuzz"
 	requires {
 		target : Target
 	}
-	exposes [Arbitrary, Fuzz, Target]
-	packages {}
+	exposes [Arbitrary, Fuzz, Model, Solve, Target]
+	packages { sat: "https://github.com/lukewilliamboswell/rocsat/releases/download/0.0.2/3vAUWAXKSUvBxELd63BG4FjmGjgrJoHscu2GVFQTHhu.tar.zst" }
 	provides {
+		"roc_fuzz_build": build_for_host,
 		"roc_fuzz_example": example_for_host,
 		"roc_fuzz_example_count": example_count_for_host,
+		"roc_fuzz_goals": goals_for_host,
 		"roc_fuzz_name": name_for_host,
 		"roc_fuzz_run": run_for_host!,
 		"roc_fuzz_show": show_for_host,
@@ -38,25 +43,36 @@ platform "roc-fuzz"
 
 import Arbitrary
 import Fuzz
+import Model
+import Solve
 import Target
 
-target_count_for_host : () -> U64
-target_count_for_host = || target.count()
+# `target` holds functions, so it is not a constant: every function that names
+# it evaluates it again. Only `build_for_host` does. The host calls it once in
+# a process, holds the box, and passes it back to each of the others.
+build_for_host : () -> Box(Target)
+build_for_host = || Box.box(target)
 
-selected : U64 -> Target
-selected = |index| target.get(index) ?? crash "target index is outside the suite inventory"
+target_count_for_host : Box(Target) -> U64
+target_count_for_host = |built| Box.unbox(built).count()
 
-name_for_host : U64 -> Str
-name_for_host = |index| selected(index).name()
+selected : Box(Target), U64 -> Target
+selected = |built, index| Box.unbox(built).get(index) ?? crash "target index is outside the suite inventory"
 
-example_count_for_host : U64 -> U64
-example_count_for_host = |index| selected(index).example_count()
+name_for_host : Box(Target), U64 -> Str
+name_for_host = |built, index| selected(built, index).name()
 
-example_for_host : U64, U64 -> { name : Str, revision : Str, bytes : List(U8) }
-example_for_host = |member, index| selected(member).example(index)
+example_count_for_host : Box(Target), U64 -> U64
+example_count_for_host = |built, index| selected(built, index).example_count()
 
-run_for_host! : U64, List(U8) => U8
-run_for_host! = |index, input| selected(index).run!(input)
+example_for_host : Box(Target), U64, U64 -> { name : Str, revision : Str, bytes : List(U8) }
+example_for_host = |built, member, index| selected(built, member).example(index)
 
-show_for_host : U64, List(U8) -> Str
-show_for_host = |index, input| selected(index).show(input)
+goals_for_host : Box(Target), U64 -> List(Str)
+goals_for_host = |built, index| selected(built, index).goals()
+
+run_for_host! : Box(Target), U64, List(U8) => U8
+run_for_host! = |built, index, input| selected(built, index).run!(input)
+
+show_for_host : Box(Target), U64, List(U8) -> Str
+show_for_host = |built, index, input| selected(built, index).show(input)
