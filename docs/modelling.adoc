@@ -163,14 +163,13 @@ goes into the `examples` of any of the three targets as it is.
 
 == Read goals in the campaign report
 
-Each Model target declares the machine's goals to the runner and marks the
-ones an input reaches. The report lists every goal with the first input that
-reached it, saved under `goals/`;
-xref:quality.adoc#grade-goals[Grade a campaign with goals] describes the
-files and the `replay` and `retain` commands that use them.
-
-A campaign that breaks no rule and leaves a goal unreached is
-`inconclusive`. This is what goals are for. Decode the index's keys with
+Each Model target declares the machine's `sometimes` and `sometimes_step`
+rules to the runner as
+xref:observations.adoc#campaign-goals[campaign goals] and marks the ones an
+input reaches, so the report lists every goal with the first input that reached
+it and xref:observations.adoc#grade-goals[grades the campaign] by them. A
+campaign over a large world can break no rule and still leave goals unreached,
+and it is then `inconclusive`. Decode the index's keys with
 `IndexPaths.uniform`, spread at random over all 64 bits, and campaigns of 60
 seconds pass every rule while reaching 28 to 31 of the 73 goals. None tests a
 fork at bit 39 or below:
@@ -183,8 +182,7 @@ Never reached: an insert forks at bit 0
 
 By its rules alone that campaign looks as good as one that reaches every goal.
 Fix such a campaign by changing how inputs become actions, or by declaring an
-example that reaches the goal. Pass `--allow-unreached-goals` only where
-partial evidence is expected.
+example that reaches the goal.
 
 == Check one step from any state
 
@@ -221,8 +219,7 @@ count says how often that happened.
 * A search holds every state it has met in memory, and a state equal to one
   already met is not checked again. Keep the world small, and keep `==` and
   any search key faithful to everything `step` and the rules read.
-* Goals grade a campaign; they do not steer it. The runner keeps the first
-  input to reach each goal in the corpus, but nothing directs exploration
+* Goals grade a campaign; they do not steer it. Nothing directs exploration
   toward a goal no input has reached.
 * Roc code cannot catch a crash. A crash inside the code under test ends a
   search, and `roc test` reports the failed `expect` with the crash message

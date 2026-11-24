@@ -25,88 +25,13 @@ maker cannot terminate the supervisor or accept a partial inventory.
 
 Defaults are 60 seconds of exploration, a 10-second per-input deadline and leak
 checking. `check` runs examples and baseline checks without exploration;
-`explore` runs the search independently. A missing accepted entry reports
+`explore` runs the search independently. A missing
+xref:observations.adoc#allocation-ratchets[accepted baseline] entry reports
 `unbaselined` and allows normal execution. Exploration with zero accepted
 executions is `inconclusive` and exits unsuccessfully, and so is a campaign that
-leaves a declared goal unreached.
-
-== Review and accept allocation observations
-
-[source,sh]
-----
-./fuzz-target check
-./fuzz-target accept --profile=default
-./fuzz-target check
-----
-
-The default file uses the target's declared name, such as
-`my_target_baseline.json`, in the current working directory. Use
-`--baseline=PATH` to override it. Separate entries hold each supported host target
-and named profile. Commit the accepted file after reviewing it; CI runs `check`
-or `run` and never accepts changes automatically.
-
-Matching is exact: example names, revisions, input digests, region inventory,
-metric version and all statistics. A reduction also requires review. Acceptance
-runs each declared example once and updates the relevant entry atomically only
-when the complete inventory passes. Rejections, assertions, crashes, timeouts,
-incomplete observations and write failures cannot accept a partial inventory.
-
-[[grade-goals]]
-== Grade a campaign with goals
-
-A campaign can pass every rule and exercise little. Goals state what a passing
-campaign must have reached; xref:internals.adoc#campaign-goals[Declare campaign goals]
-shows how a target declares them and how an input reaches one. Each command
-grades the inputs it runs:
-
-* `check` grades the declared examples;
-* `explore` grades the corpus it starts from, which includes copies of the
-  examples, and the inputs the search makes; and
-* `run` grades the examples, then exploration.
-
-[source,sh]
-----
-./fuzz-target run .roc-fuzz/corpus --report-dir=.roc-fuzz/evidence --time=60
-----
-
-The console line ends with `reached 2 of 3 goals` and names up to eight goals
-never reached. The report's `goals` object holds the tally: `status`
-(`reached`, `unreached`, or `none_declared`), `required`, the counts, the names
-in `unreached`, and an `inventory` entry per goal, in declaration order. An entry
-gives `inputs`, the number of kept executions that reached the goal, and
-`first`, its witness: the first input that reached it. A witness's `source` is
-`example`, `corpus` for an input exploration started from, or `exploration`
-for one the search made, with `attempt` counting exploration's executions from
-one. `summary.md` lists the goals never reached and then a table of the reached
-ones with their witnesses.
-
-A campaign that breaks no rule and leaves a goal unreached is `inconclusive`,
-with exit status `1`. It lacks evidence the target asked for, as an exploration
-that keeps no input does. Reaching a goal is never a finding, and neither is
-missing one. Pass `--allow-unreached-goals` where partial evidence is expected,
-such as a `check` whose goals are left to exploration: the outcome then ignores
-goals, and the report still lists them, with `required` false. `accept` reports
-goals and its result does not depend on them.
-
-=== Keep a goal's witness
-
-Exploration saves the first input it ran that reached each goal as
-`goals/goal-N.bin` in the report directory, where `N` is the goal's position in
-the inventory, counted from zero. Make that input an example, so that every
-`check` reaches the goal without exploring:
-
-[source,sh]
-----
-./fuzz-target replay .roc-fuzz/evidence/goals/goal-2.bin
-./fuzz-target retain .roc-fuzz/evidence/goals/goal-2.bin --name reaches-fork --output=fuzz/regressions
-----
-
-`replay` runs the one input and names the goals it reached; its report's
-`goals` has status `not_graded`, because one input is not a campaign. `retain`
-copies the bytes to `fuzz/regressions/reaches-fork.bin` and prints a
-`Fuzz.saved` declaration. Add that declaration to the target's examples and
-rebuild: the witness is now a declared example, and `check` reaches that goal
-on every run.
+leaves a xref:observations.adoc#grade-goals[declared goal] unreached. Commit
+accepted baselines after review; CI runs `check` or `run` and never accepts
+changes automatically.
 
 == Read the evidence
 
@@ -121,7 +46,7 @@ The directory contains:
 * original example inputs, worker observations and original trace snapshots;
 * exploration failure artifacts and `original-input.bin` for the last attempted
   input, with capture completeness and its SHA-256 in the report;
-* `goals/`, the witness exploration found for each declared goal; and
+* `goals/`, the xref:observations.adoc#keep-a-goals-witness[witness] exploration found for each declared goal; and
 * bounded original-run logical traces, including unfinished regions on failure.
 
 The report records the metric version, effective execution controls (including

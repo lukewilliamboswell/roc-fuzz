@@ -35,8 +35,10 @@ claim about fixed-width integers for every value, or find the values that
 break it.
 Longer campaign:: Continue with <<run-and-maintain-fuzzing-campaigns>> for
 bounds, corpora, status output, and failure diagnosis.
+Goals and allocations:: Read <<check-what-passing-does-not-show>> to declare
+campaign goals, trace rules and allocation checks.
 Advanced use:: Read <<understand-roc-fuzz-internals-and-advanced-features>> for the
-runtime model, allocation assertions, generator dispatch, and raw engine options.
+runtime model, generator dispatch, and raw engine options.
 Downstream maintainer:: Read <<add-fuzzing-to-ci>> for a bounded GitHub Actions
 pattern and its report contract.
 Release verifier:: Read <<release-bundle-provenance>>.
@@ -50,6 +52,8 @@ include::getting-started.adoc[leveloffset=+1]
 
 include::target-design.adoc[leveloffset=+1]
 
+include::observations.adoc[leveloffset=+1]
+
 include::modelling.adoc[leveloffset=+1]
 
 include::solve.adoc[leveloffset=+1]
@@ -58,9 +62,9 @@ include::campaigns.adoc[leveloffset=+1]
 
 include::quality.adoc[leveloffset=+1]
 
-include::provenance.adoc[leveloffset=+1]
-
 include::internals.adoc[leveloffset=+1]
+
+include::provenance.adoc[leveloffset=+1]
 
 include::development.adoc[leveloffset=+1]
 
