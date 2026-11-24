@@ -36,6 +36,7 @@ main! = |raw_args| {
 	validate_zig!(root)?
 	validate_recipe_paths!(root)?
 	validate_script_headers!(root)?
+	validate_platform_packages!(root)?
 	validate_unpinned_sources!(root)?
 	validate_targets!(root)?
 	Script.pass!("Supply-chain metadata is pinned and internally consistent.")
@@ -60,6 +61,35 @@ validate_script_headers! = |root| {
 			if !locked.contains(url) {
 				return Err(ScriptDependencyNotLocked(Path.display(path), url))
 			}
+		}
+	}
+	Ok({})
+}
+
+Composition : { components : List({ id : Str, download : Str, license : Str, origin : Str }), relationships : List({ from : Str, to : Str, relation : Str }) }
+
+## Every application built against the platform fetches and compiles the
+## packages its header names, so each one must be a reviewed component of
+## sbom/composition.json, at exactly that URL, that the subject depends on.
+## THIRD_PARTY_LICENSES.md is not the place: it is a linker input, and it
+## covers what the bundle contains, which these packages are not.
+validate_platform_packages! = |root| {
+	urls = Tooling.platform_packages(Path.read_utf8!(Path.join(root, "platform/main.roc"))?)?
+	composition : Composition
+	composition = Json.parse(Path.read_utf8!(Path.join(root, "sbom/composition.json"))?).map_err(|err| InvalidSbomComposition(err))?
+	for url in urls {
+		if !Script.starts_with(url, "https://github.com/") or !url.contains("/releases/download/") or !Script.ends_with(url, ".tar.zst") {
+			return Err(PlatformPackageMustBeAReleaseBundle(url))
+		}
+		reviewed = composition.components.keep_if(|component| component.download == url and component.origin == "reviewed" and !component.license.is_empty())
+		match reviewed {
+			[component] => {
+				id = component.id
+				if !composition.relationships.any(|edge| edge.from == "Subject" and edge.to == id and edge.relation == "dependsOn") {
+					return Err(PlatformPackageMustBeADependency(url))
+				}
+			}
+			_ => return Err(PlatformPackageNotReviewed(url))
 		}
 	}
 	Ok({})

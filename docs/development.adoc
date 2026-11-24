@@ -107,6 +107,13 @@ Update a script dependency:: Change the release URL in each script header and
 under `RocPackages` in `Blueprint.roc`, adding any new dependency of that
 dependency (`roc-stable deps scripts/check_all.roc` lists them), then run
 `blueprint update`.
+Update a platform package:: Every application built against the platform
+fetches and compiles the packages under `packages` in `platform/main.roc`. Give
+each release URL a reviewed component in `sbom/composition.json`, with that URL
+as its `download`, its SHA-256 and license, and a `dependsOn` relationship from
+`Subject` with scope `runtime`. The supply-chain check refuses a URL without
+one. `THIRD_PARTY_LICENSES.md` lists only what the bundle contains or links, and
+editing it changes the linker-input fingerprint.
 Keep the SBOM composition current:: `sbom/composition.json` gives every input
 `Blueprint.roc` declares (each source, tool, fetched program, script package
 and task) a disposition. A new task or tool needs an entry there too, or the
