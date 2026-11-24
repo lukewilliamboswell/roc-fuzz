@@ -36,6 +36,7 @@ main! = |args| {
 			selected = Json.parse(Path.read_utf8!(Path.utf8(options.selection))?)?
 			ReleaseExamples.fetch!(selected, output)
 		}
+		"package-docs" => ReleaseExamples.package_docs!(Path.utf8(options.site), output)
 		"unpack" => {
 			_ = ReleaseExamples.unpack!(Path.utf8(options.archive), output)?
 			Ok({})
@@ -47,7 +48,7 @@ main! = |args| {
 cli_parser = Cli.assert_valid(
 	Cli.finish(
 		{
-			operation: Opt.str({ short: "", long: "operation", help: "package, resolve, fetch, or unpack.", default: Value("") }),
+			operation: Opt.str({ short: "", long: "operation", help: "package, resolve, fetch, unpack, or package-docs.", default: Value("") }),
 			output: Opt.str({ short: "", long: "output", help: "Output archive, selection, or fresh suite directory.", default: Value("") }),
 			release_version: Opt.str({ short: "", long: "release-version", help: "Platform release version; with resolve, the release to select instead of the latest.", default: Value("") }),
 			source_sha: Opt.str({ short: "", long: "source-sha", help: "Exact release source commit.", default: Value("") }),
@@ -55,6 +56,7 @@ cli_parser = Cli.assert_valid(
 			compiler: Opt.str({ short: "", long: "compiler", help: "Nightly tag the run uses, recorded with the selection.", default: Value("") }),
 			repository: Opt.str({ short: "", long: "repository", help: "Repository slug.", default: Value("") }),
 			selection: Opt.str({ short: "", long: "selection", help: "Resolved release selection JSON.", default: Value("") }),
+			site: Opt.str({ short: "", long: "site", help: "Built documentation site to pack, for package-docs.", default: Value("") }),
 			archive: Opt.str({ short: "", long: "archive", help: "Frozen examples ZIP archive.", default: Value("") }),
 		}.Cli,
 		{ name: "release-examples", version: "development", authors: [], description: "Repository release tooling.", text_style: Plain },

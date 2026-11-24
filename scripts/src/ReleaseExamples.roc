@@ -219,6 +219,15 @@ ReleaseExamples := [].{
 		}
 	}
 
+	## Pack a built documentation site into a release's documentation archive:
+	## every file under `site`, named relative to it, in byte order.
+	package_docs! : Path, Path => Try({}, _)
+	package_docs! = |site, output| {
+		prefix = if (Script.ends_with(Path.display(site), "/")) Path.display(site) else "${Path.display(site)}/"
+		names = Files.files!(site)?.map(|path| Str.from_utf8_lossy(Path.display(path).to_utf8().drop_first(prefix.to_utf8().len())))
+		Archive.pack!(Archive.Format.Zip, site, names, output)
+	}
+
 	## Download a release's documentation archive, check it against the digest
 	## GitHub records, and unpack it into a fresh directory.
 	fetch_docs! = |archive, destination|

@@ -129,6 +129,15 @@ main! = |_args| {
 				Script.require!(Archive.extract_under!(format, archive, "nested", under, 1000000)?.map(|entry| entry.name) == ["main.roc", "Other.roc"], "A part of an archive is named relative to it")?
 				Script.require!(Path.read_bytes!(Path.join(under, "Other.roc"))? == Path.read_bytes!(Path.join(packed_source, "nested/Other.roc"))?, "A part extracts byte for byte")?
 			}
+			# A documentation site packs whole, named relative to its root.
+			site = Path.join(temp, "site")
+			AutomationIO.write!(Path.join(site, "index.html"), "<p>home</p>\n".to_utf8())?
+			AutomationIO.write!(Path.join(site, "api/fonts/a.ttf"), [0, 1, 2, 255])?
+			docs_archive = Path.join(temp, "docs.zip")
+			ReleaseExamples.package_docs!(site, docs_archive)?
+			docs_unpacked = Path.join(temp, "docs-unpacked")
+			Script.require!(Archive.extract!(Archive.Format.Zip, docs_archive, docs_unpacked, 1000)?.map(|entry| entry.name) == ["api/fonts/a.ttf", "index.html"], "A packed site lists its files in byte order")?
+			Script.require!(Path.read_bytes!(Path.join(docs_unpacked, "api/fonts/a.ttf"))? == [0, 1, 2, 255], "A packed site extracts byte for byte")?
 			cached = Path.join(temp, "cached")
 			Path.write_utf8!(cached, "good")?
 			AutomationIO.verified_download!("not-a-network-url", cached, Integrity.digest_bytes("good".to_utf8()))?
