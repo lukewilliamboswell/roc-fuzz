@@ -936,6 +936,15 @@
       "expected_failure": false,
       "skip_seed": false,
       "skip_fuzz": false
+    },
+    {
+      "name": "qualityBuiltOnce",
+      "path": "tests/targets/fixtures/qualityBuiltOnce.roc",
+      "seed_hex": "03",
+      "libfuzzer_seed": 2254,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
     }
   ],
   "skips": [

@@ -29,8 +29,8 @@ crossing : Progress(Solve.Uint) -> Solve.Claim
 crossing = |v| (v.sent % 65_536).lt(v.acked % 65_536)
 
 ## The rules, built into a formula and loaded into the solver once, when this
-## file is compiled. A target is rebuilt on every call the fuzzer makes, so
-## a claim prepared inside `test` would be prepared again for every input.
+## file is compiled. A claim prepared inside `test` would be prepared again
+## for every input.
 ready : Try(Solve.Prepared(Progress(Solve.Uint)), Solve.Problem)
 ready = Solve.prepare_with(unknowns, in_flight, |v| [crossing(v)])
 

@@ -38,6 +38,12 @@ const max_args = 256;
 
 var roc_host: abi.RocHost = undefined;
 var host_initialized = false;
+/// The application's target, built once by `roc_fuzz_build` in `initHost`.
+/// The host owns one reference for the life of the process and lends Roc one
+/// more for each call; see `heldTarget`. Everything allocated while it is
+/// built is bookkeeping, so no input and no observation sees it.
+var held_target: ?*abi.Target = null;
+var building_target = false;
 var selected_target: u64 = 0;
 var selected_name: [1025]u8 = undefined;
 var target_argument: [1040]u8 = undefined;
@@ -107,6 +113,22 @@ fn initHost() void {
         .roc_crashed = &hostCrashed,
     };
     host_initialized = true;
+    // Before any input or measured region, so the live balance each input
+    // samples already includes the target. A crash here ends the process
+    // before the first command runs.
+    building_target = true;
+    held_target = abi.roc_fuzz_build();
+    building_target = false;
+}
+
+/// The held target for one call into Roc. A provided function consumes the
+/// box it is passed, so each call gets a reference of its own and the host's
+/// stays: the box is never unique in Roc, is never freed, and nothing it holds
+/// is mutated in place.
+fn heldTarget() *abi.Target {
+    const built = held_target.?;
+    abi.increfBox(built, 1);
+    return built;
 }
 
 fn allocImpl(length: usize, alignment: usize, internal: bool) ?*anyopaque {
@@ -127,7 +149,8 @@ fn allocImpl(length: usize, alignment: usize, internal: bool) ?*anyopaque {
 /// allocations a region performed and whether that region left anything
 /// outstanding.
 ///
-/// Private measurement ownership containers are excluded from these counters.
+/// Private measurement ownership containers and the held target are excluded
+/// from these counters.
 /// `g_alloc_count` counts application `roc_alloc` and `roc_realloc` calls, matching
 /// the roc test platform's `Host.alloc_count!`. `g_live_alloc_count` is the
 /// number of allocations still outstanding: a realloc replaces one block with
@@ -144,7 +167,8 @@ var g_live_alloc_count: u64 = 0;
 var g_realloc_count: u64 = 0;
 var g_dealloc_count: u64 = 0;
 var g_requested_bytes: u64 = 0;
-// Include private ownership containers in the invocation-wide leak check.
+// Include private ownership containers and the held target in the
+// invocation-wide leak check; each input samples it before and after.
 var physical_live_allocs: u64 = 0;
 var physical_live_bytes: u64 = 0;
 
@@ -179,7 +203,7 @@ fn deallocImpl(ptr: *anyopaque, alignment: usize) void {
 
 pub export fn roc_alloc(length: usize, alignment: usize) callconv(.c) *anyopaque {
     const ptr = allocImpl(length, alignment, false) orelse outOfMemory();
-    const internal = return_box.claim(@intFromPtr(ptr), length) catch |err| invalidMetric(err);
+    const internal = building_target or (return_box.claim(@intFromPtr(ptr), length) catch |err| invalidMetric(err));
     if (internal) {
         const metadata: *usize = @ptrFromInt(@intFromPtr(ptr) - @sizeOf(usize));
         metadata.* = bookkeeping.pack(length, true) catch |err| invalidMetric(err);
@@ -414,17 +438,17 @@ fn makeInput(bytes: []const u8) abi.RocListWith(u8, false) {
 }
 
 fn printName() void {
-    const name = abi.roc_fuzz_name(selected_target);
+    const name = abi.roc_fuzz_name(heldTarget(), selected_target);
     writeOut(name.asSlice());
     name.decref(&roc_host);
 }
 
 fn prepareExamples(allocator: std.mem.Allocator) ![]const quality.Example {
-    const count = abi.roc_fuzz_example_count(selected_target);
+    const count = abi.roc_fuzz_example_count(heldTarget(), selected_target);
     if (count > 4096) return error.TooManyExamples;
     const examples = try allocator.alloc(quality.Example, @intCast(count));
     for (examples, 0..) |*example, index| {
-        const prepared = abi.roc_fuzz_example(selected_target, @intCast(index));
+        const prepared = abi.roc_fuzz_example(heldTarget(), selected_target, @intCast(index));
         defer prepared.decref(&roc_host);
         if (prepared.bytes.items().len > max_input_len) return error.ExampleTooLarge;
         example.* = .{
@@ -440,7 +464,7 @@ fn prepareExamples(allocator: std.mem.Allocator) ![]const quality.Example {
 fn loadGoals() void {
     if (goals_loaded) return;
     goals_loaded = true;
-    const names = abi.roc_fuzz_goals(selected_target);
+    const names = abi.roc_fuzz_goals(heldTarget(), selected_target);
     defer names.deinit(&roc_host);
     for (names.items()) |name| _ = goal_tracker.declare(name.asSlice()) catch |err| goalInventoryError(err, name.asSlice());
 }
@@ -483,7 +507,7 @@ fn registerGoalCoverage() void {
 }
 
 fn showInput(allocator: std.mem.Allocator, input: []const u8) ![]const u8 {
-    const shown = abi.roc_fuzz_show(selected_target, makeInput(input));
+    const shown = abi.roc_fuzz_show(heldTarget(), selected_target, makeInput(input));
     defer shown.decref(&roc_host);
     return allocator.dupe(u8, shown.asSlice());
 }
@@ -516,7 +540,7 @@ fn runOne(allocator: std.mem.Allocator, input: []const u8, capture: quality.Capt
     quality.healthObservationReady();
     const live_before = physical_live_allocs;
     const bytes_before = physical_live_bytes;
-    const status = abi.roc_fuzz_run(selected_target, makeInput(input));
+    const status = abi.roc_fuzz_run(heldTarget(), selected_target, makeInput(input));
     if (quality.workerLeakDetection() and (physical_live_allocs > live_before or physical_live_bytes > bytes_before)) {
         reportLeak(physical_live_allocs -| live_before);
     }
@@ -537,7 +561,7 @@ fn runOne(allocator: std.mem.Allocator, input: []const u8, capture: quality.Capt
 }
 
 fn dispatchQuality(argc: *c_int, argv: *[*][*:0]u8) void {
-    const name = abi.roc_fuzz_name(selected_target);
+    const name = abi.roc_fuzz_name(heldTarget(), selected_target);
     var buffer: [1024]u8 = undefined;
     const len = name.asSlice().len;
     if (len > buffer.len) {
@@ -741,7 +765,7 @@ fn selectionError(message: []const u8) noreturn {
 
 fn listTargets(count: u64) void {
     for (0..@intCast(count)) |index| {
-        const name = abi.roc_fuzz_name(@intCast(index));
+        const name = abi.roc_fuzz_name(heldTarget(), @intCast(index));
         writeOut(name.asSlice());
         writeOut("\n");
         name.decref(&roc_host);
@@ -752,7 +776,7 @@ fn listTargets(count: u64) void {
 // The inherited name keeps the same property selected across supervisor,
 // replay, minimization and raw libFuzzer exec workers.
 fn selectTarget(argc: *c_int, argv: *[*][*:0]u8) void {
-    const count = abi.roc_fuzz_target_count();
+    const count = abi.roc_fuzz_target_count(heldTarget());
     if (count == 0 or count > 4096) selectionError("invalid fuzz target inventory");
     var requested: ?[]const u8 = null;
     var list = false;
@@ -796,7 +820,7 @@ fn selectTarget(argc: *c_int, argv: *[*][*:0]u8) void {
     if (requested) |wanted| {
         var found = false;
         for (0..@intCast(count)) |index| {
-            const name = abi.roc_fuzz_name(@intCast(index));
+            const name = abi.roc_fuzz_name(heldTarget(), @intCast(index));
             defer name.decref(&roc_host);
             if (std.mem.eql(u8, wanted, name.asSlice())) {
                 if (found) selectionError("ambiguous fuzz target name");
@@ -806,7 +830,7 @@ fn selectTarget(argc: *c_int, argv: *[*][*:0]u8) void {
         }
         if (!found) selectionError("unknown fuzz target name");
     }
-    const name = abi.roc_fuzz_name(selected_target);
+    const name = abi.roc_fuzz_name(heldTarget(), selected_target);
     defer name.decref(&roc_host);
     if (name.asSlice().len > selected_name.len - 1) selectionError("fuzz target name is too long");
     @memcpy(selected_name[0..name.asSlice().len], name.asSlice());
@@ -844,7 +868,7 @@ pub export fn LLVMFuzzerTestOneInput(data: ?[*]const u8, size: usize) callconv(.
     quality.healthObservationReady();
     const live_before = physical_live_allocs;
     const bytes_before = physical_live_bytes;
-    const status = abi.roc_fuzz_run(selected_target, makeInput(input));
+    const status = abi.roc_fuzz_run(heldTarget(), selected_target, makeInput(input));
     if (leak_detection_enabled and (physical_live_allocs > live_before or physical_live_bytes > bytes_before)) {
         reportLeak(physical_live_allocs -| live_before);
     }

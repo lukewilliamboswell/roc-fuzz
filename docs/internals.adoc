@@ -139,6 +139,13 @@ measurement bookkeeping and is excluded from allocator statistics and explicit
 counters in every enclosing region. Ordinary application `Box.box` allocations
 remain counted. The invocation-wide leak check includes both kinds of storage.
 
+The runner evaluates the application's `target` once in a process, before any
+input, and holds the result until the process exits. What that expression
+allocates is bookkeeping in the same way: it is in no region's statistics and no
+counter, and each input's leak check starts with it already live. Work done in
+the target expression, outside the property, is done once in a process; work
+done in the property is done for every input.
+
 [[separate-counts]]
 === Understand the statistics
 
@@ -230,10 +237,8 @@ and a target declares at most 1024. A command run on a target whose inventory
 breaks these rules stops before any input with exit status `2`, and the
 message names the goal at fault. In a suite, each member declares its own goals
 before `Fuzz.suite` combines them; calling `with_goals` on the combined suite
-crashes. When the names
-are computed, pass a function with `with_goals_from(|| names)`: the runner asks
-for the inventory once, where an argument would be computed again for every
-input.
+crashes. To work the names out only when the runner asks for the inventory,
+pass a function with `with_goals_from(|| names)`.
 
 During exploration the first input to reach a goal counts as new coverage, so
 the corpus keeps a witness for every goal reached and `reduce-corpus` preserves

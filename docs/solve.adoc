@@ -183,9 +183,8 @@ Steering turns a claim into a generator: a fuzzer's bytes propose and the
 solver repairs what does not fit. Build the claim once with `Solve.prepare_with`
 and ask it many times with `Solve.ask`. Extra claims given to `prepare_with` cost
 nothing until a query assumes them by position. Hold the prepared claim in a
-top-level constant, which the compiler works out once; a target is rebuilt on
-every call the fuzzer makes, so a claim prepared inside the test is prepared
-again for every input.
+top-level constant, which the compiler works out once; a claim prepared inside
+the test is prepared again for every input.
 
 `examples/slidingWindow.roc` generates the states of a sliding-window link,
 three counters that must stay in order with at most eight messages in flight,

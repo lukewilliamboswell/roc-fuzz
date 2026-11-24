@@ -51,8 +51,6 @@ Target := [Target({ name : Str, run! : List(U8) => U8, show : List(U8) -> Str, e
 	## As [`with_goals`](#Target.with_goals), for an inventory that is worked
 	## out rather than written down: `names` is called when the runner asks
 	## for the inventory, once in a process, and not when the target is built.
-	## A target is built again for every input, so work done there is paid
-	## for by every input.
 	with_goals_from : Target, (() -> List(Str)) -> Target
 	with_goals_from = |value, names| match value {
 		Target(inner) => {
