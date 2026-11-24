@@ -45,6 +45,11 @@ check_platform! = |roc| {
 	# Tests that use only what the platform exposes live outside it, so that
 	# an application's `roc test` does not run them.
 	roc.run!(["test", "tests/model/main.roc"])?
+	roc.run!(["test", "tests/solve/main.roc"])?
+	roc.run!(["test", "tests/solve/proofs/main.roc"])?
+	# The solver against brute force, through the internal modules that
+	# platform/solver.roc exposes to this root alone.
+	roc.run!(["test", "tests/solve/validate/main.roc"])?
 	check_repros!(roc)
 }
 
