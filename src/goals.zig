@@ -9,6 +9,19 @@ const slot_count = 4 * max_goals;
 
 pub const Error = error{ GoalCapacity, EmptyGoalName, GoalNameTooLong, DuplicateGoal };
 
+/// The message a refused inventory prints, naming the goal at fault. A long
+/// name is shortened so the message stays one readable line.
+pub fn describe(buffer: []u8, err: Error, label: []const u8) []const u8 {
+    const shown = label[0..@min(label.len, 64)];
+    const more: []const u8 = if (label.len > shown.len) "..." else "";
+    return switch (err) {
+        error.EmptyGoalName => std.fmt.bufPrint(buffer, "roc-fuzz: invalid goal inventory: a goal name is empty\n", .{}),
+        error.GoalNameTooLong => std.fmt.bufPrint(buffer, "roc-fuzz: invalid goal inventory: the goal \"{s}{s}\" is {d} bytes; a goal name is at most {d}\n", .{ shown, more, label.len, max_name_bytes }),
+        error.DuplicateGoal => std.fmt.bufPrint(buffer, "roc-fuzz: invalid goal inventory: the goal \"{s}{s}\" is declared more than once\n", .{ shown, more }),
+        error.GoalCapacity => std.fmt.bufPrint(buffer, "roc-fuzz: invalid goal inventory: a target declares at most {d} goals\n", .{max_goals}),
+    } catch "roc-fuzz: invalid goal inventory\n";
+}
+
 pub const Tracker = struct {
     count: usize = 0,
     names: [max_goals][max_name_bytes]u8 = undefined,
@@ -123,4 +136,15 @@ test "a full inventory fails explicitly and every goal stays findable" {
     tracker.begin();
     for (0..max_goals) |index| tracker.event(try std.fmt.bufPrint(&buffer, "goal {d}", .{index}));
     try std.testing.expectEqual(@as(usize, max_goals), tracker.reached().len);
+}
+
+test "a refused inventory names the goal at fault" {
+    var buffer: [512]u8 = undefined;
+    try std.testing.expectEqualStrings("roc-fuzz: invalid goal inventory: the goal \"left\" is declared more than once\n", describe(&buffer, error.DuplicateGoal, "left"));
+    try std.testing.expectEqualStrings("roc-fuzz: invalid goal inventory: a goal name is empty\n", describe(&buffer, error.EmptyGoalName, ""));
+    try std.testing.expectEqualStrings("roc-fuzz: invalid goal inventory: a target declares at most 1024 goals\n", describe(&buffer, error.GoalCapacity, "goal 1024"));
+    const long = [_]u8{'x'} ** 200;
+    const message = describe(&buffer, error.GoalNameTooLong, &long);
+    try std.testing.expect(std.mem.indexOf(u8, message, "xxx...\" is 200 bytes; a goal name is at most 128\n") != null);
+    try std.testing.expect(message.len < 200);
 }

@@ -24,7 +24,7 @@
   ],
   "properties": {
     "format": {
-      "const": "roc-fuzz-quality/1"
+      "const": "roc-fuzz-quality/2"
     },
     "target": {
       "type": "string",
@@ -575,8 +575,7 @@
         "leak_detection",
         "detailed_capture",
         "corpus",
-        "exploration_options",
-        "goal_feedback"
+        "exploration_options"
       ],
       "properties": {
         "invocation_deadline_ms": {
@@ -607,9 +606,6 @@
           "items": {
             "type": "string"
           }
-        },
-        "goal_feedback": {
-          "type": "boolean"
         }
       }
     },
@@ -706,6 +702,7 @@
         "source": {
           "enum": [
             "example",
+            "corpus",
             "exploration"
           ]
         },

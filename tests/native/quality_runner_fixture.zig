@@ -15,7 +15,8 @@ fn modeIs(expected: []const u8) bool {
 }
 
 /// Goal cases declare three goals: the first example reaches `left`, the
-/// second `right`, and only exploration can reach `far`.
+/// second `right`, and only exploration can reach `far`. In `goals-reject` the
+/// adapter reports goals for inputs it rejects, which must not count.
 fn goalMode() bool {
     return std.mem.startsWith(u8, env("ROCFUZZ_FIXTURE_CASE"), "goals");
 }
@@ -70,11 +71,12 @@ fn runOne(allocator: Allocator, input: []const u8, capture: quality.Capture) !qu
         _ = std.c.nanosleep(&delay, null);
     }
     const cost: usize = if (modeIs("increase")) 3 else if (modeIs("reduction")) 1 else 2;
-    quality.healthFinish(!modeIs("reject"));
+    const accepted = !modeIs("reject") and !modeIs("goals-reject");
+    quality.healthFinish(accepted);
     return .{
         .goals_declared = if (goalMode()) 3 else 0,
         .goals_reached = if (!goalMode()) &.{} else if (first) &.{"left"} else &.{"right"},
-        .accepted = !modeIs("reject"),
+        .accepted = accepted,
         .metric_valid = !modeIs("invalid"),
         .trace_rules_passed = !modeIs("trace"),
         .capture_complete = !modeIs("truncated"),

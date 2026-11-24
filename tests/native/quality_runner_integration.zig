@@ -65,6 +65,21 @@ fn expectString(value: std.json.Value, key: []const u8, expected: []const u8) !v
     try std.testing.expectEqualStrings(expected, actual.string);
 }
 
+/// A report object has exactly the properties the published schema lists for
+/// it, and every one the schema requires.
+fn expectSchemaShape(definition: std.json.Value, value: std.json.Value) !void {
+    const properties = (try field(definition, "properties")).object;
+    var keys = value.object.iterator();
+    while (keys.next()) |entry| if (properties.get(entry.key_ptr.*) == null) {
+        std.debug.print("report property {s} is not in the schema\n", .{entry.key_ptr.*});
+        return error.UndocumentedReportProperty;
+    };
+    for ((try field(definition, "required")).array.items) |name| if (value.object.get(name.string) == null) {
+        std.debug.print("schema property {s} is missing from the report\n", .{name.string});
+        return error.MissingReportProperty;
+    };
+}
+
 fn assertFreshCalls(bytes: []const u8, count: usize) !void {
     var lines = std.mem.tokenizeScalar(u8, bytes, '\n');
     var pids: [128][]const u8 = undefined;
@@ -263,7 +278,18 @@ pub fn main(init: std.process.Init) !void {
     try std.testing.expectEqualStrings("two", try std.Io.Dir.cwd().readFileAlloc(init.io, (try field(right_witness, "input_path")).string, allocator, .limited(1024)));
     try std.testing.expect((try field(checked_inventory[2], "first")) == .null);
     try std.testing.expectEqualStrings("left", (try field((try field(goals_check, "examples")).array.items[0], "goals_reached")).array.items[0].string);
-    try std.testing.expect(std.mem.indexOf(u8, try suite.read("goals-check/summary.md"), "Reached 2 of 3 declared goals.") != null);
+    // The summary names each goal once: never reached in a list, reached in
+    // the table.
+    const goals_summary = try suite.read("goals-check/summary.md");
+    try std.testing.expect(std.mem.indexOf(u8, goals_summary, "Reached 2 of 3 declared goals.") != null);
+    try std.testing.expect(std.mem.indexOf(u8, goals_summary, "Never reached (1):\n\n- far\n") != null);
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, goals_summary, "far"));
+    try std.testing.expect(std.mem.indexOf(u8, goals_summary, "| right | 1 | example second |") != null);
+    // A rejected input reaches nothing, whatever it marked before rejecting.
+    const goals_rejected = try suite.run("goals-reject", &.{"check"}, "goals-reject", 1);
+    try expectString(goals_rejected, "outcome", "finding");
+    try std.testing.expectEqual(@as(i64, 0), (try field(try field(goals_rejected, "goals"), "reached")).integer);
+    try std.testing.expectEqual(@as(usize, 0), (try field((try field(goals_rejected, "examples")).array.items[0], "goals_reached")).array.items.len);
     const goals_allowed = try suite.run("goals-allowed", &.{ "check", "--allow-unreached-goals" }, "goals", 0);
     try expectString(goals_allowed, "outcome", "passed");
     try expectString(try field(goals_allowed, "goals"), "status", "unreached");
@@ -283,13 +309,30 @@ pub fn main(init: std.process.Init) !void {
     try std.testing.expectEqual(@as(i64, 1), (try field(far_witness, "attempt")).integer);
     try std.testing.expectEqual(@as(i64, 16), (try field(far_witness, "input_length")).integer);
     try std.testing.expectEqualStrings("original entropy", try suite.read("goals-run/goals/goal-2.bin"));
+    // The report is the format the published schema describes.
+    const schema = (try std.json.parseFromSlice(std.json.Value, allocator, try std.Io.Dir.cwd().readFileAlloc(init.io, "docs/roc-fuzz-ci-report.schema.json", allocator, .limited(1024 * 1024)), .{})).value;
+    const definitions = try field(schema, "$defs");
+    try expectString(goals_run, "format", (try field(try field(try field(schema, "properties"), "format"), "const")).string);
+    try expectSchemaShape(schema, goals_run);
+    try expectSchemaShape(try field(definitions, "configuration"), try field(goals_run, "configuration"));
+    try expectSchemaShape(try field(definitions, "exploration"), try field(goals_run, "exploration"));
+    try expectSchemaShape(try field(definitions, "goals"), run_goals);
+    for ((try field(goals_run, "examples")).array.items) |example| try expectSchemaShape(try field(definitions, "example"), example);
+    for ((try field(run_goals, "inventory")).array.items) |goal| {
+        try expectSchemaShape(try field(definitions, "goal"), goal);
+        try expectSchemaShape(try field(definitions, "goalWitness"), try field(goal, "first"));
+    }
     try std.testing.expect(std.mem.endsWith(u8, (try field(far_witness, "input_path")).string, "goals-run/goals/goal-2.bin"));
-    // Exploration alone grades what exploration reached.
-    const goals_explore = try suite.run("goals-explore", &.{ "explore", "--runs=5", "--no-goal-feedback" }, "goals-explore", 1);
+    // Exploration alone grades what exploration reached. A goal first reached
+    // by an input the corpus already held is the corpus's, not the search's.
+    try std.Io.Dir.cwd().createDirPath(init.io, try suite.path("goal-corpus"));
+    try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = try suite.path("goal-corpus/saved"), .data = "original entropy" });
+    const goals_explore = try suite.run("goals-explore", &.{ "explore", "goal-corpus", "--runs=5" }, "goals-explore", 1);
     try expectString(goals_explore, "outcome", "inconclusive");
     try expectString(try field(goals_explore, "exploration"), "status", "passed");
     try std.testing.expectEqual(@as(usize, 2), (try field(try field(goals_explore, "goals"), "unreached")).array.items.len);
-    try std.testing.expect(!(try field(try field(goals_explore, "configuration"), "goal_feedback")).bool);
+    try expectString(try field((try field(try field(goals_explore, "goals"), "inventory")).array.items[2], "first"), "source", "corpus");
+    try std.testing.expect(std.mem.indexOf(u8, try suite.read("goals-explore/summary.md"), "| far | 1 | corpus input 1 |") != null);
     // A worker that dies leaves the goals it had reached, and their witnesses.
     const goals_crash = try suite.run("goals-explore-crash", &.{ "explore", "--runs=5" }, "goals-explore-crash", 1);
     try expectString(goals_crash, "outcome", "finding");
@@ -299,6 +342,8 @@ pub fn main(init: std.process.Init) !void {
     // One replayed input is not a campaign: it reports what it reached.
     const goals_replay = try suite.run("goals-replay", &.{ "replay", "goals-run/example-1.bin" }, "goals", 0);
     try expectString(try field(goals_replay, "goals"), "status", "not_graded");
+    try std.testing.expectEqual(@as(i64, 3), (try field(try field(goals_replay, "goals"), "declared")).integer);
+    try std.testing.expectEqual(@as(i64, 1), (try field(try field(goals_replay, "goals"), "reached")).integer);
     try std.testing.expectEqualStrings("right", (try field((try field(goals_replay, "examples")).array.items[0], "goals_reached")).array.items[0].string);
     const goals_invalid = try suite.run("goals-duplicate", &.{"check"}, "goals-duplicate", 2);
     try expectString(goals_invalid, "outcome", "infrastructure_error");

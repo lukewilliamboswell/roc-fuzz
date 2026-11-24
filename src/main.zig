@@ -12,7 +12,6 @@ var return_box: bookkeeping.ReturnBox = .{};
 /// reached. See `registerGoalCoverage` for how libFuzzer reads the counters.
 var goal_tracker: goals.Tracker = .{};
 var goals_loaded = false;
-var goal_feedback = true;
 /// libFuzzer pairs every counter with a PC table entry of two words.
 var goal_pcs: [goals.max_goals][2]usize = undefined;
 extern "c" fn __sanitizer_cov_8bit_counters_init(start: [*]u8, stop: [*]u8) void;
@@ -26,6 +25,11 @@ comptime {
     _ = @import("c_malloc.zig");
     if (!std.mem.eql(u8, observation.metric_version, quality.metric_version)) {
         @compileError("observation and supervisor metric versions must agree");
+    }
+    // The supervisor validates the inventory the host declares, and a goal is
+    // reached by an event, so the three limits must agree.
+    if (goals.max_goals != quality.max_goals or goals.max_name_bytes != quality.max_goal_name_bytes or goals.max_name_bytes != observation.max_name_bytes) {
+        @compileError("goal limits must agree with the supervisor and the event name limit");
     }
 }
 
@@ -438,13 +442,12 @@ fn loadGoals() void {
     goals_loaded = true;
     const names = abi.roc_fuzz_goals(selected_target);
     defer names.deinit(&roc_host);
-    for (names.items()) |name| _ = goal_tracker.declare(name.asSlice()) catch |err| goalInventoryError(@errorName(err));
+    for (names.items()) |name| _ = goal_tracker.declare(name.asSlice()) catch |err| goalInventoryError(err, name.asSlice());
 }
 
-fn goalInventoryError(reason: []const u8) noreturn {
-    writeErr("roc-fuzz: invalid goal inventory: ");
-    writeErr(reason);
-    writeErr("\n");
+fn goalInventoryError(err: goals.Error, name: []const u8) noreturn {
+    var buffer: [512]u8 = undefined;
+    writeErr(goals.describe(&buffer, err, name));
     std.c._exit(2);
 }
 
@@ -467,7 +470,7 @@ fn prepareGoals(allocator: std.mem.Allocator) ![]const []const u8 {
 /// goal registers nothing, and its coverage is exactly what it was.
 fn registerGoalCoverage() void {
     const count = goal_tracker.count;
-    if (count == 0 or !goal_feedback) return;
+    if (count == 0) return;
     for (goal_pcs[0..count], 0..) |*entry, index| {
         // The table's first entry must be a function entry; the rest are
         // blocks of it. The addresses are never executed or dereferenced.
@@ -593,7 +596,6 @@ fn printHelp() void {
         \\  --seed=NUMBER       exploration seed
         \\  --no-detect-leaks   disable the invocation leak check
         \\  --allow-unreached-goals  report unreached goals without failing the run
-        \\  --no-goal-feedback  do not count a goal's first reach as new coverage
         \\  --detailed          record bounded logical traces
         \\
     );
@@ -688,8 +690,6 @@ fn translateFriendlyArgs(argc: *c_int, argv_ptr: *[*][*:0]u8) void {
                 pushTranslatedArg(&count, &seed_arg, "-seed=", arg[7..]);
             } else if (std.mem.eql(u8, arg, "--no-detect-leaks")) {
                 leak_detection_enabled = false;
-            } else if (std.mem.eql(u8, arg, "--no-goal-feedback")) {
-                goal_feedback = false;
             } else if (std.mem.startsWith(u8, arg, "--goal-dir=")) {
                 quality.setGoalDirectory(arg[11..]);
             } else if (std.mem.startsWith(u8, arg, "--artifact-dir=")) {
