@@ -1,5 +1,6 @@
 ## From a term and its unknowns to answers from the SAT solver. Internal:
-## `Solve` wraps this in typed records, and `Validate` drives it with raw terms.
+## `Solve` wraps this in typed records, and the brute-force validation in
+## roc-fuzz's `tests/solve/validate` drives it with raw terms.
 ##
 ## Every set of values returned from here has been run through `Term.holds`
 ## first. A solver answer the evaluator rejects is reported as `Disagreement`
@@ -413,16 +414,14 @@ Engine := [].{
 		}
 	}
 
-	## The solver's own counters after answering the question once, within a
-	## budget of conflicts.
-	counters : Compiled, [Holding, Failing], U64 -> Try({ answer : [Sat, Unsat], counters : Str }, Term.Fault)
-	counters = |compiled, wanted, budget| {
-		sat0 = load(compiled, wanted)?
-		(sat1, answer, _) = search(sat0, asked(compiled, wanted), [], [], budget)?
+	## What answering the question once cost, within a budget of conflicts.
+	spend : Compiled, [Holding, Failing], U64 -> Try(Effort, Term.Fault)
+	spend = |compiled, wanted, budget| {
+		sat = load(compiled, wanted)?
+		(_, answer, spent) = search(sat, asked(compiled, wanted), [], [], budget)?
 		match answer {
-			Values(_) => Ok({ answer: Sat, counters: Rocsat.stats(sat1) })
-			Nothing => Ok({ answer: Unsat, counters: Rocsat.stats(sat1) })
-			GaveUp(spent) => Err(GaveUp(spent))
+			GaveUp(_) => Err(GaveUp(spent))
+			_ => Ok(spent)
 		}
 	}
 }
