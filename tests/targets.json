@@ -918,6 +918,24 @@
       "expected_failure": false,
       "skip_seed": false,
       "skip_fuzz": false
+    },
+    {
+      "name": "qualityUnreachedGoal",
+      "path": "tests/targets/fixtures/qualityUnreachedGoal.roc",
+      "seed_hex": "0102",
+      "libfuzzer_seed": 2252,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "qualityGoalSuite",
+      "path": "tests/targets/fixtures/qualityGoalSuite.roc",
+      "seed_hex": "0102",
+      "libfuzzer_seed": 2253,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
     }
   ],
   "skips": [
@@ -993,6 +1011,54 @@
           "expected_failure": false
         }
       ]
+    },
+    {
+      "name": "qualityGoalSuite",
+      "members": [
+        {
+          "name": "reached",
+          "expected_failure": false
+        },
+        {
+          "name": "unreached",
+          "expected_failure": false
+        }
+      ]
+    }
+  ],
+  "outcomes": [
+    {
+      "target": "qualityUnreachedGoal",
+      "check": {
+        "outcome": "inconclusive",
+        "goals": "unreached"
+      },
+      "fuzz": {
+        "outcome": "inconclusive",
+        "goals": "unreached"
+      }
+    },
+    {
+      "target": "qualityGoalSuite/reached",
+      "check": {
+        "outcome": "passed",
+        "goals": "reached"
+      },
+      "fuzz": {
+        "outcome": "passed",
+        "goals": "reached"
+      }
+    },
+    {
+      "target": "qualityGoalSuite/unreached",
+      "check": {
+        "outcome": "inconclusive",
+        "goals": "unreached"
+      },
+      "fuzz": {
+        "outcome": "inconclusive",
+        "goals": "unreached"
+      }
     }
   ]
 }

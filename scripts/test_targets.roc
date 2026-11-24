@@ -65,7 +65,8 @@ main! = |raw_args| {
 	selected = select_targets(cli_options.selected, cli_options.path_prefix, inventory)?
 	notes = SkipNotes.load!(Path.join(suite_root, "tests/targets.json"))?
 	suites = TargetSuites.load!(Path.join(suite_root, "tests/targets.json"))?
-	settings = { suites, max_total_time: cli_options.max_total_time, verbose: cli_options.verbose, campaign: cli_options.campaign_dir }
+	outcomes = load_outcomes!(Path.join(suite_root, "tests/targets.json"), inventory, suites)?
+	settings = { suites, outcomes, max_total_time: cli_options.max_total_time, verbose: cli_options.verbose, campaign: cli_options.campaign_dir }
 	roc = Script.roc!()?
 	Env.with_temp_dir!(
 		|work| {
@@ -116,6 +117,59 @@ operation_from_str = |value|
 
 parse_url : _ -> Try(PlatformUrl, [InvalidNumStr, InvalidValue(Str), InvalidUtf8])
 parse_url = |argument| CliValues.parse(argument, PlatformUrl.parse, "expected an absolute HTTP or HTTPS URL")
+
+## The report a stage must produce: its outcome and its goals status.
+Expected : { outcome : Str, goals : Str }
+
+## Cases and suite members (`case/member`) whose `check` and campaign must end
+## a stated way. Without an entry a case is judged by `expected_failure` and
+## exit status alone.
+Outcome : { target : Str, check : Expected, fuzz : Expected }
+
+load_outcomes! = |path, cases, suites| {
+	source = Path.read_utf8!(path)?
+	if !source.contains("\"outcomes\"") {
+		return Ok([])
+	}
+	inventory : { outcomes : List(Outcome) }
+	inventory = Json.parse(source).map_err(|err| InvalidExpectedOutcomes(err))?
+	var $targets = []
+	for entry in inventory.outcomes {
+		known = match Str.split_on(entry.target, "/") {
+			[name] => cases.any(|item| item.name == name)
+			[name, member] => TargetSuites.members(suites, name).any(|candidate| candidate.name == member)
+			_ => Bool.False
+		}
+		if !known or $targets.contains(entry.target) or !valid_expected(entry.check) or !valid_expected(entry.fuzz) {
+			return Err(InvalidExpectedOutcome(entry.target))
+		}
+		$targets = $targets.append(entry.target)
+	}
+	Ok(inventory.outcomes)
+}
+
+valid_expected = |expected| ["passed", "finding", "inconclusive"].contains(expected.outcome) and ["reached", "unreached", "none_declared"].contains(expected.goals)
+
+## The entry for a case or suite member, if it has one.
+expected_for = |outcomes, target|
+	match outcomes.keep_if(|entry| entry.target == target) {
+		[entry] => Ok(entry)
+		_ => Err(NoExpectedOutcome)
+	}
+
+## The exit status a supervised command gives for an outcome.
+outcome_code : Str -> I32
+outcome_code = |outcome| if (outcome == "passed") 0 else 1
+
+## A report ended as its entry says it must.
+require_report! = |report_path, expected| {
+	report : { outcome : Str, goals : { status : Str } }
+	report = Json.parse(Path.read_utf8!(report_path)?)?
+	if report.outcome != expected.outcome or report.goals.status != expected.goals {
+		return Err(StepFailed("expected ${expected.outcome} with goals ${expected.goals}; the report says ${report.outcome} with goals ${report.goals.status}"))
+	}
+	Ok({})
+}
 
 load_inventory! = |path| {
 	raw : { cases : List(RawCase) }
@@ -265,7 +319,7 @@ executable_path = |work, item| Path.join(Path.join(work, "executables"), item.na
 
 run_step! = |stage, settings, roc, item, work|
 	match stage {
-		Seed | Measure | Quality | Fuzz if !TargetSuites.members(settings.suites, item.name).is_empty() => suite_step!(stage, roc, item, work, TargetSuites.members(settings.suites, item.name).map(|member| (member.name, if (member.expected_failure) 1 else 0)))
+		Seed | Measure | Quality | Fuzz if !TargetSuites.members(settings.suites, item.name).is_empty() => suite_step!(stage, roc, item, work, settings.outcomes, TargetSuites.members(settings.suites, item.name).map(|member| (member.name, if (member.expected_failure) 1 else 0)))
 		Check => run_quiet!(settings.verbose, roc, ["check", Path.to_os_str(item.path)], 0)
 		Test => run_quiet!(settings.verbose, roc, ["test", Path.to_os_str(item.path)], 0)
 		Build => {
@@ -286,13 +340,13 @@ run_step! = |stage, settings, roc, item, work|
 			run_quiet!(settings.verbose, executable, ["replay", Path.to_os_str(seed)], expected_code(item))
 		}
 		Measure => measure_step!(roc, item, work)
-		Quality => quality_step!(item, work)
+		Quality => quality_step!(item, work, expected_for(settings.outcomes, item.name))
 		Fuzz => fuzz_step!(settings, item, work)
 	}
 
 ## A single binary keeps heterogeneous properties, examples, baselines and
 ## failures independent across both supervised and raw engine invocations.
-suite_step! = |stage, roc, item, work, members| {
+suite_step! = |stage, roc, item, work, outcomes, members| {
 	selected_members : List((Str, I32))
 	selected_members = members
 	directory = Path.join(Path.join(work, "suite-selection"), stage_name(stage))
@@ -304,8 +358,17 @@ suite_step! = |stage, roc, item, work, members| {
 		# coverage instrumentation on allocation observations.
 		run_quiet!(Bool.False, roc, ["build", Path.to_os_str(item.path), OsStr.from_str("--output=${Path.display(plain)}")], 0)?
 	}
-	for (name, expected) in selected_members {
+	for (name, failure_code) in selected_members {
 		selector = OsStr.from_str("--target=${name}")
+		stated = match expected_for(outcomes, "${item.name}/${name}") {
+			Ok(entry) if stage == Quality => Ok(entry.check)
+			Ok(entry) if stage == Fuzz => Ok(entry.fuzz)
+			_ => Err(NoExpectedOutcome)
+		}
+		expected = match stated {
+			Ok(report) => outcome_code(report.outcome)
+			Err(_) => failure_code
+		}
 		args = match stage {
 			Seed => [selector, "replay", Path.to_os_str(seed_path!(item, work)?)]
 			Measure => [selector, "measure", Path.to_os_str(seed_path!(item, work)?)]
@@ -324,16 +387,19 @@ suite_step! = |stage, roc, item, work, members| {
 			}
 		}
 		if stage == Quality or stage == Fuzz {
+			report_path = Path.join(Path.join(directory, name), "report.json")
 			report : { target : Str, outcome : Str }
-			report = Json.parse(Path.read_utf8!(Path.join(Path.join(directory, name), "report.json"))?)?
-			if report.target != name or report.outcome != (
-				if expected == 0 {
-					"passed"
-				} else {
-					"finding"
-				}
-			) {
+			report = Json.parse(Path.read_utf8!(report_path)?)?
+			wanted = match stated {
+				Ok(stated_report) => stated_report.outcome
+				Err(_) => if (expected == 0) "passed" else "finding"
+			}
+			if report.target != name or report.outcome != wanted {
 				return Err(StepFailed("suite selected the wrong property or report identity"))
+			}
+			match stated {
+				Ok(stated_report) => require_report!(report_path, stated_report)?
+				Err(_) => {}
 			}
 		}
 	}
@@ -439,7 +505,12 @@ measure_step! = |roc, item, work| {
 }
 
 ## The real executable checks and accepts its source-authored inventory.
-quality_step! = |item, work| {
+quality_step! = |item, work, stated| {
+	# Without an entry, the declared examples must pass.
+	wanted = match stated {
+		Ok(entry) => entry.check
+		Err(_) => { outcome: "passed", goals: "" }
+	}
 	directory = Path.join(Path.join(work, "quality"), item.name)
 	Path.create_all!(directory)?
 	executable = Script.command(Path.to_os_str(executable_path(work, item)))
@@ -448,8 +519,11 @@ quality_step! = |item, work| {
 		return Err(StepFailed("examples failed\n${tail(listed)}"))
 	}
 	checked = executable.output!(["check", "--report-dir=unbaselined"], directory)?
-	if checked.status != Exited(0) {
-		return Err(StepFailed("declared examples failed\n${tail(checked)}"))
+	if checked.status != Exited(outcome_code(wanted.outcome)) {
+		return Err(StepFailed("declared examples did not end ${wanted.outcome}\n${tail(checked)}"))
+	}
+	if !wanted.goals.is_empty() {
+		require_report!(Path.join(directory, "unbaselined/report.json"), wanted)?
 	}
 	if item.name == "qualityLifetimes" {
 		report : { examples : List({ observations : List(Observation) }) }
@@ -502,7 +576,7 @@ quality_step! = |item, work| {
 			return Err(StepFailed("accept failed\n${tail(accepted)}"))
 		}
 		matched = executable.output!(["check", "--report-dir=matched"], directory)?
-		if matched.status != Exited(0) {
+		if matched.status != Exited(outcome_code(wanted.outcome)) {
 			return Err(StepFailed("accepted observations did not match\n${tail(matched)}"))
 		}
 		report : { baseline_status : Str }
@@ -591,7 +665,7 @@ fuzz_step! = |settings, item, work| {
 	_ = seed_path!(item, root)?
 	base_args = ["run", Path.to_os_str(Path.join(Path.join(root, "corpus"), item.name)), OsStr.from_str("--time=${settings.max_total_time.to_str()}")]
 	args = if (settings.verbose) base_args.append("--print-final-stats") else base_args
-	full_args = match settings.campaign {
+	report_dir = match settings.campaign {
 		Ok(_) => {
 			report_parent = Path.join(Path.join(root, "reports"), item.name)
 			Path.create_all!(report_parent)?
@@ -604,11 +678,24 @@ fuzz_step! = |settings, item, work| {
 			Path.write_utf8!(counter_path, (counter + 1).to_str())?
 			failures = Path.join(report_parent, "run-${counter.to_str()}")
 			Path.create_all!(failures)?
-			args.append(OsStr.from_str("--report-dir=${Path.display(failures)}"))
+			failures
 		}
-		Err(NoValue) => args
+		Err(NoValue) => {
+			Path.create_all!(Path.join(work, "fuzz-reports"))?
+			Path.join(Path.join(work, "fuzz-reports"), item.name)
+		}
 	}
-	run_quiet!(settings.verbose, Script.command(Path.to_os_str(executable_path(work, item))), full_args, expected_code(item))
+	full_args = args.append(OsStr.from_str("--report-dir=${Path.display(report_dir)}"))
+	stated = expected_for(settings.outcomes, item.name)
+	code = match stated {
+		Ok(entry) => outcome_code(entry.fuzz.outcome)
+		Err(_) => expected_code(item)
+	}
+	run_quiet!(settings.verbose, Script.command(Path.to_os_str(executable_path(work, item))), full_args, code)?
+	match stated {
+		Ok(entry) => require_report!(Path.join(report_dir, "report.json"), entry.fuzz)
+		Err(_) => Ok({})
+	}
 }
 
 seed_path! = |item, work| {

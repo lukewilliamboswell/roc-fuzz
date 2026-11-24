@@ -373,6 +373,15 @@ For an application built with `Fuzz.suite`, add a `suites` entry in
 `name` and `expected_failure`. Both the target driver and release archive use
 this inventory to select every member while sharing one executable.
 
+A case is judged by its exit codes: `expected_failure` makes replay and the
+campaign exit `1`, and `check` must pass. To require more, such as a target
+whose goals leave `check` or its campaign `inconclusive`, add an entry to the
+`outcomes` list. Its `target` is the case name, or `case/member` for a suite
+member; `check` and `fuzz` each give the `outcome` (`passed`, `finding` or
+`inconclusive`) and the goals `status` (`goals`: `reached`, `unreached` or
+`none_declared`) that the quality and fuzz stages require of `report.json`.
+Seed replay and measurement still follow `expected_failure`.
+
 `test-targets` runs each stage of the operation (check, test, build, seed,
 measure, quality, fuzz) over every selected case and prints one line per step as it
 finishes, with its position, `PASS`, `FAIL` or `SKIP`, and its time in
