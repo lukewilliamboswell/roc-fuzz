@@ -30,9 +30,11 @@ roc build --fuzz my_target_app.roc
 ```
 
 For example, the core of this target generates `U64` values and checks that JSON
-encoding and decoding always returns the original value; the
-[first-target tutorial](docs/getting-started.adoc) includes a complete app
-header and runnable files:
+encoding and decoding always returns the original value.
+[`examples/jsonRoundTrip.roc`](examples/jsonRoundTrip.roc) is a complete
+application of this kind, and the
+[first-target tutorial](docs/getting-started.adoc) builds one from an empty
+file:
 
 ```roc
 import fuzz.Fuzz
