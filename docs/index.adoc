@@ -28,6 +28,8 @@ New to fuzzing:: Start with <<why-fuzz-a-roc-application>> to learn what a fuzz
 target is, how guided search differs from random input, and when fuzzing fits.
 Ready to try it:: Follow <<fuzz-your-first-function>> to test a small Roc module
 and work through a saved failure.
+Stateful code:: Read <<model-a-component-and-check-it>> to describe a component
+as a state machine, search it under `roc test`, and fuzz the same model.
 Longer campaign:: Continue with <<run-and-maintain-fuzzing-campaigns>> for
 bounds, corpora, status output, and failure diagnosis.
 Advanced use:: Read <<understand-roc-fuzz-internals-and-advanced-features>> for the
@@ -44,6 +46,8 @@ include::overview.adoc[leveloffset=+1]
 include::getting-started.adoc[leveloffset=+1]
 
 include::target-design.adoc[leveloffset=+1]
+
+include::modelling.adoc[leveloffset=+1]
 
 include::campaigns.adoc[leveloffset=+1]
 

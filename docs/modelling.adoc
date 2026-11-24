@@ -1,0 +1,232 @@
+= Model a component and check it
+
+A fuzz target usually checks one call. A cache, an index or a protocol breaks
+in a sequence of calls, and the sequence that breaks it is rarely the one its
+tests make. The `Model` module describes such a component once, as a state
+machine with rules, and checks it two ways: a search of every sequence in a
+small world under `roc test`, and a fuzz target over a large one.
+
+Two runnable examples go with this chapter. `examples/queueModel.roc` is a
+first model in under 60 lines. `examples/indexModel/` models a radix tree
+taken unedited from another project, and the numbers below come from it.
+Each is an application, so `roc test` runs its search and
+`roc build --fuzz` builds its fuzz target:
+
+[source,sh]
+----
+roc test examples/queueModel.roc
+roc build --fuzz examples/indexModel/main.roc --output=index
+./index run corpus --time=60
+----
+
+== Describe the machine
+
+A `Model.Machine(state, action)` has four fields: where it starts (`init`),
+what can happen in a state (`actions`), what happening does (`step`), and
+what must be true (`rules`). Put the real component in the state beside a
+reference that is too plain to get wrong, and apply every action to both:
+
+[source,roc]
+----
+World : { queue : Queue, items : List(U8) }
+
+machine : Model.Machine(World, [Push(U8), Pop])
+machine = {
+    init: { queue: { front: [], back: [] }, items: [] },
+    actions: |world| if (world.items.len() < 3) [Push(1), Push(2), Pop] else [Pop],
+    step: |world, action| match action {
+        Push(item) => { queue: push(world.queue, item), items: world.items.append(item) }
+        Pop => { queue: pop(world.queue).1, items: world.items.drop_first(1) }
+    },
+    rules: [
+        Model.always_step("a pop returns the oldest item", |{ before, action, after: _ }| action != Pop or pop(before.queue).0 == before.items.first().map_err(|_| Empty)),
+        Model.always("the queue holds its items in order", |world| world.queue.front.concat(turned(world.queue.back)) == world.items),
+        Model.sometimes("the queue holds three items", |world| world.items.len() == 3),
+        Model.sometimes_step("a pop turns the back list round", |{ before, action, after: _ }| action == Pop and before.queue.front.is_empty() and !before.queue.back.is_empty()),
+        Model.sometimes_step("a pop finds the queue empty", |{ before, action, after: _ }| action == Pop and before.items.is_empty()),
+    ],
+}
+----
+
+An `always` rule must hold in every state, and an `always_step` rule on every
+step; a step rule is handed the state before, the action and the state after,
+so the state needs no field to remember what just happened. A `sometimes` or
+`sometimes_step` rule is a goal: some state or step must satisfy it. Goals
+guard against a model that passes because it never reaches the interesting
+cases. An `at_rest` rule says where the machine may stop, and a state where
+nothing can happen, or nothing changes, breaks it as a deadlock.
+
+`actions` lists only what is possible in a state, and it decides the size of
+the world a search covers. Here it is at most three items of two kinds, which
+is enough to make `pop` turn the back list round.
+
+== Search it under roc test
+
+`Model.check` visits every state within `depth` actions of `init`, nearest
+first, and checks every rule on the way. It is a pure function, so it runs in
+an ordinary `expect`:
+
+[source,roc]
+----
+expect Model.check(machine, { depth: 20 }) == { verdict: Holds(Exhausted), states: 41, depth: 5 }
+----
+
+The verdict says what was shown:
+
+* `Holds(Exhausted)`: the search ran out of new states, so no sequence of any
+  length breaks a rule in this world.
+* `Holds(Bounded)`: the depth limit stopped it, and nothing is known beyond.
+* `Violated({ rule, trace })`: a rule failed, and `trace` is a shortest
+  sequence of actions that breaks one.
+* `Deadlock({ rule, trace })`: `trace` leads to a resting state that an
+  `at_rest` rule forbids.
+* `Unreached({ rule, extent })`: no rule failed, and this goal was never
+  reached; with `Exhausted` it never can be.
+
+Change `pop` so that it forgets to turn the back list round, and the same
+`expect` fails with
+`Violated({ rule: "the queue holds its items in order", trace: [Push(1), Push(2), Pop] })`.
+Paste that trace into `Model.replay(machine, trace)` to keep it as a
+regression.
+
+`Model.explore` is the same search with the whole report: a shortest witness
+for every goal (`Model.witness`), every rule broken at the failure with
+`blame: EveryRule`, and `Model.explain` to put it in words. A search
+remembers the states it has met and drops a state equal to one already seen.
+A state with no hash, such as `ReadyIndex`, is remembered by a `key`, and
+`verify: EveryStep` then checks the rules on every state a step makes, so two
+different states with one key cannot hide a broken one:
+
+[source,roc]
+----
+search = |subject| Model.explore(subject, { depth: 100, key: |world| world.reference, verify: EveryStep, blame: EveryRule })
+----
+
+Over six keys chosen to part at bits 0, 1, 62 and 63, the index search visits
+729 states and reaches 11 of 11 goals.
+
+=== Grade a test you already have
+
+`Model.apply` takes a path of actions as given, without asking `actions`
+whether each is possible, and reports the goals it never reached. Give it the
+schedule of an existing test to see what that test exercises. The radix tree's
+own 96-turn test breaks no rule and reaches 10 of the 11 goals: it never
+removes a missing key from a populated index. The search reaches that goal in
+two actions, `[Insert(0, 10), Remove(1)]`. `SeededIndex.roc` changes one
+line of the arm that handles that case; the module's own tests still pass on
+it, and the search fails with that two-action trace.
+
+== Turn the model into a fuzz target
+
+A search covers only the world `actions` lists. A fuzz target runs the same
+machine, with the same rules and goals, on paths made from the fuzzer's bytes:
+
+`Model.walk_target`:: Each byte chooses among the possible actions, so every
+input is a valid path. The world is still the one `actions` lists, and the
+paths can be far longer than a search reaches.
+`Model.path_target`:: A `decode` function turns the bytes into actions,
+which are applied as given. The actions can come from a space far too wide
+to list, such as full 64-bit keys. Make `decode` total, so no input is
+rejected, and make a prefix of the bytes decode to a prefix of the path, so
+the minimizer shortens the trace.
+
+[source,roc]
+----
+target = Model.path_target({
+    name: "index",
+    machine,
+    decode: IndexPaths.shaped,
+    examples: [Fuzz.example({ name: "a tour of every goal", revision: "1", make: || IndexPaths.tour })],
+})
+----
+
+A broken rule is a crash, so the runner saves, replays and minimizes it like
+any other finding. Built from `SeededIndex`, that target fails within the
+first thousand inputs:
+
+[source,text]
+----
+[roc crashed] Violated({ rule: "the length is the number of live keys" }) after [Insert(274877906944, 0), Remove(1)]
+----
+
+Full-width keys reach what the search cannot. Of 26 bugs seeded one at a
+time in the index, one breaks forks at bit 32; the six-key search passes it,
+because no two of the six keys part at bit 32, and every campaign with shaped
+keys found it. How the bytes become keys matters: `IndexPaths.shaped` makes
+each new key one bit away from an earlier key, so a fork at any bit is a few
+bytes away.
+
+`examples` are inputs checked on every run and added to the corpus.
+`Model.walk_example` makes one for a walk target from a trace, such as a
+witness from the search. The `Fuzz.saved` declaration that `retain` prints
+goes into the `examples` of any of the three targets as it is.
+
+== Read goals in the campaign report
+
+Each Model target declares the machine's goals to the runner and marks the
+ones an input reaches. The report lists every goal with the first input that
+reached it, saved under `goals/`;
+xref:quality.adoc#grade-goals[Grade a campaign with goals] describes the
+files and the `replay` and `retain` commands that use them.
+
+A campaign that breaks no rule and leaves a goal unreached is
+`inconclusive`. This is what goals are for. Decode the index's keys with
+`IndexPaths.uniform`, spread at random over all 64 bits, and campaigns of 60
+seconds pass every rule while reaching 28 to 31 of the 73 goals. None tests a
+fork at bit 39 or below:
+
+[source,text]
+----
+index: inconclusive; baseline unbaselined; examples 0; exploration passed (attempted 191515, accepted 191056, rejected 459); goals 29 of 73 reached
+Never reached: an insert forks at bit 0
+----
+
+By its rules alone that campaign looks as good as one that reaches every goal.
+Fix such a campaign by changing how inputs become actions, or by declaring an
+example that reaches the goal. Pass `--allow-unreached-goals` only where
+partial evidence is expected.
+
+== Check one step from any state
+
+`Model.step_from` starts at any state, reachable or not, takes each possible
+action once and checks the rules. If the rules hold in `init` and no state
+that satisfies them can break them in one step, they hold in every reachable
+state, however far away. `Model.step_target` runs it as a fuzz target on
+states from a generator, here for a counter that must stay at or below three:
+
+[source,roc]
+----
+target = Model.step_target({
+    name: "counter steps",
+    machine: counter,
+    generator: Fuzz.u64_in(0, 3),
+    examples: [Fuzz.example({ name: "at the top", revision: "1", make: || 3 })],
+})
+----
+
+It is worth its cost when a bug lies further from `init` than any walk goes,
+such as one step before a sequence number wraps. The cost is twofold. The
+`always` rules must be strong enough that no unreachable state satisfies
+them; until they are, a `Broken` or `Stuck` answer may be a state the
+component can never be in, and each one means adding the rule that excludes
+it. And the generator must make states that satisfy the rules often: the
+target rejects any state that already breaks one, and the report's rejected
+count says how often that happened.
+
+== Know the limits
+
+* A search covers only the small world you list. Over six keys it says
+  nothing about a seventh, or about a fork at a bit where those six never
+  part.
+* A search holds every state it has met in memory, and a state equal to one
+  already met is not checked again. Keep the world small, and keep `==` and
+  any search key faithful to everything `step` and the rules read.
+* Goals grade a campaign; they do not steer it. The runner keeps the first
+  input to reach each goal in the corpus, but nothing directs exploration
+  toward a goal no input has reached.
+* Roc code cannot catch a crash. A crash inside the code under test ends a
+  search, and `roc test` reports the failed `expect` with the crash message
+  and no trace. Under a fuzzer, the runner saves the input; a path target's
+  `show` prints that input's path without running it, and the last action of
+  the minimized input is the one that crashed. A walk target's `show` has to
+  take the walk, so it crashes too.
