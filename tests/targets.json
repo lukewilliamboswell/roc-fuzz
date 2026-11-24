@@ -873,6 +873,33 @@
       "expected_failure": false,
       "skip_seed": false,
       "skip_fuzz": false
+    },
+    {
+      "name": "modelWalkGoals",
+      "path": "tests/targets/fixtures/modelWalkGoals.roc",
+      "seed_hex": "00000001",
+      "libfuzzer_seed": 2247,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "modelPathRule",
+      "path": "tests/targets/fixtures/modelPathRule.roc",
+      "seed_hex": "00000000",
+      "libfuzzer_seed": 2248,
+      "expected_failure": true,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "modelStepGoals",
+      "path": "tests/targets/fixtures/modelStepGoals.roc",
+      "seed_hex": "03",
+      "libfuzzer_seed": 2249,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
     }
   ],
   "skips": [
