@@ -1,0 +1,53 @@
+= roc-fuzz 0.8.0
+
+A passing fuzz campaign can now show which named goals it reached. This
+release also adds `Model` for state-machine tests and `Solve` for proofs
+about fixed-width integers, through the same platform import.
+
+== Check campaign goals
+
+Declare goals with `Target.with_goals` and reach them with `Fuzz.mark!`.
+The runner records the first input that reached each goal and where it
+came from. A witness can come from a declared example, the existing
+corpus, or exploration. Replay or retain the witness to keep it as evidence.
+
+`check`, `explore` and `run` are inconclusive with exit status 1 if
+their inputs leave a goal unreached. Use `--allow-unreached-goals` while
+collecting witnesses if the campaign should continue to pass without them.
+Update report consumers for `roc-fuzz-quality/2`, which adds the goal
+inventory, witness sources, and per-example goal results.
+
+== Model states and prove integer properties
+
+Use `Model` to describe transitions and rules once, then check small
+state spaces exhaustively with `roc test` or explore longer walks with
+the fuzz runner. A `sometimes` rule becomes a campaign goal. The queue
+and index examples show state, path and step checks.
+
+Use `Solve` to prove or refute fixed-width integer claims and find
+assignments that crash Roc arithmetic. Proof work can be bounded, and an
+exhausted budget returns `GaveUp`. The platform imports rocsat 0.0.2 as
+a package, recorded in the SBOM. See the midpoint and sliding-window
+examples for proof and counterexample workflows.
+
+== Upgrade and rebuild
+
+Update your platform URL and rebuild your executables:
+
+[source,roc]
+----
+app [target] { fuzz: platform "{platform-url}" }
+----
+
+The native host holds each target once per process. If your target
+expression allocates at run time, rerun `accept` to record the new
+baseline after reviewing the allocation changes.
+
+Supervised campaigns now accept entropy inputs up to 2 MiB, including capture,
+replay and minimization. Repository automation now reads and writes tar and ZIP archives and
+reads gzip streams through Roc packages pinned by content hash.
+
+The supported hosts are Linux x86-64 and Apple Silicon macOS. The release
+includes [the manual]({manual-url}), examples, SBOM documents and provenance.
+When reporting a regression, include the compiler version, target name,
+and a retained input if one is available.

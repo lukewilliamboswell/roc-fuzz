@@ -85,9 +85,9 @@ The frame is `RFZ`, version byte `1`, form byte (`0` entropy, `1` value), then
 payload. Bare historical bytes without the reserved `RFZ` prefix remain entropy.
 Artifacts whose interpretation changes across platform versions need their
 original executable; cross-version corpus migration is outside this API.
-Unsupported versions, malformed
-values and exceeded decoding budgets reject. The parser allows at most 1 MiB,
-4096 value nodes and 128 total containers, validating counts before allocation.
+Unsupported versions, malformed values and exceeded decoding budgets reject.
+The encoded-value parser allows at most 1 MiB, 4096 value nodes and 128 total
+containers, validating counts before allocation.
 
 Generation chooses bias. Preconditions or validated types define validity for
 both forms; a range enforced only by a generator cannot protect encoded values.

@@ -3,13 +3,17 @@ app [main!] {
 	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.3/BioPdu7WjVhTB2j1HaomKMi8htxsuwqwr79GbXY5nAUf.tar.zst",
 	arg_path: "https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst",
 	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.28.1/7brgwR8YUqfeGrkdfF1V4GPPN7DnP7ftqub9KcrTEZtr.tar.zst",
+	deflate: "https://github.com/lukewilliamboswell/roc-deflate/releases/download/0.6.0-rc2/CQoQh2ycoMgMbrkSnQJdsEhWjp67fYrT7hWwgQXynEBy.tar.zst",
 	roc: "nightly-2026-11-18-a520eed",
+	tar: "https://github.com/lukewilliamboswell/roc-tar/releases/download/0.0.3-rc1/8egXmMy7h6TTkRzUmxWygp2GnPe4mBSNGy5Q2ZZYkppu.tar.zst",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.10.2/7CdYzjBAJmprmnK45oTpmH6BXt76ZASN2Ck5uZQEoWsK.tar.zst",
+	zip: "https://github.com/lukewilliamboswell/roc-zip/releases/download/0.3.0-rc6/CxK9QaRb2VBQn2hKHAmSQ1zFYW2AGNC6XLuDXeHDamZY.tar.zst",
 }
 
 import cli.Path
 import weaver.Cli
 import weaver.Opt
+import src/Archive
 import src/AutomationIO
 import src/CliValues
 import src/Glue
@@ -78,8 +82,12 @@ check! = |options, root, work| {
 	}
 }
 
+## The most a nightly's source archive may hold, decompressed.
+source_archive_limit : U64
+source_archive_limit = 1024 * 1024 * 1024
+
 ## Download a nightly's source archive, check it against the digest in the
-## release metadata, and unpack `src/glue` into the work directory.
+## release metadata, and unpack its `src/glue` into the work directory.
 fetch_source! = |tag, root, work| {
 	asset = Glue.source_asset(tag)
 	Script.info!("GLUE", "specification from roc-lang/nightlies ${tag}, ${asset}")?
@@ -90,8 +98,9 @@ fetch_source! = |tag, root, work| {
 	}
 	archive = Path.join(work, asset)
 	AutomationIO.verified_download!(Glue.source_url(tag), archive, expected)?
-	AutomationIO.run!("tar", ["-xzf", Path.display(archive), "-C", Path.display(work), "--strip-components=1", "${Glue.source_directory(tag)}/src/glue"], root)?
-	Ok(work)
+	source = Path.join(work, "roc")
+	_ = Archive.extract_under!(Archive.Format.Tar, archive, "${Glue.source_directory(tag)}/src/glue", Path.join(source, "src/glue"), source_archive_limit)?
+	Ok(source)
 }
 
 cli_parser = Cli.assert_valid(

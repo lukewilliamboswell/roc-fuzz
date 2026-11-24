@@ -365,7 +365,7 @@ jobs:
           blueprint run check-docs -- "$SITE/api"
           mkdir -p release-docs
           cp "$PDF" "release-docs/roc-fuzz-$RELEASE_VERSION.pdf"
-          (cd "$SITE" && zip -qr "$GITHUB_WORKSPACE/release-docs/roc-fuzz-docs-$RELEASE_VERSION.zip" .)
+          blueprint run release-examples -- --operation package-docs --site "$SITE" --output "$GITHUB_WORKSPACE/release-docs/roc-fuzz-docs-$RELEASE_VERSION.zip"
 
       - name: Upload the documentation archive and the manual
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

@@ -146,9 +146,20 @@ bundle URL. It also fails when a Roc file outside `scripts/` carries a `roc`
 field, and when a workflow references an action by anything but a full commit
 SHA.
 
-Roc scripts may invoke standard tools such as Git, curl, tar, zip, and unzip via
-argument lists, without shell evaluation. Roc owns selection, validation, and
-control flow. Declare a program a script starts under `Tools` in `Blueprint.roc`.
+Roc scripts may invoke standard tools such as Git and curl via argument lists,
+without shell evaluation. Roc owns selection, validation, and control flow.
+Declare a program a script starts under `Tools` in `Blueprint.roc`.
+
+Archives are read and written in Roc, by `scripts/src/Archive.roc` with the
+tar, ZIP and gzip packages under `RocPackages`; no script starts an archiver.
+Reading accepts only regular files and directories with portable relative names,
+within a size limit: a link, a device, a duplicate or unsafe name, or a damaged
+or truncated archive refuses the whole archive before anything is written, and
+the script writes each file itself. Packing gives the same bytes for the same
+files: each member has mode 0644, owner 0 with no names, and the time
+1980-01-01 00:00 UTC. Under the script compiler's default backend, decompression
+is the slow part: unpacking `src/glue` from a nightly's 33 MB source archive
+takes about six seconds, and packing the documentation site about eight.
 Pinned external tools and shared actions remain external dependencies;
 for example, the shared documentation builder currently uses Python internally.
 That does not justify adding repository-owned Python orchestration.

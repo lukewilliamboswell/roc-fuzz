@@ -11,7 +11,7 @@ pub const baseline_format = "roc-fuzz-baseline/1";
 pub const report_format = "roc-fuzz-quality/2";
 pub const preparation_format = "roc-fuzz-examples/1";
 pub const metric_version = "roc-fuzz-allocations/1";
-pub const max_input_len = 1024 * 1024;
+pub const max_input_len = 2 * 1024 * 1024;
 /// Keep equal to the host's goal inventory capacity.
 pub const max_goals = 1024;
 pub const max_goal_name_bytes = 128;

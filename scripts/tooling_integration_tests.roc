@@ -2,12 +2,17 @@
 app [main!] {
 	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.3/BioPdu7WjVhTB2j1HaomKMi8htxsuwqwr79GbXY5nAUf.tar.zst",
 	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.28.1/7brgwR8YUqfeGrkdfF1V4GPPN7DnP7ftqub9KcrTEZtr.tar.zst",
+	deflate: "https://github.com/lukewilliamboswell/roc-deflate/releases/download/0.6.0-rc2/CQoQh2ycoMgMbrkSnQJdsEhWjp67fYrT7hWwgQXynEBy.tar.zst",
 	roc: "nightly-2026-11-18-a520eed",
+	tar: "https://github.com/lukewilliamboswell/roc-tar/releases/download/0.0.3-rc1/8egXmMy7h6TTkRzUmxWygp2GnPe4mBSNGy5Q2ZZYkppu.tar.zst",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.10.2/7CdYzjBAJmprmnK45oTpmH6BXt76ZASN2Ck5uZQEoWsK.tar.zst",
+	zip: "https://github.com/lukewilliamboswell/roc-zip/releases/download/0.3.0-rc6/CxK9QaRb2VBQn2hKHAmSQ1zFYW2AGNC6XLuDXeHDamZY.tar.zst",
 }
 
 import cli.Env
 import cli.Path
+import tar.Tar
+import zip.Zip
 import src/Archive
 import src/AutomationIO
 import src/Integrity
@@ -95,12 +100,44 @@ main! = |_args| {
 			ReleaseExamples.rewrite!(suite, "platform", "https://github.com/owner/repo/releases/download/1.2.2/hash.tar.zst")?
 			Script.require!(ReleaseExamples.validate_release!(suite) |> Try.is_err, "Reject modified publication URL")?
 			Script.require!(Path.read_utf8!(Path.join(suite, "examples/nested/Other.roc"))? == "answer = 42\n", "Rewrites must preserve non-app modules")?
-			# Both archive formats must reject symlinks before any extraction.
-			AutomationIO.run!("ln", ["-s", "missing", "link"], temp)?
-			AutomationIO.run!("zip", ["-q", "-y", "linked.zip", "link"], temp)?
-			AutomationIO.run!("tar", ["-cf", "linked.tar", "link"], temp)?
-			Script.require!(Archive.entries!(Archive.Format.Zip, Path.join(temp, "linked.zip"), 1000) |> Try.is_err, "ZIP links must fail")?
-			Script.require!(Archive.entries!(Archive.Format.Tar, Path.join(temp, "linked.tar"), 1000) |> Try.is_err, "TAR links must fail")?
+			# Both archive formats must reject links before any extraction.
+			linked_zip = Path.join(temp, "linked.zip")
+			linked_tar = Path.join(temp, "linked.tar")
+			AutomationIO.write!(linked_zip, Zip.create_items([File({ path: "a", content: [1] }), SymbolicLink({ path: "link", target: "missing" })], None)?)?
+			AutomationIO.write!(linked_tar, Tar.create([Tar.file("a", [1]), Tar.symlink("link", "missing")]).map_err(|err| UnwritableTar(Tar.write_err_to_str(err)))?)?
+			for (format, archive) in [(Archive.Format.Zip, linked_zip), (Archive.Format.Tar, linked_tar)] {
+				Script.require!(Archive.entries!(format, archive, 1000) |> Try.is_err, "Links must refuse the listing")?
+				Script.require!(Archive.extract!(format, archive, Path.join(temp, "linked"), 1000) |> Try.is_err, "Links must refuse extraction")?
+				Script.require!(!Path.exists!(Path.join(temp, "linked"))?, "A refused archive must write nothing")?
+			}
+			# What a pack writes extracts byte for byte, in both formats, and
+			# extraction needs a fresh destination.
+			packed_source = Path.join(suite, "examples")
+			packed_names = ["nested/main.roc", "nested/Other.roc", "shared/main.roc"]
+			for (format, name) in [(Archive.Format.Zip, "round.zip"), (Archive.Format.Tar, "round.tar")] {
+				archive = Path.join(temp, name)
+				Archive.pack!(format, packed_source, packed_names, archive)?
+				unpacked = Path.join(temp, "${name}-unpacked")
+				listed = Archive.extract!(format, archive, unpacked, 1000000)?
+				Script.require!(listed.map(|entry| entry.name) == packed_names, "Pack keeps the order it is given")?
+				for packed_name in packed_names {
+					Script.require!(Path.read_bytes!(Path.join(unpacked, packed_name))? == Path.read_bytes!(Path.join(packed_source, packed_name))?, "Extraction must give the packed bytes")?
+				}
+				Script.require!(Archive.extract!(format, archive, unpacked, 1000000) |> Try.is_err, "Extraction must require a fresh destination")?
+				Script.require!(Archive.entries!(format, archive, 10) |> Try.is_err, "Listing must enforce the size limit")?
+				under = Path.join(temp, "${name}-nested")
+				Script.require!(Archive.extract_under!(format, archive, "nested", under, 1000000)?.map(|entry| entry.name) == ["main.roc", "Other.roc"], "A part of an archive is named relative to it")?
+				Script.require!(Path.read_bytes!(Path.join(under, "Other.roc"))? == Path.read_bytes!(Path.join(packed_source, "nested/Other.roc"))?, "A part extracts byte for byte")?
+			}
+			# A documentation site packs whole, named relative to its root.
+			site = Path.join(temp, "site")
+			AutomationIO.write!(Path.join(site, "index.html"), "<p>home</p>\n".to_utf8())?
+			AutomationIO.write!(Path.join(site, "api/fonts/a.ttf"), [0, 1, 2, 255])?
+			docs_archive = Path.join(temp, "docs.zip")
+			ReleaseExamples.package_docs!(site, docs_archive)?
+			docs_unpacked = Path.join(temp, "docs-unpacked")
+			Script.require!(Archive.extract!(Archive.Format.Zip, docs_archive, docs_unpacked, 1000)?.map(|entry| entry.name) == ["api/fonts/a.ttf", "index.html"], "A packed site lists its files in byte order")?
+			Script.require!(Path.read_bytes!(Path.join(docs_unpacked, "api/fonts/a.ttf"))? == [0, 1, 2, 255], "A packed site extracts byte for byte")?
 			cached = Path.join(temp, "cached")
 			Path.write_utf8!(cached, "good")?
 			AutomationIO.verified_download!("not-a-network-url", cached, Integrity.digest_bytes("good".to_utf8()))?

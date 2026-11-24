@@ -3,8 +3,11 @@ app [main!] {
 	ansi: "https://github.com/lukewilliamboswell/roc-ansi/releases/download/0.13.3/BioPdu7WjVhTB2j1HaomKMi8htxsuwqwr79GbXY5nAUf.tar.zst",
 	arg_path: "https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst",
 	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.28.1/7brgwR8YUqfeGrkdfF1V4GPPN7DnP7ftqub9KcrTEZtr.tar.zst",
+	deflate: "https://github.com/lukewilliamboswell/roc-deflate/releases/download/0.6.0-rc2/CQoQh2ycoMgMbrkSnQJdsEhWjp67fYrT7hWwgQXynEBy.tar.zst",
 	roc: "nightly-2026-11-18-a520eed",
+	tar: "https://github.com/lukewilliamboswell/roc-tar/releases/download/0.0.3-rc1/8egXmMy7h6TTkRzUmxWygp2GnPe4mBSNGy5Q2ZZYkppu.tar.zst",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.10.2/7CdYzjBAJmprmnK45oTpmH6BXt76ZASN2Ck5uZQEoWsK.tar.zst",
+	zip: "https://github.com/lukewilliamboswell/roc-zip/releases/download/0.3.0-rc6/CxK9QaRb2VBQn2hKHAmSQ1zFYW2AGNC6XLuDXeHDamZY.tar.zst",
 }
 
 import cli.Cmd
@@ -14,6 +17,7 @@ import cli.Path
 import weaver.Base exposing [InvalidValue]
 import weaver.Cli
 import weaver.Opt
+import src/Archive
 import src/CliValues
 import src/Files
 import src/Identity
@@ -213,10 +217,16 @@ fetch_pinned_libfuzzer! = |root, dependency, work| {
 	if actual != expected {
 		return Err(LibfuzzerChecksumMismatch(expected, actual))
 	}
-	Path.create_all!(extract_root)?
-	Script.command("tar").run!(["-xzf", Path.to_os_str(archive), "-C", Path.to_os_str(extract_root)])?
+	if Path.exists!(source)? {
+		Path.delete_all!(source)?
+	}
+	_ = Archive.extract_under!(Archive.Format.Tar, archive, "libfuzzer-sys-${dependency.version}/libfuzzer", source, libfuzzer_archive_limit)?
 	validate_libfuzzer_source!(source)
 }
+
+## The most the libFuzzer crate may hold, decompressed. 0.4.5 holds 572 kB.
+libfuzzer_archive_limit : U64
+libfuzzer_archive_limit = 64 * 1024 * 1024
 
 validate_libfuzzer_source! = |source|
 	if (Path.is_file!(Path.join(source, "FuzzerMain.cpp"))?) Ok(source) else Err(IncompleteLibfuzzerSource(source))

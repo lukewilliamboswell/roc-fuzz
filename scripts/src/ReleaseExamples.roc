@@ -33,7 +33,7 @@ ReleaseExamples := [].{
 		}
 		var $names = []
 		for item in inventory.cases {
-			if !Archive.safe_name(item.path) or !(Script.starts_with(item.path, "examples/") or Script.starts_with(item.path, "tests/targets/")) or !Script.ends_with(item.path, ".roc") or !Archive.safe_name(item.name) or item.name.contains("/") or $names.contains(item.name) {
+			if !Files.safe_name(item.path) or !(Script.starts_with(item.path, "examples/") or Script.starts_with(item.path, "tests/targets/")) or !Script.ends_with(item.path, ".roc") or !Files.safe_name(item.name) or item.name.contains("/") or $names.contains(item.name) {
 				return Err(InvalidTargetInventory)
 			}
 			if item.seed_hex.to_utf8().len() % 2 != 0 or !Integrity.is_hex(item.seed_hex, item.seed_hex.to_utf8().len()) {
@@ -99,7 +99,7 @@ ReleaseExamples := [].{
 				staging = Path.join(temporary, archive_root)
 				for name in names {
 					path = Path.join(root, name)
-					if !Archive.safe_name(name) or Path.type!(path)? != IsFile {
+					if !Files.safe_name(name) or Path.type!(path)? != IsFile {
 						return Err(UnsafeExampleFile(name))
 					}
 					AutomationIO.write!(Path.join(staging, name), Path.read_bytes!(path)?)?
@@ -179,7 +179,7 @@ ReleaseExamples := [].{
 	## stable platform release when `wanted` is empty.
 	resolve! : Str, Str, Str => Try(Selection, _)
 	resolve! = |repository, compiler, wanted| {
-		if !Archive.safe_name(repository) or Str.split_on(repository, "/").len() != 2 or !Version.nightly(compiler) {
+		if !Files.safe_name(repository) or Str.split_on(repository, "/").len() != 2 or !Version.nightly(compiler) {
 			return Err(InvalidReleaseSelection)
 		}
 		releases = releases!(repository, 1, [])?
@@ -209,7 +209,7 @@ ReleaseExamples := [].{
 	## The documentation archive of the latest stable platform release, which
 	## is what a visitor to the site has installed.
 	latest_docs! = |repository| {
-		if !Archive.safe_name(repository) or Str.split_on(repository, "/").len() != 2 {
+		if !Files.safe_name(repository) or Str.split_on(repository, "/").len() != 2 {
 			return Err(InvalidReleaseSelection)
 		}
 		release = ReleaseExamples.select_release(releases!(repository, 1, [])?)?
@@ -217,6 +217,15 @@ ReleaseExamples := [].{
 			[item] => Ok(Published({ version: release.tag_name, archive: asset_identity(item)? }))
 			_ => Ok(NoDocsArchive(release.tag_name))
 		}
+	}
+
+	## Pack a built documentation site into a release's documentation archive:
+	## every file under `site`, named relative to it, in byte order.
+	package_docs! : Path, Path => Try({}, _)
+	package_docs! = |site, output| {
+		prefix = if (Script.ends_with(Path.display(site), "/")) Path.display(site) else "${Path.display(site)}/"
+		names = Files.files!(site)?.map(|path| Str.from_utf8_lossy(Path.display(path).to_utf8().drop_first(prefix.to_utf8().len())))
+		Archive.pack!(Archive.Format.Zip, site, names, output)
 	}
 
 	## Download a release's documentation archive, check it against the digest

@@ -214,6 +214,25 @@ pub fn main(init: std.process.Init) !void {
         };
         try std.testing.expect(found);
     }
+    // Exercise the supervised input bound through a captured finding and its
+    // follow-up commands. Use bytes near both ends to catch partial copies.
+    const large_input = try allocator.alloc(u8, 2 * 1024 * 1024);
+    @memset(large_input, 0x5a);
+    large_input[large_input.len - 1] = 0x7f;
+    try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = try suite.path("large-input.bin"), .data = large_input });
+    const large_finding = try suite.run("large-finding", &.{ "explore", "--runs=1", "--max-input-size=2097152" }, "large-input-crash", 1);
+    try expectString(large_finding, "outcome", "finding");
+    const large_exploration = try field(large_finding, "exploration");
+    try std.testing.expect((try field(large_exploration, "original_input_complete")).bool);
+    try std.testing.expectEqual(@as(i64, @intCast(large_input.len)), (try field(large_exploration, "original_input_length")).integer);
+    try std.testing.expectEqualSlices(u8, large_input, try suite.read("large-finding/original-input.bin"));
+    const large_replay = try suite.run("large-replay", &.{ "replay", "large-finding/original-input.bin" }, "", 0);
+    try expectString(large_replay, "outcome", "passed");
+    try std.testing.expectEqualSlices(u8, large_input, try suite.read("large-replay/example-0.bin"));
+    try suite.command(&.{ "minimize", "large-finding/original-input.bin", "large-minimum.bin", "--time=1" }, "", 0);
+    try std.testing.expectEqualSlices(u8, large_input, try suite.read("large-minimum.bin"));
+    try suite.command(&.{ "explore", "--runs=1", "--max-input-size=2097153" }, "", 2);
+
     const rejection = try suite.run("all-rejected", &.{ "run", "--runs=5" }, "all-rejected", 1);
     try expectString(rejection, "outcome", "inconclusive");
     const rejected_campaign = try field(rejection, "exploration");
