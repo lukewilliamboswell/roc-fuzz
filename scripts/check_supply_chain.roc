@@ -92,6 +92,13 @@ validate_platform_packages! = |root| {
 			_ => return Err(PlatformPackageNotReviewed(url))
 		}
 	}
+	# platform/solver.roc exposes the solver's internals to tests/solve/validate
+	# and repeats the platform's dependency. Hold the copy to the header.
+	for url in Tooling.header_urls(Path.read_utf8!(Path.join(root, "platform/solver.roc"))?) {
+		if !urls.contains(url) {
+			return Err(SolverRootPackageNotInPlatformHeader(url))
+		}
+	}
 	Ok({})
 }
 
