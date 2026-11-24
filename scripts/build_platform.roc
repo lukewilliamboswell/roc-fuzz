@@ -4,7 +4,7 @@ app [main!] {
 	arg_path: "https://github.com/roc-lang/path/releases/download/4.0.0/7YfABZPwJAXtLBY2vm8FqMyGAtNxncCJ65HdNKHFGNnE.tar.zst",
 	cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.28.1/7brgwR8YUqfeGrkdfF1V4GPPN7DnP7ftqub9KcrTEZtr.tar.zst",
 	deflate: "https://github.com/lukewilliamboswell/roc-deflate/releases/download/0.6.0-rc2/CQoQh2ycoMgMbrkSnQJdsEhWjp67fYrT7hWwgQXynEBy.tar.zst",
-	roc: "nightly-2026-11-18-a520eed",
+	roc: "nightly-2026-11-23-b5c77fc",
 	tar: "https://github.com/lukewilliamboswell/roc-tar/releases/download/0.0.3-rc1/8egXmMy7h6TTkRzUmxWygp2GnPe4mBSNGy5Q2ZZYkppu.tar.zst",
 	weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.10.2/7CdYzjBAJmprmnK45oTpmH6BXt76ZASN2Ck5uZQEoWsK.tar.zst",
 	zip: "https://github.com/lukewilliamboswell/roc-zip/releases/download/0.3.0-rc6/CxK9QaRb2VBQn2hKHAmSQ1zFYW2AGNC6XLuDXeHDamZY.tar.zst",
@@ -177,15 +177,16 @@ verify_zig_version! = |build| {
 }
 
 prepare_target! = |build, work, spec, libfuzzer| {
-	match (build.mode, libfuzzer) {
-		(HostOnly, _) => {}
-		(_, Available(source)) => {
-			Script.info!("LIBRARIES", "building libFuzzer and the Zig runtime for ${Project.Target.name(spec.target)}")?
-			build_libraries!(build.root, build.zig, build.ar, source, work, spec)?
-		}
-		(_, NotNeeded) => {
-			Script.info!("LIBRARIES", "restoring the reviewed release libraries for ${Project.Target.name(spec.target)}")?
-			LinkInputs.install!(build.root, spec.target, Path.join(build.root, ".test-cache/native-libraries"))?
+	if build.mode != HostOnly {
+		match libfuzzer {
+			Available(source) => {
+				Script.info!("LIBRARIES", "building libFuzzer and the Zig runtime for ${Project.Target.name(spec.target)}")?
+				build_libraries!(build.root, build.zig, build.ar, source, work, spec)?
+			}
+			NotNeeded => {
+				Script.info!("LIBRARIES", "restoring the reviewed release libraries for ${Project.Target.name(spec.target)}")?
+				LinkInputs.install!(build.root, spec.target, Path.join(build.root, ".test-cache/native-libraries"))?
+			}
 		}
 	}
 	if build.mode != LibrariesOnly {
