@@ -2,6 +2,7 @@ import cli.Env
 import cli.Path
 import Archive
 import AutomationIO
+import Files
 import Integrity
 import Project
 import Script
@@ -134,7 +135,7 @@ LinkInputs := [].{
 			return Err(ReleaseMustIdentifyManifest)
 		}
 		source = lock.source
-		if source.repository != lock.repository or !Integrity.is_hex(source.sha, 40) or !Script.starts_with(source.ref, "refs/heads/") or !Archive.safe_name(source.ref) or source.workflow != "${lock.repository}/.github/workflows/link-inputs.yml" or !Integrity.is_hex(source.input_fingerprint, 64) {
+		if source.repository != lock.repository or !Integrity.is_hex(source.sha, 40) or !Script.starts_with(source.ref, "refs/heads/") or !Files.safe_name(source.ref) or source.workflow != "${lock.repository}/.github/workflows/link-inputs.yml" or !Integrity.is_hex(source.input_fingerprint, 64) {
 			return Err(InvalidLinkInputSource)
 		}
 		for target in Project.all_targets {
@@ -228,7 +229,7 @@ LinkInputs := [].{
 }
 
 valid_repository = |value| match Str.split_on(value, "/") {
-	[owner, name] => Archive.safe_name(owner) and Archive.safe_name(name)
+	[owner, name] => Files.safe_name(owner) and Files.safe_name(name)
 	_ => Bool.False
 }
 

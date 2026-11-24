@@ -23,6 +23,17 @@ Files := [].{
 
 	roc_files! = |directory| Ok(Files.files!(directory)?.keep_if(|path| Path.ext(path).map_ok(Path.display) == Ok("roc")))
 
+	## A portable, relative name: ASCII letters, digits and `+-._/`, with no
+	## leading `/` or `-`, and no part that is empty, `.`, `..` or `.git`.
+	safe_name : Str -> Bool
+	safe_name = |name| {
+		bytes = name.to_utf8()
+		parts = Str.split_on(name, "/")
+		!bytes.is_empty() and bytes.first() != Ok('/') and bytes.first() != Ok('-')
+			and !parts.any(|part| part.is_empty() or part == ".." or part == "." or part == ".git")
+			and bytes.all(|b| (b >= 'a' and b <= 'z') or (b >= 'A' and b <= 'Z') or (b >= '0' and b <= '9') or [43, 45, 46, 47, 95].contains(b))
+	}
+
 	stem = |filename|
 		match Str.split_on(filename, ".") {
 			[first, ..] => first
@@ -66,6 +77,13 @@ order_bytes = |a, b| {
 	}
 	a.len().order_relative_to(b.len())
 }
+
+expect !Files.safe_name("../outside")
+expect !Files.safe_name("/absolute")
+expect !Files.safe_name("-option")
+expect !Files.safe_name("examples/*.roc")
+expect !Files.safe_name("examples//main.roc")
+expect Files.safe_name("examples/stack/main.roc")
 
 expect order_bytes("a".to_utf8(), "b".to_utf8()) == Before
 expect order_bytes("B".to_utf8(), "a".to_utf8()) == Before
