@@ -900,6 +900,24 @@
       "expected_failure": false,
       "skip_seed": false,
       "skip_fuzz": false
+    },
+    {
+      "name": "midpoint",
+      "path": "examples/midpoint.roc",
+      "seed_hex": "0400000001000000",
+      "libfuzzer_seed": 2250,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
+    },
+    {
+      "name": "slidingWindow",
+      "path": "examples/slidingWindow.roc",
+      "seed_hex": "0001020304050607",
+      "libfuzzer_seed": 2251,
+      "expected_failure": false,
+      "skip_seed": false,
+      "skip_fuzz": false
     }
   ],
   "skips": [
