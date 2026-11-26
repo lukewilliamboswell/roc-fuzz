@@ -98,7 +98,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@acc5efdcd929b38e665cd3ae6e694d1c4887f9c7 # acc5efd
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@2b0ffc9c556f465759ca81055bb819c7e15624eb # 2b0ffc9
         with:
           install-nix: 'true'
 
@@ -124,7 +124,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@acc5efdcd929b38e665cd3ae6e694d1c4887f9c7 # acc5efd
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@2b0ffc9c556f465759ca81055bb819c7e15624eb # 2b0ffc9
         with:
           install-nix: 'true'
 
@@ -149,7 +149,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@acc5efdcd929b38e665cd3ae6e694d1c4887f9c7 # acc5efd
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@2b0ffc9c556f465759ca81055bb819c7e15624eb # 2b0ffc9
         with:
           install-nix: 'true'
 
@@ -271,7 +271,7 @@ jobs:
       # from a locked supplier file, so there is no supplier SBOM to fetch.
       - id: sbom
         name: Bind the bundle's SBOM sidecars
-        uses: lukewilliamboswell/roc-automation/actions/sbom-sidecars@acc5efdcd929b38e665cd3ae6e694d1c4887f9c7 # acc5efd
+        uses: lukewilliamboswell/roc-automation/actions/sbom-sidecars@2b0ffc9c556f465759ca81055bb819c7e15624eb # 2b0ffc9
         with:
           files: ${{ steps.bundle.outputs.file }}
           version: ${{ needs.validate.outputs.release_version }}
@@ -329,7 +329,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@acc5efdcd929b38e665cd3ae6e694d1c4887f9c7 # acc5efd
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@2b0ffc9c556f465759ca81055bb819c7e15624eb # 2b0ffc9
         with:
           install-nix: 'true'
 
@@ -396,7 +396,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix and the verified blueprint binary
-        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@acc5efdcd929b38e665cd3ae6e694d1c4887f9c7 # acc5efd
+        uses: lukewilliamboswell/roc-automation/actions/setup-blueprint@2b0ffc9c556f465759ca81055bb819c7e15624eb # 2b0ffc9
         with:
           install-nix: 'true'
 
