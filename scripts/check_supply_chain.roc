@@ -139,9 +139,9 @@ validate_actions! = |root| {
 ## a contributor and every runner build the host and its linker inputs with the
 ## compiler the recipe was written for.
 validate_zig! = |root| {
-	blueprint = Path.read_utf8!(Path.join(root, "Blueprint.roc"))?
-	wanted = "zigpkgs.\\\"${NativeDeps.current.zig_version}\\\""
-	if (blueprint.contains(wanted)) Ok({}) else Err(BlueprintMustSupplyRecipeZig(NativeDeps.current.zig_version))
+	installed = Script.trim(Str.from_utf8_lossy(Script.command("zig").capture!(["version"], root, [])?))
+	expected = NativeDeps.current.zig_version
+	if (installed == expected) Ok({}) else Err(UnexpectedZigVersion({ expected, installed }))
 }
 
 ## The producer must run whenever the recipe is touched, so its `paths` filter

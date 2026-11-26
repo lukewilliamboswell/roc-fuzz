@@ -296,8 +296,8 @@ fn hostedScopeFinish(id: u64) callconv(.c) abi.FuzzScope_finish {
     // A completed child region is an event in its parent, as a mark is.
     if (goal_tracker.count != 0 and engine.depth != 0) goal_tracker.event(engine.regionName(id));
     var result: abi.FuzzScope_finish = undefined;
-    inline for (@typeInfo(observation.Stats).@"struct".fields) |field| {
-        @field(result, field.name) = @field(stats, field.name);
+    inline for (@typeInfo(observation.Stats).@"struct".field_names) |name| {
+        @field(result, name) = @field(stats, name);
     }
     return result;
 }
@@ -644,7 +644,7 @@ fn pushArg(count: *usize, value: [*:0]u8) void {
 }
 
 fn pushTranslatedArg(count: *usize, buffer: []u8, native_prefix: []const u8, value: []const u8) void {
-    const translated = std.fmt.bufPrintZ(buffer, "{s}{s}", .{ native_prefix, value }) catch {
+    const translated = std.mem.printSentinel(buffer, "{s}{s}", .{ native_prefix, value }, 0) catch {
         writeErr("command-line option is too long\n");
         std.c._exit(2);
     };
@@ -658,7 +658,7 @@ fn pushCommonFuzzArgs(count: *usize, directory: []const u8) void {
         std.c._exit(2);
     };
     const separator = if (std.mem.endsWith(u8, directory, "/")) "" else "/";
-    const artifact_prefix = std.fmt.bufPrintZ(&artifact_prefix_arg, "-artifact_prefix={s}{s}", .{ directory, separator }) catch {
+    const artifact_prefix = std.mem.printSentinel(&artifact_prefix_arg, "-artifact_prefix={s}{s}", .{ directory, separator }, 0) catch {
         writeErr("artifact directory path is too long\n");
         std.c._exit(2);
     };

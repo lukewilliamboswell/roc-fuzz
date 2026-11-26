@@ -723,7 +723,7 @@ test "names are owned and depth or label limits fail explicitly" {
     label[0] = 'n';
     _ = try engine.finish(scope);
     try std.testing.expectEqualStrings("old", engine.regions[0].name.slice());
-    const oversized = [_]u8{'x'} ** (max_name_bytes + 1);
+    const oversized: [max_name_bytes + 1]u8 = @splat('x');
     try std.testing.expectError(error.NameTooLong, engine.start(&oversized));
     engine.reset(0, 0);
     for (0..max_depth) |_| _ = try engine.start("nested");
@@ -776,7 +776,7 @@ test "invalid trace event context or names leave allocator validity separate" {
     try std.testing.expect(!engine.trace_rules_valid);
     engine.reset(0, 0);
     const scope = try engine.start("names");
-    const oversized = [_]u8{'x'} ** (max_name_bytes + 1);
+    const oversized: [max_name_bytes + 1]u8 = @splat('x');
     try std.testing.expectError(error.NameTooLong, engine.forbidden(&oversized));
     try std.testing.expect(engine.metric_valid);
     try std.testing.expect(!engine.trace_rules_valid);

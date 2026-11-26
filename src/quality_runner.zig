@@ -210,7 +210,7 @@ fn readFile(allocator: Allocator, path: []const u8, limit: usize) ![]u8 {
     if (stat.size > limit) return error.FileTooBig;
     const bytes = try allocator.alloc(u8, @intCast(stat.size));
     errdefer allocator.free(bytes);
-    const path_z = try allocator.dupeZ(u8, path);
+    const path_z = try allocator.dupeSentinel(u8, path, 0);
     defer allocator.free(path_z);
     const file = std.c.fopen(path_z.ptr, "rb") orelse return error.CannotReadFile;
     defer _ = std.c.fclose(file);
@@ -222,7 +222,7 @@ fn readFile(allocator: Allocator, path: []const u8, limit: usize) ![]u8 {
 }
 
 fn writeFile(allocator: Allocator, path: []const u8, bytes: []const u8) !void {
-    const path_z = try allocator.dupeZ(u8, path);
+    const path_z = try allocator.dupeSentinel(u8, path, 0);
     defer allocator.free(path_z);
     const file = std.c.fopen(path_z.ptr, "wb") orelse return error.CannotCreateFile;
     var open = true;
@@ -369,7 +369,7 @@ pub fn replaceEntry(allocator: Allocator, prior: ?Baseline, target: []const u8, 
 }
 
 fn mapHealth(allocator: Allocator, path: []const u8, create: bool) !*Health {
-    const path_z = try allocator.dupeZ(u8, path);
+    const path_z = try allocator.dupeSentinel(u8, path, 0);
     defer allocator.free(path_z);
     const file = std.c.fopen(path_z.ptr, if (create) "w+b" else "r+b") orelse return error.CannotOpenSharedHealth;
     defer _ = std.c.fclose(file);
@@ -442,7 +442,7 @@ fn logSize(path: []const u8) !u64 {
 fn classifyFinding(allocator: Allocator, path: []const u8, span: LogSpan, termination: ChildResult) !?[]const u8 {
     if (termination.timed_out) return "timeout";
     if (termination.passed()) return null;
-    const path_z = try allocator.dupeZ(u8, path);
+    const path_z = try allocator.dupeSentinel(u8, path, 0);
     defer allocator.free(path_z);
     const file = std.c.fopen(path_z.ptr, "rb") orelse return error.CannotReadLog;
     defer _ = std.c.fclose(file);
@@ -497,7 +497,7 @@ pub fn setTargetArgument(argument: []const u8) void {
 }
 
 fn runChild(allocator: Allocator, argv: []const []const u8, log_path: []const u8, deadline_ms: ?u64) !ChildResult {
-    const log_z = try allocator.dupeZ(u8, log_path);
+    const log_z = try allocator.dupeSentinel(u8, log_path, 0);
     defer allocator.free(log_z);
     const log = std.c.fopen(log_z.ptr, "ab") orelse return error.CannotCreateLog;
     defer _ = std.c.fclose(log);
@@ -525,7 +525,7 @@ fn runChild(allocator: Allocator, argv: []const []const u8, log_path: []const u8
             try stopProcessGroup(process_group);
             const bits: u32 = @bitCast(status);
             if (std.c.W.IFEXITED(bits)) return .{ .exit_code = std.c.W.EXITSTATUS(bits) };
-            if (std.c.W.IFSIGNALED(bits)) return .{ .signal = @intFromEnum(std.c.W.TERMSIG(bits)) };
+            if (std.c.W.IFSIGNALED(bits)) return .{ .signal = @backingInt(std.c.W.TERMSIG(bits)) };
             return .{ .signal = 0 };
         }
         if (pid < 0) return error.CannotWaitForChild;
@@ -544,7 +544,7 @@ fn stopProcessGroup(process_group: std.c.pid_t) !void {
     _ = std.c.kill(-process_group, .KILL);
     const started = monotonicMilliseconds();
     while (true) {
-        const alive = std.c.kill(-process_group, @enumFromInt(0));
+        const alive = std.c.kill(-process_group, @fromBackingInt(@intCast(0)));
         if (alive != 0 and std.posix.errno(alive) == .SRCH) return;
         if (monotonicMilliseconds() - started >= 5000) return error.WorkerProcessGroupDidNotTerminate;
         const pause = std.c.timespec{ .sec = 0, .nsec = 10_000_000 };
@@ -1460,8 +1460,8 @@ fn canonicalPath(allocator: Allocator, path: []const u8) ![]const u8 {
 
 fn sameFile(allocator: Allocator, input: []const u8, output: []const u8) !bool {
     if (std.mem.eql(u8, try canonicalPath(allocator, input), try canonicalPath(allocator, output))) return true;
-    const input_z = try allocator.dupeZ(u8, input);
-    const output_z = try allocator.dupeZ(u8, output);
+    const input_z = try allocator.dupeSentinel(u8, input, 0);
+    const output_z = try allocator.dupeSentinel(u8, output, 0);
     if (builtin.os.tag == .linux) {
         const linux = std.os.linux;
         var first = std.mem.zeroes(linux.Statx);
@@ -1504,7 +1504,7 @@ fn requireEmptyDirectory(path: []const u8) !void {
 }
 
 fn printLog(path: []const u8, allocator: Allocator) !void {
-    const path_z = try allocator.dupeZ(u8, path);
+    const path_z = try allocator.dupeSentinel(u8, path, 0);
     const file = std.c.fopen(path_z.ptr, "rb") orelse return error.CannotReadLog;
     defer _ = std.c.fclose(file);
     var buffer: [64 * 1024]u8 = undefined;
