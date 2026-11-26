@@ -11,18 +11,19 @@
 # meant to be the latest nightly, so nothing here provides a bare `roc`.
 app [config] { pf: platform "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.15.0-rc.1/FwWWY6PczB7QsUoWKgaLTuBGGajLjfA4MhaLD36sJxrN.tar.zst" }
 
+import pf.Config
 import pf.Recipes
+import pf.System
 
 config = [
 	Name("roc-fuzz"),
 	Systems(["x86_64-linux", "aarch64-linux", "aarch64-darwin"]),
 	Packages("nix", From(NixPackages("github:NixOS/nixpkgs/nixos-unstable"))),
-	Input("zig", "github:mitchellh/zig-overlay"),
 	Environment(
 		"dev",
 		[
-			Overlays(["zig"]),
 			Programs([
+				Fetch("zig", zig_archive),
 				Fetch("roc-stable", Recipes.roc_nightly("nightly-2026-11-25-d5a4f1e")),
 				# The shared documentation renderer, as actions/build-docs runs it.
 				Fetch("roc-docs", Recipes.file("https://github.com/lukewilliamboswell/roc-automation/releases/download/tools-0.12.0/roc-docs-{system}")),
@@ -40,10 +41,7 @@ config = [
 				"https://github.com/niclas-ahden/roc-crc32/releases/download/2.0.1/GVgp4MNmCBjdtJg8j2gBdsrdsKKyx4huzRz7ZtbRaYvJ.tar.zst",
 				"https://github.com/lukewilliamboswell/roc-deflate/releases/download/0.6.0-rc2/CQoQh2ycoMgMbrkSnQJdsEhWjp67fYrT7hWwgQXynEBy.tar.zst",
 			]),
-			# Programs the scripts and workflows start. Zig is the exact
-			# release that builds the host and its linker inputs, taken from
-			# zig-overlay; scripts/native-deps.json names the same version.
-			Tools(["nix#coreutils", "nix#gh", "nix#git", "nix#jq", "nix#zigpkgs.\"0.16.0\""]),
+			Tools(["nix#coreutils", "nix#gh", "nix#git", "nix#jq"]),
 			Expect(["sh"]),
 		],
 	),
@@ -80,3 +78,16 @@ config = [
 	# tree's under unreleased/. Run `docs` first.
 	Task("site", [Use("dev"), Run(["scripts/build_site.roc"])]),
 ]
+
+zig_archive : System -> Config.Download
+zig_archive = |system| {
+	machine = match system {
+		"x86_64-linux" => "x86_64-linux"
+		"aarch64-linux" => "aarch64-linux"
+		"aarch64-darwin" => "aarch64-macos"
+		_ => return Unavailable
+	}
+	version = "0.17.1"
+	name = "zig-${machine}-${version}"
+	Archive("https://ziglang.org/download/${version}/${name}.tar.xz", TarXz, "${name}/zig")
+}

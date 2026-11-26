@@ -96,7 +96,7 @@ test "an inventory keeps declaration order and refuses invalid names" {
     try std.testing.expectEqual(@as(u16, 1), try tracker.declare("second"));
     try std.testing.expectError(error.DuplicateGoal, tracker.declare("first"));
     try std.testing.expectError(error.EmptyGoalName, tracker.declare(""));
-    const longest = [_]u8{'x'} ** max_name_bytes;
+    const longest: [max_name_bytes]u8 = @splat('x');
     try std.testing.expectEqual(@as(u16, 2), try tracker.declare(&longest));
     try std.testing.expectError(error.GoalNameTooLong, tracker.declare(&(longest ++ [_]u8{'x'})));
     try std.testing.expectEqual(@as(usize, 3), tracker.count);
@@ -143,7 +143,7 @@ test "a refused inventory names the goal at fault" {
     try std.testing.expectEqualStrings("roc-fuzz: invalid goal inventory: the goal \"left\" is declared more than once\n", describe(&buffer, error.DuplicateGoal, "left"));
     try std.testing.expectEqualStrings("roc-fuzz: invalid goal inventory: a goal name is empty\n", describe(&buffer, error.EmptyGoalName, ""));
     try std.testing.expectEqualStrings("roc-fuzz: invalid goal inventory: a target declares at most 1024 goals\n", describe(&buffer, error.GoalCapacity, "goal 1024"));
-    const long = [_]u8{'x'} ** 200;
+    const long: [200]u8 = @splat('x');
     const message = describe(&buffer, error.GoalNameTooLong, &long);
     try std.testing.expect(std.mem.indexOf(u8, message, "xxx...\" is 200 bytes; a goal name is at most 128\n") != null);
     try std.testing.expect(message.len < 200);

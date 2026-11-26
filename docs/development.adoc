@@ -49,10 +49,10 @@ a contributor's machine and on every CI runner. To work on roc-fuzz you need:
   or the release's prebuilt binary checked against its published SHA-256;
 * a current Roc nightly installed as `roc`.
 
-The environment supplies the Zig release that `Blueprint.roc` names, from
-https://github.com/mitchellh/zig-overlay[zig-overlay], to build the host and its
-linker inputs and to format the host bindings. `scripts/native-deps.json` names
-the same release, and the supply-chain check holds the two together.
+Blueprint fetches Zig from the official release archive in `Blueprint.roc`
+and verifies it against `Blueprint.lock`. Zig builds the host and linker
+inputs and formats the host bindings. The supply-chain check compares the
+installed version with the native recipe in `scripts/native-deps.json`.
 
 [source,sh]
 ----
