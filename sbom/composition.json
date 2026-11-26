@@ -32,41 +32,41 @@
     {
       "id": "zig-runtime",
       "name": "Zig runtime and compiler runtime",
-      "version": "0.16.0",
+      "version": "0.17.1",
       "producer": "Organization: Zig Software Foundation",
       "license": "MIT",
       "license_url": "",
-      "identity": "pkg:generic/zig-runtime@0.16.0?download_url=https://github.com/ziglang/zig/tree/0.16.0/lib",
-      "download": "https://github.com/ziglang/zig/tree/0.16.0/lib",
-      "sha256": "",
+      "identity": "pkg:generic/zig-runtime@0.17.1?download_url=https://ziglang.org/download/0.17.1/zig-0.17.1.tar.xz",
+      "download": "https://ziglang.org/download/0.17.1/zig-0.17.1.tar.xz",
+      "sha256": "1e89bf06610b769a8c77676c6c8d54b093a0db60f4891f2f91014829012f0e24",
       "modified": "",
       "target": "",
       "origin": "reviewed"
     },
     {
       "id": "musl",
-      "name": "musl libc as bundled by Zig 0.16.0",
-      "version": "0.16.0",
+      "name": "musl libc as bundled by Zig 0.17.1",
+      "version": "0.17.1",
       "producer": "Organization: musl libc contributors",
       "license": "MIT",
       "license_url": "",
-      "identity": "pkg:generic/zig-musl@0.16.0?download_url=https://github.com/ziglang/zig/tree/0.16.0/lib/libc/musl",
-      "download": "https://github.com/ziglang/zig/tree/0.16.0/lib/libc/musl",
-      "sha256": "",
+      "identity": "pkg:generic/zig-musl@0.17.1?download_url=https://ziglang.org/download/0.17.1/zig-0.17.1.tar.xz",
+      "download": "https://ziglang.org/download/0.17.1/zig-0.17.1.tar.xz",
+      "sha256": "1e89bf06610b769a8c77676c6c8d54b093a0db60f4891f2f91014829012f0e24",
       "modified": "",
       "target": "",
       "origin": "reviewed"
     },
     {
       "id": "llvm-runtimes",
-      "name": "LLVM libc++, libc++abi, libunwind and compiler-rt as bundled by Zig 0.16.0",
-      "version": "0.16.0",
+      "name": "LLVM libc++, libc++abi, libunwind and compiler-rt as bundled by Zig 0.17.1",
+      "version": "0.17.1",
       "producer": "Organization: LLVM Project",
       "license": "Apache-2.0 WITH LLVM-exception",
       "license_url": "",
-      "identity": "pkg:generic/zig-llvm-runtimes@0.16.0?download_url=https://github.com/ziglang/zig/tree/0.16.0/lib",
-      "download": "https://github.com/ziglang/zig/tree/0.16.0/lib",
-      "sha256": "",
+      "identity": "pkg:generic/zig-llvm-runtimes@0.17.1?download_url=https://ziglang.org/download/0.17.1/zig-0.17.1.tar.xz",
+      "download": "https://ziglang.org/download/0.17.1/zig-0.17.1.tar.xz",
+      "sha256": "1e89bf06610b769a8c77676c6c8d54b093a0db60f4891f2f91014829012f0e24",
       "modified": "",
       "target": "",
       "origin": "reviewed"
@@ -74,12 +74,12 @@
     {
       "id": "zig",
       "name": "Zig compiler",
-      "version": "0.16.0",
+      "version": "0.17.1",
       "producer": "Organization: Zig Software Foundation",
       "license": "MIT",
       "license_url": "",
-      "identity": "pkg:generic/zig@0.16.0",
-      "download": "https://ziglang.org/download/0.16.0/",
+      "identity": "pkg:generic/zig@0.17.1",
+      "download": "https://ziglang.org/download/0.17.1/",
       "sha256": "",
       "modified": "",
       "target": "",
@@ -187,14 +187,19 @@
       "reason": "Pinned compiler that runs repository scripts; it does not build the bundle"
     },
     {
-      "input": "source:zig",
+      "input": "program:zig:x86_64-linux",
       "component": "zig",
-      "reason": "Overlay that provides the Zig release that compiles the host and libraries"
+      "reason": "Pinned Zig toolchain for building the host and linker libraries"
     },
     {
-      "input": "tool:nix#zigpkgs.\"0.16.0\"",
+      "input": "program:zig:aarch64-linux",
       "component": "zig",
-      "reason": "Compiles the host and every library in the bundle"
+      "reason": "Pinned Zig toolchain for building the host and linker libraries"
+    },
+    {
+      "input": "program:zig:aarch64-darwin",
+      "component": "zig",
+      "reason": "Pinned Zig toolchain for building the host and linker libraries"
     },
     {
       "input": "tool:nix#coreutils",
