@@ -9,7 +9,7 @@
 # release named below; it runs the scripts under scripts/. The platform and its
 # targets are checked, built and run with whatever `roc` is on PATH, which is
 # meant to be the latest nightly, so nothing here provides a bare `roc`.
-app [config] { pf: platform "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.8.0/FbJymjYdCxx9vqMcau7r4tQfeAbnVGqqJoYrLGqPCqKu.tar.zst" }
+app [config] { pf: platform "https://github.com/lukewilliamboswell/roc-blueprint/releases/download/0.15.0-rc.1/FwWWY6PczB7QsUoWKgaLTuBGGajLjfA4MhaLD36sJxrN.tar.zst" }
 
 import pf.Config
 import pf.Recipes
@@ -24,7 +24,7 @@ config = [
 		[
 			Programs([
 				Fetch("zig", zig_archive),
-				Fetch("roc-stable", Recipes.roc_nightly("nightly-2026-11-18-a520eed")),
+				Fetch("roc-stable", Recipes.roc_nightly("nightly-2026-11-25-d5a4f1e")),
 				# The shared documentation renderer, as actions/build-docs runs it.
 				Fetch("roc-docs", Recipes.file("https://github.com/lukewilliamboswell/roc-automation/releases/download/tools-0.12.0/roc-docs-{system}")),
 			]),
