@@ -289,3 +289,91 @@ expect Model.walk(halting, [7, 7, 7, 7]) == { trace: [Up, Up], state: 2, reached
 expect Model.walk({ ..halting, rules: [Model.at_rest("never stops", |_| Bool.False)] }, [7, 7, 7]).verdict == Deadlock({ rule: "never stops" })
 expect Model.step_from(halting, 2) == Preserved({ actions: 0, reached: ["reaches two"] })
 expect Model.check(halting, { depth: 10 }) == { verdict: Holds(Exhausted), states: 3, depth: 2 }
+
+# ---------------------------------------------------------------------------
+# Possibility rules
+# ---------------------------------------------------------------------------
+
+# A caller that is left cancelling when its stop is lost, beside a link that
+# keeps going up and down. The machine never rests, so `at_rest` says nothing,
+# and a goal is met on another path. `always_possible` finds the state the
+# caller cannot leave.
+Caller : { caller : [Active, Cancelling, Done], wire : [Idle, Stop], link : [Up, Down] }
+
+caller : Bool -> Model.Machine(Caller, [Cancel, Deliver, Lose, Retry, Flip])
+caller = |retries| {
+	init: { caller: Active, wire: Idle, link: Up },
+	actions: |world| {
+		cancel = if (world.caller == Active) [Cancel] else []
+		wire = if (world.wire == Stop) (if (world.link == Up) [Deliver, Lose] else [Lose]) else []
+		retry = if (retries and world.caller == Cancelling and world.wire == Idle) [Retry] else []
+		cancel.concat(wire).concat(retry).concat([Flip])
+	},
+	step: |world, action| match action {
+		Cancel => { ..world, caller: Cancelling, wire: Stop }
+		Deliver => { ..world, caller: Done, wire: Idle }
+		Lose => { ..world, wire: Idle }
+		Retry => { ..world, wire: Stop }
+		Flip => { ..world, link: if (world.link == Up) Down else Up }
+	},
+	rules: [
+		Model.sometimes("a caller finishes", |world| world.caller == Done),
+		Model.at_rest("only a finished caller rests", |world| world.caller == Done),
+		Model.always_possible("the caller can always still finish", |world| world.caller == Done),
+	],
+}
+
+expect Model.check(caller(Bool.False), { depth: 20 }) == { verdict: Stranded({ rule: "the caller can always still finish", trace: [Cancel, Lose] }), states: 8, depth: 3 }
+expect Model.check(caller(Bool.True), { depth: 20 }) == { verdict: Holds(Exhausted), states: 8, depth: 3 }
+
+# Without the possibility rule the same bug passes.
+expect {
+	unchecked = { ..caller(Bool.False), rules: (caller(Bool.False)).rules.drop_last(1) }
+	Model.check(unchecked, { depth: 20 }).verdict == Holds(Exhausted)
+}
+
+# A path cannot know what is possible from where it ends, so the engines on
+# one path leave the rule alone.
+expect Model.replay(caller(Bool.False), [Cancel, Lose, Flip]).verdict == Completed
+
+expect Model.explain(Model.explore(caller(Bool.False), { depth: 20, key: |world| world })) == "Stranded: a trace of length 2 leads to a state from which \"the caller can always still finish\" can never be met, and no shorter trace leads to such a state. Every state reachable from there was visited, and no `always` rule fails (states visited: 8, steps checked: 13)."
+
+# A stranded state is final even when the search is bounded, as long as all
+# that lies beyond it was visited. Here a counter grows without end until the
+# machine jams, and after that only a flag flips.
+Jam : { count : U64, jammed : Bool, flag : Bool }
+
+jam : Model.Machine(Jam, [Count, Jam, Flip])
+jam = {
+	init: { count: 0, jammed: Bool.False, flag: Bool.False },
+	actions: |state| if (state.jammed) [Flip] else [Count, Jam],
+	step: |state, action| match action {
+		Count => { ..state, count: state.count + 1 }
+		Jam => { ..state, jammed: Bool.True }
+		Flip => { ..state, flag: !state.flag }
+	},
+	rules: [Model.always_possible("the count can always reach three", |state| state.count >= 3)],
+}
+
+expect Model.check(jam, { depth: 6 }) == { verdict: Stranded({ rule: "the count can always reach three", trace: [Jam] }), states: 18, depth: 6 }
+
+# A state beyond the depth limit counts as one that can still get there, so a
+# bounded search never guesses. This counter can never come back to zero,
+# but every path from 1 leaves the search first.
+upward : Model.Machine(U64, [Up])
+upward = {
+	init: 0,
+	actions: |_| [Up],
+	step: |n, _| n + 1,
+	rules: [Model.always_possible("zero is always within reach", |n| n == 0)],
+}
+
+expect Model.check(upward, { depth: 5 }) == { verdict: Holds(Bounded), states: 6, depth: 5 }
+
+# With `blame: EveryRule` every possibility rule some state strands is named,
+# in the order the rules are written. The verdict names the first.
+expect {
+	both = { ..caller(Bool.False), rules: (caller(Bool.False)).rules.append(Model.always_possible("the caller can always be active again", |world| world.caller == Active)) }
+	report = Model.explore(both, { depth: 20, key: |world| world, blame: EveryRule })
+	report.verdict == Stranded({ rule: "the caller can always still finish", trace: [Cancel, Lose] }) and report.broken == ["the caller can always still finish", "the caller can always be active again"]
+}

@@ -54,7 +54,9 @@ so the state needs no field to remember what just happened. A `sometimes` or
 `sometimes_step` rule is a goal: some state or step must satisfy it. Goals
 guard against a model that passes because it never reaches the interesting
 cases. An `at_rest` rule says where the machine may stop, and a state where
-nothing can happen, or nothing changes, breaks it as a deadlock.
+nothing can happen, or nothing changes, breaks it as a deadlock. An
+`always_possible` rule says that from every state some state satisfying it can
+still be reached; see <<can-always-recover>>.
 
 `actions` lists only what is possible in a state, and it decides the size of
 the world a search covers. Here it is at most three items of two kinds, which
@@ -80,6 +82,8 @@ The verdict says what was shown:
   sequence of actions that breaks one.
 * `Deadlock({ rule, trace })`: `trace` leads to a resting state that an
   `at_rest` rule forbids.
+* `Stranded({ rule, trace })`: `trace` leads to a state from which an
+  `always_possible` rule can never be met.
 * `Unreached({ rule, extent })`: no rule failed, and this goal was never
   reached; with `Exhausted` it never can be.
 
@@ -115,6 +119,36 @@ removes a missing key from a populated index. The search reaches that goal in
 two actions, `[Insert(0, 10), Remove(1)]`. `SeededIndex.roc` changes one
 line of the arm that handles that case; the module's own tests still pass on
 it, and the search fails with that two-action trace.
+
+[#can-always-recover]
+=== Check that the machine can always recover
+
+A goal is met once one run gets there, and an `at_rest` rule only sees a
+machine that has stopped. Neither notices a state the machine can never leave
+while something else keeps moving. Here a caller cancels by sending a stop,
+the stop can be lost, and nothing sends it again; a link beside it keeps
+going up and down, so the machine never rests:
+
+[source,roc]
+----
+rules: [
+    Model.sometimes("a caller finishes", |world| world.caller == Done),
+    Model.at_rest("only a finished caller rests", |world| world.caller == Done),
+    Model.always_possible("the caller can always still finish", |world| world.caller == Done),
+]
+----
+
+Without the last rule the search says `Holds(Exhausted)`: a caller finishes
+on another path, and no state is at rest. With it the search answers
+`Stranded({ rule: "the caller can always still finish", trace: [Cancel, Lose] })`.
+
+The search records which state leads to which, and afterwards works back
+from the states that satisfy the rule. A state the depth limit kept it from
+stepping from counts as one that can still get there, so `Stranded` is final
+even when the search is `Bounded`; a bounded search can miss a stranded
+state, but never reports one that is not. Machines without such a rule pay
+nothing for it. The engines that follow one path, `walk`, `replay`, `apply`
+and `step_from`, leave the rule alone.
 
 == Turn the model into a fuzz target
 
@@ -221,6 +255,8 @@ count says how often that happened.
   any search key faithful to everything `step` and the rules read.
 * Goals grade a campaign; they do not steer it. Nothing directs exploration
   toward a goal no input has reached.
+* Only a search checks an `always_possible` rule, and it then also keeps the
+  steps out of every state in memory. A fuzz target does not check the rule.
 * Roc code cannot catch a crash. A crash inside the code under test ends a
   search, and `roc test` reports the failed `expect` with the crash message
   and no trace. Under a fuzzer, the runner saves the input; a path target's

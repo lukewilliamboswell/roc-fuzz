@@ -103,12 +103,14 @@ Model := [].{
 	## want to read when it fails.
 	##
 	## A rule is about a state ([`always`](#Model.always), [`sometimes`](#Model.sometimes),
-	## [`at_rest`](#Model.at_rest)) or about one step ([`always_step`](#Model.always_step),
-	## [`sometimes_step`](#Model.sometimes_step)). Every engine checks both kinds.
+	## [`at_rest`](#Model.at_rest), [`always_possible`](#Model.always_possible)) or about one step
+	## ([`always_step`](#Model.always_step), [`sometimes_step`](#Model.sometimes_step)). Every
+	## engine checks both kinds, except that only a search can check `always_possible`.
 	Rule(state, action) := [
 		Always(Str, state -> Bool),
 		Sometimes(Str, state -> Bool),
 		AtRest(Str, state -> Bool),
+		AlwaysPossible(Str, state -> Bool),
 		AlwaysStep(Str, Transition(state, action) -> Bool),
 		SometimesStep(Str, Transition(state, action) -> Bool),
 	]
@@ -144,6 +146,26 @@ Model := [].{
 	## ```
 	at_rest : Str, (state -> Bool) -> Rule(state, action)
 	at_rest = |name, allowed| AtRest(name, allowed)
+
+	## A rule that from every visited state, some state satisfying `target` can
+	## still be reached. A state from which none can is stranded, and a search
+	## reports `Stranded` with a shortest trace to it.
+	##
+	## A [`sometimes`](#Model.sometimes) goal is met once one run gets there. An
+	## [`at_rest`](#Model.at_rest) rule only sees a machine that has stopped. This
+	## rule also sees one that is stuck while something else keeps moving, such
+	## as a caller that can never finish beside a link that goes up and down.
+	##
+	## A state the depth limit kept the search from stepping from counts as one
+	## that can still get there, so `Stranded` is final even when the search is
+	## `Bounded`. Only a search checks this rule; the engines that follow one
+	## path leave it alone.
+	##
+	## ```roc
+	## Model.always_possible("the lift can always get back down", |floor| floor == 0)
+	## ```
+	always_possible : Str, (state -> Bool) -> Rule(state, action)
+	always_possible = |name, target| AlwaysPossible(name, target)
 
 	## A rule that must hold of every step an engine takes. It is handed a
 	## [`Transition`](#Model.Transition).
@@ -220,6 +242,10 @@ Model := [].{
 	##   `always` rule. The search stopped there.
 	## - `Deadlock`: `trace` leads to a resting state its `at_rest` rule
 	##   forbids. The search stopped there.
+	## - `Stranded`: no `always` rule failed, and `trace` is a shortest list of
+	##   actions to a state from which this `always_possible` rule's target can
+	##   never be reached. Every state reachable from there was visited, so
+	##   this holds whatever the extent.
 	## - `Unreached`: no `always` rule failed, and no state visited or step
 	##   taken satisfied this `sometimes` rule. When the extent is `Exhausted`
 	##   none ever will.
@@ -227,6 +253,7 @@ Model := [].{
 		Holds(Extent),
 		Violated({ rule : Str, trace : List(action) }),
 		Deadlock({ rule : Str, trace : List(action) }),
+		Stranded({ rule : Str, trace : List(action) }),
 		Unreached({ rule : Str, extent : Extent }),
 	]
 
@@ -295,8 +322,9 @@ Model := [].{
 	##   farthest of them is from `init` (for `Violated`, the length of the
 	##   trace). `steps`: how many steps were taken and checked.
 	## - `broken`: the `always` or `at_rest` rules the offending state and step
-	##   break, state rules first; see `blame` in [`Options`](#Model.Options). Empty unless
-	##   the verdict is `Violated` or `Deadlock`.
+	##   break, state rules first, or for `Stranded` the `always_possible` rules
+	##   some state strands; see `blame` in [`Options`](#Model.Options). Empty unless
+	##   the verdict is `Violated`, `Deadlock` or `Stranded`.
 	## - `reached`: every goal that was met, in the order the rules are
 	##   written, each with a shortest trace that meets it.
 	## - `unreached`: every goal that was not met, not only the first. After
@@ -339,6 +367,9 @@ Model := [].{
 			Fine => {}
 		}
 		rests = !rules.rest.is_empty()
+		tracking = !rules.possible.is_empty()
+		var $index = if (tracking) Dict.empty().insert(key(init), 0) else Dict.empty()
+		var $graph = if (tracking) [{ trace: [], next: [], stepped: Bool.False, meets: rules.possible.map(|wanted| (wanted.test)(init)) }] else []
 		var $found = rules.goals.keep_if(|wanted| (wanted.test)(init)).map(|met| { id: met.id, rule: met.name, trace: [] })
 		var $state_goals = rules.goals.drop_if(|wanted| (wanted.test)(init))
 		var $step_goals = rules.step_goals
@@ -352,6 +383,7 @@ Model := [].{
 			var $next = []
 			for node in $frontier {
 				var $moved = Bool.False
+				var $out = []
 				for action in (machine.actions)(node.state) {
 					after = (machine.step)(node.state, action)
 					$steps = $steps + 1
@@ -395,10 +427,28 @@ Model := [].{
 						$found = $found.concat($step_goals.keep_if(|wanted| (wanted.test)(step)).map(|met| { id: met.id, rule: met.name, trace }))
 						$step_goals = $step_goals.drop_if(|wanted| (wanted.test)(step))
 					}
+					if tracking {
+						if new {
+							$out = $out.append($graph.len())
+							$index = $index.insert(after_key, $graph.len())
+							$graph = $graph.append({ trace: node.trace.append(action), next: [], stepped: Bool.False, meets: rules.possible.map(|wanted| (wanted.test)(after)) })
+						} else {
+							$out = $out.append($index.get(after_key) ?? 0)
+						}
+					}
 					if new {
 						$seen = $seen.insert(after_key)
 						$next = $next.append({ state: after, key: after_key, trace: node.trace.append(action) })
 						$deepest = $level + 1
+					}
+				}
+				if tracking {
+					at = $index.get(node.key) ?? 0
+					match $graph.get(at) {
+						Ok(stepped_from) => {
+							$graph = $graph.set(at, { ..stepped_from, next: $out, stepped: Bool.True }) ?? $graph
+						}
+						Err(_) => {}
 					}
 				}
 				if rests and !$moved {
@@ -431,11 +481,20 @@ Model := [].{
 		}
 		extent = if ($frontier.is_empty()) Exhausted else Bounded
 		unreached = waiting($state_goals, $step_goals)
-		verdict = match unreached.first() {
-			Ok(rule) => Unreached({ rule, extent })
-			Err(_) => Holds(extent)
+		strands = if (tracking) stranded($graph, rules.possible) else []
+		verdict = match strands.first() {
+			Ok(strand) => Stranded(strand)
+			Err(_) => match unreached.first() {
+				Ok(rule) => Unreached({ rule, extent })
+				Err(_) => Holds(extent)
+			}
 		}
-		{ verdict, states: $seen.len(), depth: $deepest, steps: $steps, broken: [], reached: witnesses($found, count), unreached }
+		broken = match (strands.first(), options.blame) {
+			(Ok(strand), FirstRule) => [strand.rule]
+			(Ok(_), EveryRule) => strands.map(|strand| strand.rule)
+			(Err(_), _) => []
+		}
+		{ verdict, states: $seen.len(), depth: $deepest, steps: $steps, broken, reached: witnesses($found, count), unreached }
 	}
 
 	## The shortest trace the search found that meets the goal with this name.
@@ -474,6 +533,7 @@ Model := [].{
 			Unreached({ rule: _, extent: Bounded }) => "No rule fails within ${depth} actions of the start, and ${missed} goals were not reached there: ${quoted(report.unreached)}. They may be reachable further on. ${bounded}"
 			Violated({ rule, trace }) => "Violated: \"${rule}\" fails at the end of a trace of length ${trace.len().to_str()}, and no shorter trace breaks an `always` rule. Rules broken there: ${quoted(report.broken)}. ${stopped}"
 			Deadlock({ rule, trace }) => "Deadlock: a trace of length ${trace.len().to_str()} leaves the machine at rest where \"${rule}\" forbids it, and no shorter trace breaks any rule. ${stopped}"
+			Stranded({ rule, trace }) => "Stranded: a trace of length ${trace.len().to_str()} leads to a state from which \"${rule}\" can never be met, and no shorter trace leads to such a state. Every state reachable from there was visited, and no `always` rule fails (states visited: ${states}, steps checked: ${steps})."
 		}
 	}
 
@@ -834,6 +894,7 @@ Sorted(state, action) : {
 	always : List(Held(state)),
 	goals : List(Held(state)),
 	rest : List(Held(state)),
+	possible : List(Held(state)),
 	step_always : List(Held(Model.Transition(state, action))),
 	step_goals : List(Held(Model.Transition(state, action))),
 }
@@ -843,6 +904,7 @@ sorted = |rules| {
 	var $always = []
 	var $goals = []
 	var $rest = []
+	var $possible = []
 	var $step_always = []
 	var $step_goals = []
 	var $id = 0
@@ -857,6 +919,9 @@ sorted = |rules| {
 			AtRest(name, test) => {
 				$rest = $rest.append({ id: $id, name, test })
 			}
+			AlwaysPossible(name, test) => {
+				$possible = $possible.append({ id: $id, name, test })
+			}
 			AlwaysStep(name, test) => {
 				$step_always = $step_always.append({ id: $id, name, test })
 			}
@@ -866,7 +931,60 @@ sorted = |rules| {
 		}
 		$id = $id + 1
 	}
-	{ always: $always, goals: $goals, rest: $rest, step_always: $step_always, step_goals: $step_goals }
+	{ always: $always, goals: $goals, rest: $rest, possible: $possible, step_always: $step_always, step_goals: $step_goals }
+}
+
+## A state a search visited, as an `always_possible` rule needs it: how it
+## was first reached, where its steps lead, whether it was stepped from, and
+## which of the rules' targets it satisfies.
+Visited(action) : { trace : List(action), next : List(U64), stepped : Bool, meets : List(Bool) }
+
+## For each `always_possible` rule, in order, a shortest trace to a state
+## from which none of its targets can be reached. A state not stepped from
+## counts as one that can, so every answer is final. The states are in the
+## order the search met them, nearest first, so the first stranded one has
+## a shortest trace.
+stranded : List(Visited(action)), List(Held(state)) -> List({ rule : Str, trace : List(action) })
+stranded = |graph, rules| {
+	var $before = graph.map(|_| [])
+	var $from = 0
+	for visited in graph {
+		for to in visited.next {
+			$before = $before.set(to, ($before.get(to) ?? []).append($from)) ?? $before
+		}
+		$from = $from + 1
+	}
+	var $strands = []
+	var $place = 0
+	for rule in rules {
+		var $can = graph.map(|visited| !visited.stepped or (visited.meets.get($place) ?? Bool.True))
+		var $work = []
+		var $at = 0
+		for can in $can {
+			if can {
+				$work = $work.append($at)
+			}
+			$at = $at + 1
+		}
+		while !$work.is_empty() {
+			to = $work.last() ?? 0
+			$work = $work.drop_last(1)
+			for from in $before.get(to) ?? [] {
+				if !($can.get(from) ?? Bool.True) {
+					$can = $can.set(from, Bool.True) ?? $can
+					$work = $work.append(from)
+				}
+			}
+		}
+		match $can.find_first_index(|can| !can) {
+			Ok(at) => {
+				$strands = $strands.append({ rule: rule.name, trace: graph.get(at).map_ok(|visited| visited.trace) ?? [] })
+			}
+			Err(_) => {}
+		}
+		$place = $place + 1
+	}
+	$strands
 }
 
 ## The first of these rules that this state, or this step, fails.
