@@ -45,7 +45,7 @@ fn runOne(allocator: Allocator, input: []const u8, capture: quality.Capture) !qu
     if (call_count != 1) return error.WorkerReused;
     const count_path = env("ROCFUZZ_FIXTURE_COUNT");
     if (count_path.len != 0) {
-        const path = try allocator.dupeZ(u8, count_path);
+        const path = try allocator.dupeSentinel(u8, count_path, 0);
         const file = std.c.fopen(path.ptr, "ab") orelse return error.CannotOpenCountFile;
         defer _ = std.c.fclose(file);
         const line = try std.fmt.allocPrint(allocator, "{d}:{s}\n", .{ std.c.getpid(), input });
@@ -115,14 +115,14 @@ pub fn main(init: std.process.Init) !void {
     // Exercise signal classification, without waiting for a host's piped core
     // collector (which can outlive the fixture's one-second deadline).
     if (@import("builtin").os.tag == .linux) {
-        if (std.os.linux.prctl(@intFromEnum(std.os.linux.PR.SET_DUMPABLE), 0, 0, 0, 0) != 0)
+        if (std.os.linux.prctl(@backingInt(std.os.linux.PR.SET_DUMPABLE), 0, 0, 0, 0) != 0)
             return error.CannotDisableFixtureCoreDump;
     }
     const allocator = init.arena.allocator();
     const args = try init.minimal.args.toSlice(allocator);
     if (args.len >= 4 and std.mem.eql(u8, args[1], "__quality-worker")) worker_output_directory = std.fs.path.dirname(args[3]);
     const argv = try allocator.alloc([*:0]u8, args.len);
-    for (args, argv) |argument, *slot| slot.* = (try allocator.dupeZ(u8, argument)).ptr;
+    for (args, argv) |argument, *slot| slot.* = (try allocator.dupeSentinel(u8, argument, 0)).ptr;
     const adapter = quality.Adapter{ .prepare_examples = examples, .prepare_goals = goals, .run_one = runOne, .show = show, .original_snapshot = snapshot };
     if (quality.dispatch(argv.len, argv.ptr, "fixture_target", adapter)) return;
     if (args.len >= 2 and std.mem.eql(u8, args[1], "raw")) {

@@ -404,8 +404,8 @@ pub fn main(init: std.process.Init) !void {
     try std.testing.expectEqualStrings("one", try suite.read("minimum.bin"));
     try suite.command(&.{ "minimize", "run/example-0.bin", "run/../run/example-0.bin", "--time=1" }, "", 2);
     try suite.command(&.{ "minimize", "run/example-0.bin", "run/missing-parent/../example-0.bin", "--time=1" }, "", 2);
-    const original_path = try allocator.dupeZ(u8, try suite.path("run/example-0.bin"));
-    const hardlink_path = try allocator.dupeZ(u8, try suite.path("input-alias.bin"));
+    const original_path = try allocator.dupeSentinel(u8, try suite.path("run/example-0.bin"), 0);
+    const hardlink_path = try allocator.dupeSentinel(u8, try suite.path("input-alias.bin"), 0);
     if (std.c.link(original_path.ptr, hardlink_path.ptr) != 0) return error.CannotCreateAliasFixture;
     try suite.command(&.{ "minimize", "run/example-0.bin", "input-alias.bin", "--time=1" }, "", 2);
     try std.testing.expectEqualStrings("one", try suite.read("run/example-0.bin"));
@@ -414,8 +414,8 @@ pub fn main(init: std.process.Init) !void {
     try suite.command(&.{ "reduce-corpus", ".roc-fuzz/corpus", "reduced-corpus", "--time=1" }, "", 2);
     try suite.command(&.{ "reduce-corpus", ".roc-fuzz/corpus", ".roc-fuzz/corpus/descendant", "--time=1" }, "", 2);
     try suite.command(&.{ "reduce-corpus", ".roc-fuzz/corpus", ".roc-fuzz", "--time=1" }, "", 2);
-    const source_path = try allocator.dupeZ(u8, try suite.path(".roc-fuzz/corpus"));
-    const alias_path = try allocator.dupeZ(u8, try suite.path("corpus-alias"));
+    const source_path = try allocator.dupeSentinel(u8, try suite.path(".roc-fuzz/corpus"), 0);
+    const alias_path = try allocator.dupeSentinel(u8, try suite.path("corpus-alias"), 0);
     if (std.c.symlink(source_path.ptr, alias_path.ptr) != 0) return error.CannotCreateAliasFixture;
     try suite.command(&.{ "reduce-corpus", ".roc-fuzz/corpus", "corpus-alias/descendant", "--time=1" }, "", 2);
     std.debug.print("quality runner integration: all checks passed\n", .{});
